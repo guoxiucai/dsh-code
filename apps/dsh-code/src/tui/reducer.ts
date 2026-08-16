@@ -14,6 +14,9 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-user-approval'
 // Declaration-merges the `command/run` / `command/done` event types.
 import type {} from '@deepseek-ai/dsh-commands'
+// Declaration-merges the `permission/preset` and `plan/mode` event types.
+import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-plan-mode'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { TodoSummary, TranscriptItem, TuiViewModel } from './view-model.ts'
 
@@ -46,7 +49,7 @@ const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'command/run', 'compaction/end', 'compaction/prune',
   'compaction/start', 'compaction/summary', 'feedback/record', 'goal/change',
   'hook/invoked', 'hook/result', 'llm/retry', 'llm/retry-started',
-  'permission/preset', 'plan/mode', 'request/context', 'request/header',
+  'request/context', 'request/header',
   'sandbox/mode', 'schedule/change', 'session/title', 'session/title-llm-request',
   'subagent/descriptor', 'tool-workflow/agent-end', 'tool-workflow/agent-start',
   'tool-workflow/run-end', 'tool-workflow/run-start', 'tool/code-dispatch',
@@ -67,7 +70,7 @@ export interface ReducerState extends TuiViewModel {
 
 /** Create a reducer state seeded from a fresh (or empty) view model. */
 export function createReducerState(sessionId: string): ReducerState {
-  return { sessionId, transcript: [], phase: 'idle', todos: [], tokenUsage: undefined, lastSeq: -1, draftAssistant: undefined }
+  return { sessionId, transcript: [], phase: 'idle', todos: [], tokenUsage: undefined, permission: undefined, plan: false, lastSeq: -1, draftAssistant: undefined }
 }
 
 /** Max characters retained in a collapsed tool-result preview. */
@@ -247,6 +250,12 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       const notice = kind === 'success' ? text ?? '' : `command failed: ${text ?? 'unknown error'}`
       return { ...base, transcript: [...state.transcript, { kind: 'notice', text: notice }] }
     }
+
+    case 'permission/preset':
+      return { ...base, permission: event.data.preset }
+
+    case 'plan/mode':
+      return { ...base, plan: event.data.active }
 
     default: {
       // Known-but-unrendered events are skipped safely; a type OUTSIDE the

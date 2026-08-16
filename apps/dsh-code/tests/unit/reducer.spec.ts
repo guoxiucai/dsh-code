@@ -146,4 +146,22 @@ describe('session event reducer', () => {
     s = reduceSessionEvent(s, ev('user/message', 1, { role: 'user', content: [], source: { kind: 'plugin', plugin: 'watcher', form: 'notice', summary: 'file changed' } }))
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'notice', text: 'file changed' })
   })
+
+  it('tracks the permission preset and plan mode', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('permission/preset', 1, { preset: 'danger-full-access' }))
+    expect(s.permission).toBe('danger-full-access')
+    s = reduceSessionEvent(s, ev('plan/mode', 2, { active: true }))
+    expect(s.plan).toBe(true)
+    s = reduceSessionEvent(s, ev('plan/mode', 3, { active: false }))
+    expect(s.plan).toBe(false)
+  })
+
+  it('renders a command result as a notice', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('command/done', 1, { commandId: 'c1', kind: 'success', text: 'done' }))
+    expect(s.transcript.at(-1)).toMatchObject({ kind: 'notice', text: 'done' })
+  })
 })

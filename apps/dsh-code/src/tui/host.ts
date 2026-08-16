@@ -78,6 +78,8 @@ export function renderStatus(view: TuiViewModel, model?: { provider: string; mod
   const parts: string[] = []
   if (model !== undefined) parts.push(`${model.provider}/${model.model}`)
   parts.push(view.phase)
+  if (view.permission !== undefined) parts.push(view.permission)
+  if (view.plan) parts.push('plan')
   if (view.tokenUsage !== undefined) {
     parts.push(`↑${view.tokenUsage.inputTokens} ↓${view.tokenUsage.outputTokens}`)
   }
@@ -102,6 +104,7 @@ export class TuiHost {
   private draft: AssistantDraft | undefined
   private model: { provider: string; model: string } | undefined
   private readonly notices: string[] = []
+  private lastView: TuiViewModel | undefined
 
   constructor(callbacks: TuiHostCallbacks) {
     this.callbacks = callbacks
@@ -130,6 +133,7 @@ export class TuiHost {
 
   /** Update the rendered transcript/status from the reduced view model. */
   render(view: TuiViewModel): void {
+    this.lastView = view
     const transcript = renderTranscript(view.transcript, this.draft)
     const noticeText = this.notices.map(text => `· ${text}`).join('\n')
     const full = [transcript, noticeText].filter(text => text !== '').join('\n')
@@ -141,7 +145,8 @@ export class TuiHost {
   /** Show a transient UI-level notice (not a Session event). */
   showNotice(text: string): void {
     this.notices.push(text)
-    this.tui.requestRender()
+    if (this.lastView !== undefined) this.render(this.lastView)
+    else this.tui.requestRender()
   }
 
   /** Update only the live streaming draft (throttled by the caller). */

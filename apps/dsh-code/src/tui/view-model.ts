@@ -37,9 +37,13 @@ export interface TuiViewModel {
   phase: Phase
   todos: TodoSummary[]
   tokenUsage: TokenUsageSummary | undefined
+  /** The current permission preset name (last `permission/preset`), if any. */
+  permission: string | undefined
+  /** Whether plan mode is active (last `plan/mode`). */
+  plan: boolean
 }
 
 /** A freshly seeded, empty view model for one session. */
 export function emptyViewModel(sessionId: string): TuiViewModel {
-  return { sessionId, transcript: [], phase: 'idle', todos: [], tokenUsage: undefined }
+  return { sessionId, transcript: [], phase: 'idle', todos: [], tokenUsage: undefined, permission: undefined, plan: false }
 }
