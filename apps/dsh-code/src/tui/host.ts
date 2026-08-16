@@ -16,6 +16,7 @@ import {
   TuiMainScreen,
   matchesKey,
   type EditorTheme,
+  type OverlayHandle,
   type TUI,
 } from '@earendil-works/pi-tui'
 import type { TranscriptItem, TuiViewModel } from './view-model.ts'
@@ -109,6 +110,7 @@ export class TuiHost {
   private model: { provider: string; model: string } | undefined
   private readonly notices: string[] = []
   private lastView: TuiViewModel | undefined
+  private activeOverlayCancel: (() => void) | undefined
 
   constructor(callbacks: TuiHostCallbacks) {
     this.callbacks = callbacks
@@ -129,6 +131,10 @@ export class TuiHost {
   }
 
   private handleInput(data: string): { consume: true } | undefined {
+    if (this.activeOverlayCancel !== undefined && matchesKey(data, 'escape')) {
+      this.activeOverlayCancel()
+      return { consume: true }
+    }
     if (matchesKey(data, Key.ctrl('c'))) { this.callbacks.onCancel(); return { consume: true } }
     if (matchesKey(data, Key.ctrl('d'))) { this.callbacks.onExit(); return { consume: true } }
     if (matchesKey(data, Key.ctrl('l'))) { this.callbacks.onRedraw(); return { consume: true } }
@@ -170,6 +176,22 @@ export class TuiHost {
   setSubmitDisabled(disabled: boolean): void { this.editor.disableSubmit = disabled }
 
   /**
+   * Build the once-only settle closure shared by the modal overlays: hide the
+   * overlay, restore editor focus, and resolve exactly once.
+   */
+  private makeSettle(handle: OverlayHandle, resolve: (value: string | undefined) => void): (value: string | undefined) => void {
+    let settled = false
+    return (value) => {
+      if (settled) return
+      settled = true
+      this.activeOverlayCancel = undefined
+      handle.hide()
+      this.tui.setFocus(this.editor)
+      resolve(value)
+    }
+  }
+
+  /**
    * Show a modal question overlay (a title plus a selectable choice list) and
    * resolve the chosen value, or `undefined` when cancelled. Restores editor
    * focus when the overlay closes.
@@ -185,17 +207,29 @@ export class TuiHost {
       )
       box.addChild(list)
       const handle = this.tui.showOverlay(box)
-      let settled = false
-      const settle = (value: string | undefined): void => {
-        if (settled) return
-        settled = true
-        handle.hide()
-        this.tui.setFocus(this.editor)
-        resolve(value)
-      }
+      const settle = this.makeSettle(handle, resolve)
+      this.activeOverlayCancel = () => { settle(undefined) }
       list.onSelect = (item) => { settle(item.value) }
       list.onCancel = () => { settle(undefined) }
       this.tui.setFocus(list)
+    })
+  }
+
+  /**
+   * Show a modal single-line text input and resolve the entered text, or
+   * `undefined` when cancelled (Esc or empty submit).
+   */
+  askText(question: string): Promise<string | undefined> {
+    return new Promise((resolve) => {
+      const box = new Container()
+      box.addChild(new Text(question, 1, 1))
+      const input = new Editor(this.tui, EDITOR_THEME, { paddingX: 1 })
+      box.addChild(input)
+      const handle = this.tui.showOverlay(box)
+      const settle = this.makeSettle(handle, resolve)
+      this.activeOverlayCancel = () => { settle(undefined) }
+      input.onSubmit = (text) => { settle(text.trim() === '' ? undefined : text.trim()) }
+      this.tui.setFocus(input)
     })
   }
 

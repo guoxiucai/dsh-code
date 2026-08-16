@@ -13,6 +13,8 @@ import { installModelSelection, type Agent, type ModelSelectionRef } from '@deep
 // `appExit` onto Context (same contract the upstream headless runner relies on).
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Declaration-merges the `approval/request` waterfall onto the Cordis Events.
@@ -26,7 +28,7 @@ import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.t
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm']
+export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings']
 
 /** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
 const RENDER_INTERVAL_MS = 16
@@ -121,6 +123,60 @@ async function run(ctx: Context): Promise<void> {
     },
   })
   host.setModel({ provider: selection.provider, model: selection.model })
+
+  // Three-step model configuration wizard (DeepSeek / OpenAI / compatible).
+  // Writes through the upstream settings + credentials services, never a second
+  // store. OpenAI-compatible routes land in the pi-ai adapter's `providers` dict.
+  const runConfigWizard = async (): Promise<void> => {
+    const provider = await host.askChoice('Configure which provider?', [
+      { value: 'deepseek', label: 'DeepSeek' },
+      { value: 'openai', label: 'OpenAI' },
+      { value: 'compatible', label: 'OpenAI-compatible' },
+    ])
+    if (provider === undefined) return
+
+    if (provider === 'deepseek') {
+      const key = await host.askText('DeepSeek API key (stored owner-only in ~/.dsh-code/.credentials.yaml):')
+      if (key === undefined || key === '') return
+      await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), key)
+      const model = await host.askChoice('Default model:', [
+        { value: 'deepseek-v4-flash', label: 'DeepSeek-V4-Flash' },
+        { value: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro' },
+      ])
+      if (model === undefined) return
+      await ctx.settings.update(settingsNamespace('agent-default-model'), { provider: 'deepseek-official', model })
+      host.showNotice(`configured DeepSeek; default model ${model}`)
+      return
+    }
+
+    const isOpenai = provider === 'openai'
+    const id = isOpenai ? 'openai' : await host.askText('Provider route id (e.g. mygateway):')
+    if (id === undefined || id === '') return
+    const baseURL = isOpenai ? 'https://api.openai.com/v1' : await host.askText('Base URL (e.g. https://api.example.com/v1):')
+    if (baseURL === undefined || baseURL === '') return
+    const keyEnv = isOpenai ? 'OPENAI_API_KEY' : await host.askText('Credential env-var name (e.g. MYGATEWAY_API_KEY):')
+    if (keyEnv === undefined || keyEnv === '') return
+    const key = await host.askText(`${isOpenai ? 'OpenAI' : 'Provider'} API key (stored owner-only):`)
+    if (key === undefined || key === '') return
+    const model = await host.askText('Model id (e.g. gpt-4o):')
+    if (model === undefined || model === '') return
+    await ctx.credentials.set(credentialRef(keyEnv), key)
+    const current = ctx.settings.get(settingsNamespace('llm-pi-ai')) as { providers?: Record<string, unknown> } | undefined
+    const providers = { ...(current?.providers ?? {}) }
+    providers[id] = { apiKeyEnv: keyEnv, baseURL, api: 'openai-completions', models: [{ id: model }] }
+    await ctx.settings.replace(settingsNamespace('llm-pi-ai'), { providers })
+    await ctx.settings.update(settingsNamespace('agent-default-model'), { provider: id, model })
+    host.showNotice(`configured ${id}; default model ${model} (restart to reload the provider catalog)`)
+  }
+
+  ctx.commands.register({
+    name: 'config',
+    description: 'Configure a model provider (DeepSeek / OpenAI / OpenAI-compatible)',
+    handler: () => {
+      void runConfigWizard()
+      return { kind: 'success', text: 'starting model configuration…' }
+    },
+  })
 
   const scheduleRender = (): void => {
     if (renderTimer !== undefined) return
