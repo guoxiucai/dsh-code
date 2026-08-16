@@ -6,8 +6,8 @@
  * @module dsh-code/bin
  */
 
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { HELP_TEXT, parseArgs, type PromptInvocation, type TuiInvocation } from './cli/args.ts'
 import { delegateDsh } from './cli/delegate.ts'
@@ -61,6 +61,16 @@ async function ensureTrusted(home: string, canonical: string, approve: boolean):
   return 1
 }
 
+/**
+ * Launcher `--patch` args for the trusted project's own `.dsh-code/cordis.patch.yml`
+ * (MCP servers, project plugins). Empty when the file is absent. Only reached
+ * after the trust gate, so an untrusted project's patch is never loaded.
+ */
+function projectPatchArgs(): string[] {
+  const patch = join(process.cwd(), '.dsh-code', 'cordis.patch.yml')
+  return existsSync(patch) ? ['--patch', patch] : []
+}
+
 /** Boot the interactive TUI profile. */
 async function runTui(invocation: TuiInvocation): Promise<number> {
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
@@ -73,7 +83,7 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   if (rejected !== undefined) return rejected
   initDshCodeProfile(home, tuiPluginUrl())
   const appArgs = invocation.resume !== undefined ? ['--resume', invocation.resume] : []
-  return delegateDsh(['--profile', 'dsh-code', ...appArgs], delegatedEnv(home))
+  return delegateDsh(['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs], delegatedEnv(home))
 }
 
 /** Run one task through the upstream headless profile. */
@@ -84,7 +94,7 @@ async function runPrompt(invocation: PromptInvocation): Promise<number> {
   if (rejected !== undefined) return rejected
   // The upstream headless profile prints only the final assistant text on
   // stdout and reports a non-zero exit for a failed/cancelled/errored task.
-  return delegateDsh(['--profile', 'headless', invocation.prompt], delegatedEnv(home))
+  return delegateDsh(['--profile', 'headless', ...projectPatchArgs(), invocation.prompt], delegatedEnv(home))
 }
 
 /** Forward plugin management to the upstream `dsh plugin` subcommand (pnpm). */

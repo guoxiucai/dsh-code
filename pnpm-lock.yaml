@@ -379,6 +379,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 0.84.2
         version: 0.84.2
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.2.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -401,6 +404,9 @@ importers:
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:^
         version: link:../../packages/session/session-projection
+      '@deepseek-ai/dsh-session-query':
+        specifier: workspace:^
+        version: link:../../packages/session-query/session-query
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:^
         version: link:../../packages/llm/token-meter

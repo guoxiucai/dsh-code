@@ -17,18 +17,21 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+// Declaration-merges the `sessionQuery` service onto Context.
+import type {} from '@deepseek-ai/dsh-session-query'
 // Declaration-merges the `approval/request` waterfall onto the Cordis Events.
 import type {} from '@deepseek-ai/dsh-user-approval'
 // Declaration-merges the `commands` service onto Context.
 import type {} from '@deepseek-ai/dsh-commands'
 import { TuiHost } from './host.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
+import { addMcpServer, removeMcpServer } from './project-config.ts'
 
 /** Stable Cordis plugin name (referenced by id in the profile patch). */
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings']
+export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'sessionQuery']
 
 /** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
 const RENDER_INTERVAL_MS = 16
@@ -175,6 +178,79 @@ async function run(ctx: Context): Promise<void> {
     handler: () => {
       void runConfigWizard()
       return { kind: 'success', text: 'starting model configuration…' }
+    },
+  })
+
+  // MCP configuration: add a stdio or Streamable HTTP server to the project's
+  // `.dsh-code/cordis.patch.yml` (loaded on the next launch via --patch).
+  const runMcpWizard = async (): Promise<void> => {
+    const transport = await host.askChoice('MCP transport:', [
+      { value: 'stdio', label: 'stdio (local command)' },
+      { value: 'streamable-http', label: 'Streamable HTTP (remote)' },
+    ])
+    if (transport === undefined) return
+    const serverName = await host.askText('Server name (namespace for mcp__<name>__ tools):')
+    if (serverName === undefined || serverName === '') return
+    if (transport === 'stdio') {
+      const command = await host.askText('Command (e.g. npx):')
+      if (command === undefined || command === '') return
+      const argsText = await host.askText('Arguments (space-separated, e.g. -y some-mcp-server):')
+      addMcpServer(process.cwd(), { serverName, transport: 'stdio', command, args: (argsText ?? '').split(/\s+/).filter(Boolean) })
+      host.showNotice(`added MCP server ${serverName} (restart dsh-code to connect)`)
+    } else {
+      const url = await host.askText('Server URL (e.g. https://mcp.example.com/mcp):')
+      if (url === undefined || url === '') return
+      addMcpServer(process.cwd(), { serverName, transport: 'streamable-http', url })
+      host.showNotice(`added MCP server ${serverName} (restart dsh-code to connect)`)
+    }
+  }
+
+  ctx.commands.register({
+    name: 'mcp',
+    description: 'Configure an MCP server (add / remove)',
+    handler: ({ rawInput }) => {
+      const [sub, name] = rawInput.trim().split(/\s+/)
+      if (sub === undefined || sub === 'add') {
+        void runMcpWizard()
+        return { kind: 'success', text: 'starting MCP configuration…' }
+      }
+      if (sub === 'remove') {
+        if (name === undefined) return { kind: 'error', text: 'usage: /mcp remove <serverName>' }
+        removeMcpServer(process.cwd(), name)
+        return { kind: 'success', text: `removed MCP server ${name}` }
+      }
+      return { kind: 'error', text: `unknown /mcp subcommand "${sub}"` }
+    },
+  })
+
+  // Session resume selector + fork, both over the upstream query/fork seams.
+  ctx.commands.register({
+    name: 'sessions',
+    description: 'List persisted sessions',
+    handler: async () => {
+      const records = await ctx.sessionQuery.listSessions()
+      if (records.length === 0) return { kind: 'success', text: 'no persisted sessions' }
+      return { kind: 'success', text: records.map((record) => {
+        const when = new Date(record.header.createdAt).toLocaleString()
+        const mark = record.live ? '*' : ' '
+        return `${mark} ${String(record.header.id)} · ${record.header.cwd ?? ''} · ${when}`
+      }).join('\n') }
+    },
+  })
+
+  ctx.commands.register({
+    name: 'fork',
+    description: 'Fork the current session at the last completed turn',
+    handler: async () => {
+      const boundary = agent.session.events.findLast(event => event.type === 'turn/end')?.seq
+      if (boundary === undefined) return { kind: 'error', text: 'no completed turn to fork at' }
+      try {
+        const child = ctx.sessions.fork(agent.session, boundary)
+        await ctx.sessions.flush(child)
+        return { kind: 'success', text: `forked to ${child.id} (resume: dsh-code resume ${child.id})` }
+      } catch (error) {
+        return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
+      }
     },
   })
 
