@@ -9,6 +9,9 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+// Declaration-merges the `approval/asked` / `approval/decided` event types into
+// the Session event union.
+import type {} from '@deepseek-ai/dsh-user-approval'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { TodoSummary, TranscriptItem, TuiViewModel } from './view-model.ts'
 
@@ -27,6 +30,26 @@ export class UnknownRequiredEventError extends Error {
     this.name = 'UnknownRequiredEventError'
   }
 }
+
+/**
+ * The session event vocabulary the current baseline understands but this
+ * reducer does not render (boundaries, audit records, hooks, compaction,
+ * policy switches). These are skipped gracefully — they are known, so a skip
+ * is safe — while a type OUTSIDE this set follows the ignorable/required
+ * policy. Synced manually with `@deepseek-ai/dsh-session` KNOWN_SESSION_EVENT_TYPES
+ * at the pinned baseline (see UPSTREAM_BASELINE.md).
+ */
+const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'agent-preset/selected', 'agent/inbox/spliced', 'approval/policy',
+  'command/done', 'command/run', 'compaction/end', 'compaction/prune',
+  'compaction/start', 'compaction/summary', 'feedback/record', 'goal/change',
+  'hook/invoked', 'hook/result', 'llm/retry', 'llm/retry-started',
+  'permission/preset', 'plan/mode', 'request/context', 'request/header',
+  'sandbox/mode', 'schedule/change', 'session/title', 'session/title-llm-request',
+  'subagent/descriptor', 'tool-workflow/agent-end', 'tool-workflow/agent-start',
+  'tool-workflow/run-end', 'tool-workflow/run-start', 'tool/code-dispatch',
+  'tool/code-dispatch-start', 'web/deepseek-search-llm-request',
+])
 
 /** In-flight assistant stream (not yet committed to the transcript). */
 interface DraftAssistant {
@@ -203,9 +226,17 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     case 'session/end-seed':
       return base
 
+    case 'approval/asked':
+      return { ...base, phase: 'waiting-approval' }
+
+    case 'approval/decided':
+      return { ...base, phase: 'running' }
+
     default: {
-      // A runtime type outside the compiled union: skip if ignorable, refuse otherwise.
+      // Known-but-unrendered events are skipped safely; a type OUTSIDE the
+      // current vocabulary follows the ignorable/required policy.
       const unknown = event as unknown as { type: string; ignorable?: true }
+      if (KNOWN_UNRENDERED_EVENT_TYPES.has(unknown.type)) return base
       if (unknown.ignorable === true) return base
       throw new UnknownRequiredEventError(unknown.type)
     }

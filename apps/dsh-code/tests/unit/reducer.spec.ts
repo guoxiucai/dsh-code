@@ -113,4 +113,22 @@ describe('session event reducer', () => {
     s = reduceSessionEvent(s, ev('turn/end', 1, { turn: 1, reason: { kind: 'error', error: { code: 'X', message: 'boom' } } }))
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'notice' })
   })
+
+  it('tracks the approval phase (asked → decided)', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('approval/asked', 1, { id: 'a1', toolName: 'bash', reason: 'write outside workspace' }))
+    expect(s.phase).toBe('waiting-approval')
+    s = reduceSessionEvent(s, ev('approval/decided', 2, { id: 'a1', outcome: 'allowed-once' }))
+    expect(s.phase).toBe('running')
+  })
+
+  it('skips known-but-unrendered events without crashing', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('command/run', 1, { commandId: 'c1', name: 'goal', source: { kind: 'user' } }))
+    s = reduceSessionEvent(s, ev('permission/preset', 2, { preset: 'workspace-write' }))
+    expect(s.transcript).toHaveLength(0)
+    expect(s.lastSeq).toBe(2)
+  })
 })

@@ -15,6 +15,8 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+// Declaration-merges the `approval/request` waterfall onto the Cordis Events.
+import type {} from '@deepseek-ai/dsh-user-approval'
 import { TuiHost } from './host.ts'
 import { createReducerState, reduceSessionEvent, type ReducerState } from './reducer.ts'
 
@@ -126,12 +128,26 @@ async function run(ctx: Context): Promise<void> {
     scheduleRender()
   })
 
+  // Permission answerer: a one-shot Allow/Reject overlay for this agent's tool
+  // calls. Never infers a durable grant; Esc/cancel settles as `cancelled`.
+  const disposeApproval = ctx.on('approval/request', (request, next) => {
+    if (request.agent !== agent) return next()
+    const question = request.reason !== undefined && request.reason !== ''
+      ? `Allow \`${request.toolName}\`?\n${request.reason}`
+      : `Allow \`${request.toolName}\`?`
+    return host.askChoice(question, [
+      { value: 'allowed-once', label: 'Allow once' },
+      { value: 'rejected', label: 'Reject' },
+    ]).then(value => value === 'allowed-once' ? 'allowed-once' : value === 'rejected' ? 'rejected' : 'cancelled')
+  })
+
   const shutdown = async (code: number): Promise<void> => {
     if (shuttingDown) return
     shuttingDown = true
     host.stop()
     disposeEvents()
     disposeStatus()
+    disposeApproval()
     try {
       await agent.whenIdle()
       await sessions.flush(agent.session)

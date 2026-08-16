@@ -10,6 +10,7 @@ import {
   Editor,
   Key,
   ProcessTerminal,
+  SelectList,
   Spacer,
   Text,
   TuiMainScreen,
@@ -148,6 +149,36 @@ export class TuiHost {
   clearEditor(): void { this.editor.setText('') }
   addHistory(text: string): void { this.editor.addToHistory(text) }
   setSubmitDisabled(disabled: boolean): void { this.editor.disableSubmit = disabled }
+
+  /**
+   * Show a modal question overlay (a title plus a selectable choice list) and
+   * resolve the chosen value, or `undefined` when cancelled. Restores editor
+   * focus when the overlay closes.
+   */
+  askChoice(question: string, choices: readonly { value: string; label: string }[]): Promise<string | undefined> {
+    return new Promise((resolve) => {
+      const box = new Container()
+      box.addChild(new Text(question, 1, 1))
+      const list = new SelectList(
+        choices.map(choice => ({ value: choice.value, label: choice.label })),
+        Math.min(choices.length, 8),
+        EDITOR_THEME.selectList,
+      )
+      box.addChild(list)
+      const handle = this.tui.showOverlay(box)
+      let settled = false
+      const settle = (value: string | undefined): void => {
+        if (settled) return
+        settled = true
+        handle.hide()
+        this.tui.setFocus(this.editor)
+        resolve(value)
+      }
+      list.onSelect = (item) => { settle(item.value) }
+      list.onCancel = () => { settle(undefined) }
+      this.tui.setFocus(list)
+    })
+  }
 
   start(): void { this.tui.start() }
   stop(): void { this.detachInput(); this.tui.stop() }
