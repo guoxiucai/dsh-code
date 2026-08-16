@@ -26,7 +26,7 @@ import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.t
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands']
+export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm']
 
 /** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
 const RENDER_INTERVAL_MS = 16
@@ -51,6 +51,18 @@ async function run(ctx: Context): Promise<void> {
   const resumeId = parseResumeArg(innerArgs)
   const selection = defaultModel.currentSelection()
   const modelOptions = { provider: selection.provider, model: selection.model }
+
+  // Surface the model configuration without a network round trip: the current
+  // selection plus the provider routes the composition knows about.
+  ctx.commands.register({
+    name: 'model',
+    description: 'Show the current model and the available provider routes',
+    handler: () => {
+      const current = defaultModel.currentSelection()
+      const providers = ctx.llm.listProviders().map(provider => provider.id).join(', ')
+      return { kind: 'success', text: `model ${current.provider}/${current.model}; providers: ${providers}` }
+    },
+  })
   const setup = (agentCtx: Context): void => {
     const selected: ModelSelectionRef = { current: selection, assembled: undefined }
     installModelSelection(agentCtx, selected)

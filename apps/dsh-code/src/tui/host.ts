@@ -84,9 +84,13 @@ export function renderStatus(view: TuiViewModel, model?: { provider: string; mod
     parts.push(`↑${view.tokenUsage.inputTokens} ↓${view.tokenUsage.outputTokens}`)
   }
   if (view.todos.length > 0) {
+    const inProgress = view.todos.find(todo => todo.status === 'in_progress')
     const done = view.todos.filter(todo => todo.status === 'completed').length
-    parts.push(`todo ${done}/${view.todos.length}`)
+    parts.push(inProgress !== undefined ? `▸ ${inProgress.content}` : `todo ${done}/${view.todos.length}`)
   }
+  const runningSubagents = view.transcript.filter(item =>
+    item.kind === 'tool' && (item.name === 'subagent' || item.name === 'subagent_fork') && item.status === 'running').length
+  if (runningSubagents > 0) parts.push(`⚡ ${runningSubagents} subagent`)
   return parts.join(' · ')
 }
 
