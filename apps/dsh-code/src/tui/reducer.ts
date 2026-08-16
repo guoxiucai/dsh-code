@@ -12,6 +12,8 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Declaration-merges the `approval/asked` / `approval/decided` event types into
 // the Session event union.
 import type {} from '@deepseek-ai/dsh-user-approval'
+// Declaration-merges the `command/run` / `command/done` event types.
+import type {} from '@deepseek-ai/dsh-commands'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { TodoSummary, TranscriptItem, TuiViewModel } from './view-model.ts'
 
@@ -41,7 +43,7 @@ export class UnknownRequiredEventError extends Error {
  */
 const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'agent-preset/selected', 'agent/inbox/spliced', 'approval/policy',
-  'command/done', 'command/run', 'compaction/end', 'compaction/prune',
+  'command/run', 'compaction/end', 'compaction/prune',
   'compaction/start', 'compaction/summary', 'feedback/record', 'goal/change',
   'hook/invoked', 'hook/result', 'llm/retry', 'llm/retry-started',
   'permission/preset', 'plan/mode', 'request/context', 'request/header',
@@ -238,6 +240,13 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
 
     case 'approval/decided':
       return { ...base, phase: 'running' }
+
+    case 'command/done': {
+      const { kind, text } = event.data
+      if (kind === 'success' && (text === undefined || text === '')) return base
+      const notice = kind === 'success' ? text ?? '' : `command failed: ${text ?? 'unknown error'}`
+      return { ...base, transcript: [...state.transcript, { kind: 'notice', text: notice }] }
+    }
 
     default: {
       // Known-but-unrendered events are skipped safely; a type OUTSIDE the

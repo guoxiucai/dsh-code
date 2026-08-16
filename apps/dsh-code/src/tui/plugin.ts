@@ -17,6 +17,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Declaration-merges the `approval/request` waterfall onto the Cordis Events.
 import type {} from '@deepseek-ai/dsh-user-approval'
+// Declaration-merges the `commands` service onto Context.
+import type {} from '@deepseek-ai/dsh-commands'
 import { TuiHost } from './host.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 
@@ -24,7 +26,7 @@ import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.t
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentDefaultModel', 'sessions']
+export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands']
 
 /** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
 const RENDER_INTERVAL_MS = 16
@@ -79,6 +81,15 @@ async function run(ctx: Context): Promise<void> {
       if (trimmed === '') return
       host.addHistory(text)
       host.clearEditor()
+      // A leading slash is a slash command, executed without a model round trip.
+      if (trimmed.startsWith('/')) {
+        const controller = new AbortController()
+        void ctx.commands.execute(agent, trimmed, controller.signal).then(
+          (result) => { if (result === undefined) host.showNotice(`unknown command: ${trimmed}`) },
+          () => { host.showNotice(`command failed: ${trimmed}`) },
+        )
+        return
+      }
       agent.followup(createUserMessage({
         content: [{ type: 'text', text: trimmed }],
         source: { kind: 'user' },

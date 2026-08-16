@@ -101,6 +101,7 @@ export class TuiHost {
   private readonly detachInput: () => void
   private draft: AssistantDraft | undefined
   private model: { provider: string; model: string } | undefined
+  private readonly notices: string[] = []
 
   constructor(callbacks: TuiHostCallbacks) {
     this.callbacks = callbacks
@@ -129,8 +130,17 @@ export class TuiHost {
 
   /** Update the rendered transcript/status from the reduced view model. */
   render(view: TuiViewModel): void {
-    this.transcript.setText(renderTranscript(view.transcript, this.draft))
+    const transcript = renderTranscript(view.transcript, this.draft)
+    const noticeText = this.notices.map(text => `· ${text}`).join('\n')
+    const full = [transcript, noticeText].filter(text => text !== '').join('\n')
+    this.transcript.setText(full)
     this.status.setText(renderStatus(view, this.model))
+    this.tui.requestRender()
+  }
+
+  /** Show a transient UI-level notice (not a Session event). */
+  showNotice(text: string): void {
+    this.notices.push(text)
     this.tui.requestRender()
   }
 
