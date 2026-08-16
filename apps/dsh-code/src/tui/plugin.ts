@@ -245,7 +245,7 @@ async function run(ctx: Context): Promise<void> {
       const boundary = agent.session.events.findLast(event => event.type === 'turn/end')?.seq
       if (boundary === undefined) return { kind: 'error', text: 'no completed turn to fork at' }
       try {
-        const child = ctx.sessions.fork(agent.session, boundary)
+        const child = ctx.sessions.fork(agent.session, boundary, SessionId(`session-${randomUUID()}`))
         await ctx.sessions.flush(child)
         return { kind: 'success', text: `forked to ${child.id} (resume: dsh-code resume ${child.id})` }
       } catch (error) {
