@@ -13,6 +13,7 @@ import { HELP_TEXT, parseArgs, type PromptInvocation, type TuiInvocation } from 
 import { delegateDsh } from './cli/delegate.ts'
 import { resolveDshCodeHome } from './bootstrap/home.ts'
 import { initDshCodeProfile } from './bootstrap/profile.ts'
+import { listProjectSessions, selectSession } from './bootstrap/sessions.ts'
 import {
   canonicalizeProjectPath,
   isProjectTrusted,
@@ -82,7 +83,18 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   const rejected = await ensureTrusted(home, canonical, false)
   if (rejected !== undefined) return rejected
   initDshCodeProfile(home, tuiPluginUrl())
-  const appArgs = invocation.resume !== undefined ? ['--resume', invocation.resume] : []
+  let appArgs: string[]
+  if (invocation.resume !== undefined) {
+    appArgs = ['--resume', invocation.resume]
+  } else if (invocation.resumePicker === true) {
+    // `dsh-code resume` (no id): pick a persisted session for this project, or
+    // fall through to a fresh session on an empty list or an Enter answer.
+    const sessions = listProjectSessions(home, canonical)
+    const picked = sessions.length === 0 ? undefined : await selectSession(sessions)
+    appArgs = picked === undefined ? [] : ['--resume', picked]
+  } else {
+    appArgs = []
+  }
   return delegateDsh(['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs], delegatedEnv(home))
 }
 

@@ -5,7 +5,7 @@ describe('parseArgs', () => {
   it('CLI-001: --help', () => { expect(parseArgs(['--help'])).toEqual({ mode: 'help' }) })
   it('CLI-002: --version', () => { expect(parseArgs(['--version'])).toEqual({ mode: 'version' }) })
   it('defaults to the interactive TUI', () => { expect(parseArgs([])).toEqual({ mode: 'tui' }) })
-  it('resume without id opens the selector', () => { expect(parseArgs(['resume'])).toEqual({ mode: 'tui' }) })
+  it('resume without id opens the selector', () => { expect(parseArgs(['resume'])).toEqual({ mode: 'tui', resumePicker: true }) })
   it('resume with id', () => { expect(parseArgs(['resume', 'abc'])).toEqual({ mode: 'tui', resume: 'abc' }) })
 
   it('-p with a prompt', () => {

@@ -10,6 +10,8 @@
 export interface TuiInvocation {
   mode: 'tui'
   resume?: string
+  /** `dsh-code resume` with no id: show the project's session selector. */
+  resumePicker?: boolean
 }
 
 /** One-shot prompt invocation (delegates to the upstream `headless` profile). */
@@ -44,7 +46,7 @@ export function parseArgs(argv: readonly string[]): Invocation {
 
   if (first === 'resume') {
     const id = argv.slice(1).find(arg => !arg.startsWith('-'))
-    return id === undefined ? { mode: 'tui' } : { mode: 'tui', resume: id }
+    return id === undefined ? { mode: 'tui', resumePicker: true } : { mode: 'tui', resume: id }
   }
 
   if (first === 'config') return { mode: 'config' }
