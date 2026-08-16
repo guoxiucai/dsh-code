@@ -316,6 +316,19 @@ async function run(ctx: Context): Promise<void> {
     ctx.appExit?.(code)
   }
 
+  // Exit the session from a slash command — the same path as Ctrl+D when idle.
+  for (const exitCommand of ['quit', 'exit'] as const) {
+    ctx.commands.register({
+      name: exitCommand,
+      description: 'Exit the current session',
+      handler: () => {
+        if (agent.status === 'running') return { kind: 'error', text: 'cancel the active turn before exiting (Ctrl+C)' }
+        void shutdown(0)
+        return { kind: 'success', text: 'exiting…' }
+      },
+    })
+  }
+
   host.render(reducer)
   host.start()
 }
