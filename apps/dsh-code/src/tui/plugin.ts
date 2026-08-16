@@ -18,7 +18,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 // Declaration-merges the `approval/request` waterfall onto the Cordis Events.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { TuiHost } from './host.ts'
-import { createReducerState, reduceSessionEvent, type ReducerState } from './reducer.ts'
+import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 
 /** Stable Cordis plugin name (referenced by id in the profile patch). */
 export const name = 'dsh-code-tui'
@@ -47,25 +47,29 @@ async function run(ctx: Context): Promise<void> {
   const sessions = ctx.sessions
   const innerArgs = ctx.cmdlineArgs?.get() ?? []
   const resumeId = parseResumeArg(innerArgs)
-
-  if (resumeId !== undefined) {
-    // Session resume is Phase 5; a requested-but-unimplemented resume fails
-    // loudly rather than silently starting a fresh session.
-    throw new Error(`dsh-code: session resume is not implemented yet (requested ${resumeId})`)
+  const selection = defaultModel.currentSelection()
+  const modelOptions = { provider: selection.provider, model: selection.model }
+  const setup = (agentCtx: Context): void => {
+    const selected: ModelSelectionRef = { current: selection, assembled: undefined }
+    installModelSelection(agentCtx, selected)
   }
 
-  const selection = defaultModel.currentSelection()
-  const { agent } = await agents.create({
-    sessionId: SessionId(`session-${randomUUID()}`),
-    meta: { cwd: process.cwd() },
-    agentOptions: { provider: selection.provider, model: selection.model },
-    setup: (agentCtx) => {
-      const selected: ModelSelectionRef = { current: selection, assembled: undefined }
-      installModelSelection(agentCtx, selected)
-    },
-  })
+  // A requested `--resume` loads the persisted session through the upstream
+  // factory; otherwise a fresh session is created. Both return an owned handle.
+  const handle = resumeId !== undefined
+    ? await agents.resume({ resumeSessionId: SessionId(resumeId), agentOptions: modelOptions, setup })
+    : await agents.create({
+      sessionId: SessionId(`session-${randomUUID()}`),
+      meta: { cwd: process.cwd() },
+      agentOptions: modelOptions,
+      setup,
+    })
+  const agent = handle.agent
 
-  let reducer: ReducerState = createReducerState(String(agent.session.id))
+  // Rebuild the transcript from the session's full log (persisted history for a
+  // resume, empty for a fresh session); the live listener continues from the
+  // persisted seq boundary, with the reducer's seq dedup guarding any overlap.
+  let reducer: ReducerState = replayEvents(String(agent.session.id), agent.session.events)
   let shuttingDown = false
   let renderTimer: ReturnType<typeof setTimeout> | undefined
 

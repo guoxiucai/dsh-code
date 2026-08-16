@@ -148,12 +148,19 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     case 'step/end':
       return { ...base, phase: 'running' }
 
-    case 'user/message':
-      return {
-        ...base,
-        phase: 'running',
-        transcript: [...commitDraft(state), { kind: 'user', text: textOf(event.data.content) }],
+    case 'user/message': {
+      const source = event.data.source
+      // A human prompt is a user item; an injected notice is a notice; other
+      // injected context (runtime snapshot, catalog, instructions) is not a
+      // human message and is collapsed from the transcript.
+      if (source.kind === 'user') {
+        return { ...base, phase: 'running', transcript: [...commitDraft(state), { kind: 'user', text: textOf(event.data.content) }] }
       }
+      if (source.kind === 'plugin' && source.form === 'notice') {
+        return { ...base, phase: 'running', transcript: [...commitDraft(state), { kind: 'notice', text: source.summary }] }
+      }
+      return { ...base, phase: 'running' }
+    }
 
     case 'assistant/chunk': {
       const chunk = event.data.chunk

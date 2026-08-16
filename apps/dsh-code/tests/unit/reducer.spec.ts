@@ -131,4 +131,19 @@ describe('session event reducer', () => {
     expect(s.transcript).toHaveLength(0)
     expect(s.lastSeq).toBe(2)
   })
+
+  it('collapses injected context but keeps human prompts', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('user/message', 1, { role: 'user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } }))
+    s = reduceSessionEvent(s, ev('user/message', 2, { role: 'user', content: [{ type: 'text', text: 'runtime snapshot' }], source: { kind: 'plugin', plugin: 'ctx', form: 'snapshot', sections: [] } }))
+    expect(s.transcript).toEqual([{ kind: 'user', text: 'hello' }])
+  })
+
+  it('renders an injected notice as a notice row', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('user/message', 1, { role: 'user', content: [], source: { kind: 'plugin', plugin: 'watcher', form: 'notice', summary: 'file changed' } }))
+    expect(s.transcript.at(-1)).toMatchObject({ kind: 'notice', text: 'file changed' })
+  })
 })
