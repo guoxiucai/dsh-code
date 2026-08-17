@@ -7,6 +7,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 // Empty type imports declaration-merge `agentDefaultModel`, `cmdlineArgs`, and
@@ -17,12 +19,12 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-// Declaration-merges the `sessionQuery` service onto Context.
-import type {} from '@deepseek-ai/dsh-session-query'
 // Declaration-merges the `approval/request` waterfall onto the Cordis Events.
 import type {} from '@deepseek-ai/dsh-user-approval'
 // Declaration-merges the `commands` service onto Context.
 import type {} from '@deepseek-ai/dsh-commands'
+// Declaration-merges the `permissionPresets` service onto Context.
+import type {} from '@deepseek-ai/dsh-permission-presets'
 import { TuiHost } from './host.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 import { addMcpServer, removeMcpServer } from './project-config.ts'
@@ -31,7 +33,7 @@ import { addMcpServer, removeMcpServer } from './project-config.ts'
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'sessionQuery']
+export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets']
 
 /** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
 const RENDER_INTERVAL_MS = 16
@@ -126,6 +128,40 @@ async function run(ctx: Context): Promise<void> {
     },
   })
   host.setModel({ provider: selection.provider, model: selection.model })
+
+  // Slash-command autocomplete, refreshed whenever the command registry changes.
+  // `fd` (when installed) enables the fast fuzzy file search; `/permission`
+  // completes its preset names from the permission-presets service.
+  const findFd = (): string | undefined => {
+    for (const dir of (process.env.PATH ?? '').split(':')) {
+      const candidate = join(dir, 'fd')
+      try {
+        if (statSync(candidate).isFile()) return candidate
+      } catch {
+        // Skip non-existent entries.
+      }
+    }
+    return undefined
+  }
+
+  const syncCommands = (): void => {
+    const fdPath = findFd()
+    const presets = ctx.permissionPresets.names
+    host.setAutocomplete(ctx.commands.list(agent).map(command => ({
+      name: command.name,
+      description: command.description,
+      ...(command.input !== undefined ? { argumentHint: command.input.hint } : {}),
+      ...(command.name === 'permission'
+        ? {
+          getArgumentCompletions: (prefix: string) => presets
+            .filter(name => name.startsWith(prefix))
+            .map(name => ({ value: name, label: name })),
+        }
+        : {}),
+    })), process.cwd(), fdPath)
+  }
+  syncCommands()
+  const disposeCommandsChange = ctx.on('commands/change', () => { syncCommands() })
 
   // Three-step model configuration wizard (DeepSeek / OpenAI / compatible).
   // Writes through the upstream settings + credentials services, never a second
@@ -223,18 +259,50 @@ async function run(ctx: Context): Promise<void> {
     },
   })
 
-  // Session resume selector + fork, both over the upstream query/fork seams.
+  // Current-session info (no in-session switching) + fork over the upstream seams.
   ctx.commands.register({
-    name: 'sessions',
-    description: 'List persisted sessions',
-    handler: async () => {
-      const records = await ctx.sessionQuery.listSessions()
-      if (records.length === 0) return { kind: 'success', text: 'no persisted sessions' }
-      return { kind: 'success', text: records.map((record) => {
-        const when = new Date(record.header.createdAt).toLocaleString()
-        const mark = record.live ? '*' : ' '
-        return `${mark} ${String(record.header.id)} · ${record.header.cwd ?? ''} · ${when}`
-      }).join('\n') }
+    name: 'session',
+    description: 'Show current session info and stats',
+    handler: () => {
+      const events = agent.session.events
+      const header = agent.session.header
+      const user = events.filter(event => event.type === 'user/message' && event.data.source.kind === 'user').length
+      const assistant = events.filter(event => event.type === 'assistant/message').length
+      const toolCalls = events.filter(event => event.type === 'tool/call').length
+      const toolResults = events.filter(event => event.type === 'tool/result').length
+      const usage = reducer.tokenUsage
+      const input = usage?.inputTokens ?? 0
+      const cacheRead = usage?.cacheReadTokens ?? 0
+      const cacheWrite = usage?.cacheWriteTokens ?? 0
+      const output = usage?.outputTokens ?? 0
+      const reasoning = usage?.reasoningTokens ?? 0
+      const promptTokens = input + cacheRead + cacheWrite
+      const lines = [
+        'Session Info',
+        '',
+        `ID: ${String(header.id)}`,
+        `cwd: ${header.cwd ?? ''}`,
+        `created: ${new Date(header.createdAt).toLocaleString()}`,
+        ...(header.parentSession !== undefined ? [`parent: ${String(header.parentSession)}`] : []),
+        `model: ${selection.provider}/${selection.model}`,
+        '',
+        'Messages',
+        `user: ${user}`,
+        `assistant: ${assistant}`,
+        `tools: ${toolCalls} calls, ${toolResults} results`,
+        '',
+        'Tokens',
+        `input: ${promptTokens.toLocaleString()}`,
+      ]
+      if (promptTokens > 0 && (cacheRead > 0 || cacheWrite > 0)) {
+        const hitRate = (cacheRead / promptTokens) * 100
+        lines.push(`  cached: ${cacheRead.toLocaleString()} (${hitRate.toFixed(1)}%)`)
+        lines.push(`  uncached: ${(input + cacheWrite).toLocaleString()}${cacheWrite > 0 ? ` (${cacheWrite.toLocaleString()} written)` : ''}`)
+      }
+      lines.push(`output: ${output.toLocaleString()}`)
+      if (reasoning > 0) lines.push(`  thinking: ${reasoning.toLocaleString()}`)
+      lines.push(`total: ${(promptTokens + output).toLocaleString()}`)
+      return { kind: 'success', text: lines.join('\n') }
     },
   })
 
@@ -307,6 +375,7 @@ async function run(ctx: Context): Promise<void> {
     disposeEvents()
     disposeStatus()
     disposeApproval()
+    disposeCommandsChange()
     try {
       await agent.whenIdle()
       await sessions.flush(agent.session)

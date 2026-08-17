@@ -17,8 +17,11 @@ import type {} from '@deepseek-ai/dsh-commands'
 // Declaration-merges the `permission/preset` and `plan/mode` event types.
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plan-mode'
+// Declaration-merges the `llm/retry` and `compaction/*` event types.
+import type {} from '@deepseek-ai/dsh-llm-retry'
+import type {} from '@deepseek-ai/dsh-compaction'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { TodoSummary, TranscriptItem, TuiViewModel } from './view-model.ts'
+import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 
 /** Thrown when an event arrives with a non-contiguous seq (reorder or gap). */
 export class EventSequenceError extends Error {
@@ -46,9 +49,9 @@ export class UnknownRequiredEventError extends Error {
  */
 const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'agent-preset/selected', 'agent/inbox/spliced', 'approval/policy',
-  'command/run', 'compaction/end', 'compaction/prune',
-  'compaction/start', 'compaction/summary', 'feedback/record', 'goal/change',
-  'hook/invoked', 'hook/result', 'llm/retry', 'llm/retry-started',
+  'command/run', 'compaction/prune',
+  'compaction/summary', 'feedback/record', 'goal/change',
+  'hook/invoked', 'hook/result',
   'request/context', 'request/header',
   'sandbox/mode', 'schedule/change', 'session/title', 'session/title-llm-request',
   'subagent/descriptor', 'tool-workflow/agent-end', 'tool-workflow/agent-start',
@@ -66,15 +69,17 @@ interface DraftAssistant {
 export interface ReducerState extends TuiViewModel {
   lastSeq: number
   draftAssistant: DraftAssistant | undefined
+  /** Wall-clock time of the current step's start (for reasoning duration). */
+  stepStartTime: number | undefined
 }
 
 /** Create a reducer state seeded from a fresh (or empty) view model. */
 export function createReducerState(sessionId: string): ReducerState {
-  return { sessionId, transcript: [], phase: 'idle', todos: [], tokenUsage: undefined, permission: undefined, plan: false, lastSeq: -1, draftAssistant: undefined }
+  return { sessionId, transcript: [], phase: 'idle', todos: [], tokenUsage: undefined, permission: undefined, plan: false, retryStatus: undefined, compacting: false, lastSeq: -1, draftAssistant: undefined, stepStartTime: undefined }
 }
 
-/** Max characters retained in a collapsed tool-result preview. */
-const MAX_TOOL_RESULT_PREVIEW = 2000
+/** Hard cap on the retained tool-result text (memory safety); the host folds it. */
+const MAX_TOOL_RESULT_CHARS = 100_000
 
 /** Join the visible text of a content block list. */
 export function textOf(blocks: readonly ContentBlock[]): string {
@@ -90,11 +95,23 @@ export function reasoningOf(blocks: readonly ContentBlock[]): string {
   return out
 }
 
-/** Collapse a tool result into a bounded single-line preview. */
-function previewResult(text: string): string {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  if (normalized.length <= MAX_TOOL_RESULT_PREVIEW) return normalized
-  return `${normalized.slice(0, MAX_TOOL_RESULT_PREVIEW)}… (truncated)`
+/** Keep the full multi-line tool result, capped for memory safety. */
+function toolResultText(text: string): string {
+  if (text.length <= MAX_TOOL_RESULT_CHARS) return text
+  return `${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n… (truncated)`
+}
+
+/** Narrow a write/edit tool result's opaque `meta` to its file diffs. */
+function diffsFromMeta(meta: unknown): ToolDiff[] | undefined {
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined
+  const raw = (meta as { diffs?: unknown }).diffs
+  if (!Array.isArray(raw)) return undefined
+  const diffs = raw.filter((value): value is ToolDiff => {
+    if (typeof value !== 'object' || value === null) return false
+    const { path, oldText, newText } = value as Record<string, unknown>
+    return typeof path === 'string' && (oldText === null || typeof oldText === 'string') && typeof newText === 'string'
+  })
+  return diffs.length > 0 ? diffs : undefined
 }
 
 /** Commit any in-flight assistant draft into the transcript. */
@@ -150,6 +167,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       }
     }
     case 'step/start':
+      return { ...base, phase: 'running', stepStartTime: event.time }
     case 'step/end':
       return { ...base, phase: 'running' }
 
@@ -190,7 +208,15 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       const transcript = state.transcript
       let next = transcript
       if (text !== '' || reasoning !== '') {
-        next = [...transcript, { kind: 'assistant', text, ...(reasoning !== '' ? { reasoning } : {}) }]
+        const reasoningDurationMs = reasoning !== '' && state.stepStartTime !== undefined
+          ? event.time - state.stepStartTime
+          : undefined
+        next = [...transcript, {
+          kind: 'assistant',
+          text,
+          ...(reasoning !== '' ? { reasoning } : {}),
+          ...(reasoningDurationMs !== undefined ? { reasoningDurationMs } : {}),
+        }]
       }
       const usage = event.data.usage
       const tokenUsage = usage === undefined ? state.tokenUsage : {
@@ -213,20 +239,24 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
           name: event.data.name,
           arguments: event.data.arguments,
           status: 'running',
+          startedAt: event.time,
         }],
       }
 
     case 'tool/result': {
       const block = event.data.message.content[0]
       const callId = block?.toolCallId !== undefined ? String(block.toolCallId) : String(event.data.message.source.callId)
-      const resultText = previewResult(textOf(block?.content ?? []))
+      const resultText = toolResultText(textOf(block?.content ?? []))
       const failed = event.data.error !== undefined || block?.isError === true
+      const diffs = diffsFromMeta(event.data.meta)
       const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId
         ? {
           ...item,
           status: failed ? 'error' : 'done',
           ...(resultText !== '' ? { resultText } : {}),
           ...(event.data.error !== undefined ? { errorCode: event.data.error.code } : {}),
+          ...(item.startedAt !== undefined ? { elapsedMs: event.time - item.startedAt } : {}),
+          ...(diffs !== undefined ? { diffs } : {}),
         } as const
         : item)
       return { ...base, phase: 'running', transcript }
@@ -256,6 +286,28 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
 
     case 'plan/mode':
       return { ...base, plan: event.data.active }
+
+    case 'llm/retry': {
+      const data = event.data
+      return {
+        ...base,
+        retryStatus: {
+          retry: data.retry,
+          maxRetries: data.mode === 'normal' ? data.maxRetries : undefined,
+          delayMs: data.delayMs,
+          scheduledAt: event.time,
+        },
+      }
+    }
+
+    case 'llm/retry-started':
+      return { ...base, retryStatus: undefined }
+
+    case 'compaction/start':
+      return { ...base, compacting: true }
+
+    case 'compaction/end':
+      return { ...base, compacting: false }
 
     default: {
       // Known-but-unrendered events are skipped safely; a type OUTSIDE the

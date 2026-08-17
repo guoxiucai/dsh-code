@@ -164,4 +164,33 @@ describe('session event reducer', () => {
     s = reduceSessionEvent(s, ev('command/done', 1, { commandId: 'c1', kind: 'success', text: 'done' }))
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'notice', text: 'done' })
   })
+
+  it('tracks a retry status and clears it when the retry starts', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('llm/retry', 1, { retryId: 'r1', turn: 1, step: 1, provider: 'p', mode: 'normal', policyKey: 'k', retry: 1, maxRetries: 3, delayMs: 2000, failure: { code: 'X', message: 'boom' } }))
+    expect(s.retryStatus).toMatchObject({ retry: 1, maxRetries: 3, delayMs: 2000 })
+    s = reduceSessionEvent(s, ev('llm/retry-started', 2, { retryId: 'r1', turn: 1, step: 1, retry: 1 }))
+    expect(s.retryStatus).toBeUndefined()
+  })
+
+  it('tracks a compaction lifecycle', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('compaction/start', 0, { compactionId: 'c1', turn: null }))
+    expect(s.compacting).toBe(true)
+    s = reduceSessionEvent(s, ev('compaction/end', 1, { compactionId: 'c1', turn: null }))
+    expect(s.compacting).toBe(false)
+  })
+
+  it('extracts file diffs from a write/edit tool result', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('tool/call', 1, { turn: 1, step: 1, callId: 'c1', name: 'edit', arguments: '{}' }))
+    s = reduceSessionEvent(s, ev('tool/result', 2, {
+      turn: 1, step: 1,
+      message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] }], source: { kind: 'tool', callId: 'c1' } },
+      meta: { diffs: [{ path: 'a.ts', oldText: 'x', newText: 'y' }] },
+    }))
+    expect(s.transcript.at(-1)).toMatchObject({ kind: 'tool', diffs: [{ path: 'a.ts', oldText: 'x', newText: 'y' }] })
+  })
 })

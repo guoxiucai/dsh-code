@@ -20,7 +20,7 @@
     "NOTICE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && chmod +x lib/bin.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -33,6 +33,7 @@
     "@deepseek-ai/dsh-credentials": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@earendil-works/pi-tui": "0.84.2",
+    "diff": "^9.0.0",
     "js-yaml": "^4.2.0"
   },
   "devDependencies": {
@@ -41,6 +42,8 @@
     "@deepseek-ai/dsh-agent-default-model": "workspace:^",
     "@deepseek-ai/dsh-cmdline": "workspace:^",
     "@deepseek-ai/dsh-commands": "workspace:^",
+    "@deepseek-ai/dsh-compaction": "workspace:^",
+    "@deepseek-ai/dsh-llm-retry": "workspace:^",
     "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-plan-mode": "workspace:^",
     "@deepseek-ai/dsh-session-query": "workspace:^",

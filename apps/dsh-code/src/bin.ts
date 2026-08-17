@@ -6,7 +6,7 @@
  * @module dsh-code/bin
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { HELP_TEXT, parseArgs, type PromptInvocation, type TuiInvocation } from './cli/args.ts'
@@ -154,7 +154,13 @@ export async function main(argv: readonly string[]): Promise<number> {
 function isEntryPoint(): boolean {
   const entry = process.argv[1]
   if (entry === undefined) return false
-  return import.meta.url === pathToFileURL(resolve(entry)).href
+  // Resolve the entry through realpath so a symlinked `dsh-code` bin (npm link,
+  // a PATH symlink) still matches this module's real file URL.
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(entry)).href
+  } catch {
+    return import.meta.url === pathToFileURL(resolve(entry)).href
+  }
 }
 
 // Self-executing dispatch: never import this module for side effects.
