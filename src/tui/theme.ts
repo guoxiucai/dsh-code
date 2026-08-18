@@ -1,14 +1,48 @@
 /**
- * ANSI color palette for the terminal transcript. Each role wraps text in its
- * escape sequence; every role is identity under `NO_COLOR` so the transcript
- * stays readable on a colorless terminal. Mirrors the pi/old-dsh role palette.
+ * Adaptive ANSI color palette for the terminal transcript. Brand and block
+ * colors track the terminal's dark/light preference; every role remains an
+ * identity under `NO_COLOR`.
  * @module dsh-code/tui/theme
  */
 
+import type { RgbColor, TerminalColorScheme, TUI } from '@earendil-works/pi-tui'
+
 const ENABLED = process.env.NO_COLOR === undefined
 
-/** DeepSeek whale/brand blue (#4d6bfe), shared by every primary UI accent. */
-const DEEPSEEK_BLUE = '38;2;77;107;254'
+interface ThemePalette {
+  accent: string
+  userBg: string
+  toolBg: string
+}
+
+/** Same DeepSeek-blue hue, tuned separately for dark and light terminals. */
+export const THEME_PALETTES: Readonly<Record<TerminalColorScheme, ThemePalette>> = {
+  dark: { accent: '107;132;255', userBg: '52;53;65', toolBg: '40;50;40' },
+  light: { accent: '64;91;216', userBg: '238;241;255', toolBg: '239;247;240' },
+}
+
+let colorScheme: TerminalColorScheme = 'dark'
+
+/** Switch the active palette; returns whether rendered colors changed. */
+export function setThemeColorScheme(next: TerminalColorScheme): boolean {
+  if (colorScheme === next) return false
+  colorScheme = next
+  return true
+}
+
+export function getThemeColorScheme(): TerminalColorScheme { return colorScheme }
+
+/** Classify an OSC 11 background response when scheme DSR is unavailable. */
+export function colorSchemeForBackground({ r, g, b }: RgbColor): TerminalColorScheme {
+  const perceivedBrightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return perceivedBrightness >= 0.5 ? 'light' : 'dark'
+}
+
+/** A live role resolves its ANSI opening sequence at render/call time. */
+function adaptivePaint(open: () => string, close: string): (text: string) => string {
+  if (!ENABLED) return text => text
+  return text => `\x1b[${open()}m${text}\x1b[${close}m`
+}
 
 /** Build a color/attribute role function (identity when color is disabled). */
 function paint(open: string, close: string): (text: string) => string {
@@ -16,8 +50,51 @@ function paint(open: string, close: string): (text: string) => string {
   return text => `\x1b[${open}m${text}\x1b[${close}m`
 }
 
-const brand = paint(DEEPSEEK_BLUE, '39')
-const selected = paint(`1;${DEEPSEEK_BLUE}`, '22;39')
+const brand = adaptivePaint(() => `38;2;${THEME_PALETTES[colorScheme].accent}`, '39')
+const selected = adaptivePaint(() => `1;38;2;${THEME_PALETTES[colorScheme].accent}`, '22;39')
+const userBg = adaptivePaint(() => `48;2;${THEME_PALETTES[colorScheme].userBg}`, '49')
+const toolBg = adaptivePaint(() => `48;2;${THEME_PALETTES[colorScheme].toolBg}`, '49')
+
+export interface AdaptiveThemeBinding {
+  /** Query the initial preference after the terminal has started. */
+  detect(): Promise<void>
+  dispose(): void
+}
+
+/**
+ * Follow terminal palette notifications and trigger a full UI recolor. Call
+ * `detect()` only after `tui.start()` so the terminal can answer the query.
+ */
+export function bindAdaptiveTheme(tui: TUI, onChange?: () => void): AdaptiveThemeBinding {
+  let disposed = false
+  const apply = (scheme: TerminalColorScheme): void => {
+    if (disposed || !setThemeColorScheme(scheme)) return
+    onChange?.()
+    tui.invalidate()
+    tui.requestRender(true)
+  }
+  const unsubscribe = tui.onTerminalColorSchemeChange(apply)
+  tui.setTerminalColorSchemeNotifications(true)
+  return {
+    detect: async () => {
+      const preferred = await tui.queryTerminalColorScheme({ timeoutMs: 150 })
+      if (preferred !== undefined) {
+        apply(preferred)
+        return
+      }
+      // OSC 11 is supported by many terminals that do not implement palette
+      // preference DSR, so use the actual background as a broad fallback.
+      const background = await tui.queryTerminalBackgroundColor({ timeoutMs: 150 })
+      if (background !== undefined) apply(colorSchemeForBackground(background))
+    },
+    dispose: () => {
+      if (disposed) return
+      disposed = true
+      unsubscribe()
+      tui.setTerminalColorSchemeNotifications(false)
+    },
+  }
+}
 
 /** The transcript palette: one role per semantic kind of content. */
 export const theme = {
@@ -42,16 +119,16 @@ export const theme = {
   italic: paint('3', '23'),
   /** Bold DeepSeek blue for active rows (stable across terminal backgrounds). */
   selected,
-  /** Full-width background for the user-message block (#343541). */
-  userBg: paint('48;2;52;53;65', '49'),
-  /** Full-width background for the tool-call block (#283228). */
-  toolBg: paint('48;2;40;50;40', '49'),
-  /** Default editor border — DeepSeek brand blue (#4d6bfe). */
+  /** Full-width user-message background: dark slate or light blue-gray. */
+  userBg,
+  /** Full-width tool-call background: dark green-gray or light green-gray. */
+  toolBg,
+  /** Default editor border — adaptive DeepSeek brand blue. */
   border: brand,
   /** Editor border color in shell mode (`!` prefix) — a distinct green. */
   bashBorder: paint('38;2;166;218;149', '39'),
   /** Inline selector/input border — the same DeepSeek brand blue. */
   selectorBorder: brand,
-  /** Welcome whale — the source of the product's primary color. */
+  /** Welcome whale — adaptive but hue-compatible with the primary brand. */
   whale: brand,
 }

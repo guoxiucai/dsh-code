@@ -30,7 +30,7 @@ import {
   type SlashCommand,
   type TUI,
 } from '@earendil-works/pi-tui'
-import { theme } from './theme.ts'
+import { bindAdaptiveTheme, theme, type AdaptiveThemeBinding } from './theme.ts'
 import {
   InlineTextInputComponent,
   ListSelectorComponent,
@@ -457,6 +457,7 @@ export class TuiHost {
   private shellMode = false
   private readonly inlineContainer: Container
   private inlineControlActive = false
+  private adaptiveTheme: AdaptiveThemeBinding | undefined
 
   constructor(callbacks: TuiHostCallbacks) {
     this.callbacks = callbacks
@@ -750,6 +751,17 @@ export class TuiHost {
     })
   }
 
-  start(): void { this.tui.start() }
-  stop(): void { this.detachInput(); this.tui.stop() }
+  start(): void {
+    this.tui.start()
+    this.adaptiveTheme = bindAdaptiveTheme(this.tui, () => {
+      if (this.lastView !== undefined) this.render(this.lastView)
+    })
+    void this.adaptiveTheme.detect()
+  }
+  stop(): void {
+    this.adaptiveTheme?.dispose()
+    this.adaptiveTheme = undefined
+    this.detachInput()
+    this.tui.stop()
+  }
 }

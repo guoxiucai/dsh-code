@@ -13,7 +13,7 @@ import {
   type Component,
   type TUI,
 } from '@earendil-works/pi-tui'
-import { theme } from '../tui/theme.ts'
+import { bindAdaptiveTheme, theme, type AdaptiveThemeBinding } from '../tui/theme.ts'
 import type { PermissionPreset } from './trust.ts'
 
 /** The picker's resolution: trust with a preset, or leave untrusted. */
@@ -90,16 +90,21 @@ class TrustPickerScreen implements Component {
 /** Open the trust picker and resolve the chosen preset, or a rejection. */
 export function pickTrust(projectPath: string): Promise<TrustPickerResult> {
   return new Promise((resolve) => {
+    let adaptiveTheme: AdaptiveThemeBinding | undefined
     try {
       const tui: TUI = new TuiMainScreen(new ProcessTerminal())
       const screen = new TrustPickerScreen(projectPath, (result) => {
+        adaptiveTheme?.dispose()
         try { tui.stop() } catch { /* already stopped */ }
         resolve(result)
       })
       tui.addChild(screen)
       tui.setFocus(screen)
       tui.start()
+      adaptiveTheme = bindAdaptiveTheme(tui)
+      void adaptiveTheme.detect()
     } catch {
+      adaptiveTheme?.dispose()
       resolve({ kind: 'reject' })
     }
   })

@@ -233,11 +233,16 @@ ln -sf "$(pwd)/lib/bin.js" ~/dev/Nodes/node-v22.19.0/bin/dsh-code
 
 ### 8.2 颜色 / 主题
 
-`theme.ts` 提供 `paint(open, close)` 生成 ANSI 角色函数；`NO_COLOR` 时退化为恒等。整块背景用 `Text` 的 `customBgFn`（pi-tui 的 `applyBackgroundToLine` 会自动铺满行宽）。颜色值：
+`theme.ts` 提供静态/自适应 ANSI 角色函数；`NO_COLOR` 时退化为恒等。整块背景用 `Text` 的
+`customBgFn`（pi-tui 的 `applyBackgroundToLine` 会自动铺满行宽）。颜色值：
 
-- 用户块背景 `#343541`、工具块背景 `#283228`
-- 品牌主色统一为欢迎页鲸鱼蓝 `#4d6bfe`：默认输入框与内联控件边框、状态栏重点、活动选项、自动补全、
-  会话/信任选择器、Markdown 标题与链接、加载动画等均复用该颜色
+- 品牌主色保持 DeepSeek 鲸鱼蓝色相，根据终端背景自适应明度：暗色 `#6b84ff`、亮色 `#405bd8`。
+  默认输入框与内联控件边框、状态栏重点、活动选项、自动补全、会话/信任选择器、Markdown 标题与链接、
+  加载动画和鲸鱼 Logo 都复用当前模式的品牌色。
+- `bindAdaptiveTheme` 在 TUI 启动后通过 `queryTerminalColorScheme()` 检测 dark/light，并监听运行中的终端主题变化；
+  偏好查询不受支持时再用 OSC 11 查询实际背景色，两者都无法检测时默认暗色调色板。
+- 用户块/工具块背景也随主题切换：暗色保留 `#343541` / `#283228`，亮色使用 `#eef1ff` / `#eff7f0`，
+  避免亮色终端的黑色默认前景叠加深色背景。
 - shell 边框保留语义绿 `#a6da95`；成功、警告、错误、diff 等继续使用绿/黄/红语义色
 
 ### 8.3 内联控件（model/permission/config）

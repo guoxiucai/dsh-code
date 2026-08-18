@@ -153,4 +153,10 @@ export class ListSelectorComponent extends Container implements Focusable {
     this.searchInput.handleInput(data)
     this.filter(this.searchInput.getValue())
   }
+
+  override invalidate(): void {
+    // Selected/current labels contain the palette's concrete ANSI sequence.
+    this.updateList()
+    super.invalidate()
+  }
 }

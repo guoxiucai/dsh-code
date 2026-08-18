@@ -20,7 +20,7 @@ import {
 } from '@earendil-works/pi-tui'
 import { homedir } from 'node:os'
 import { sep } from 'node:path'
-import { theme } from '../tui/theme.ts'
+import { bindAdaptiveTheme, theme, type AdaptiveThemeBinding } from '../tui/theme.ts'
 import { deleteSession, listAllSessions, listProjectSessions, type ProjectSession } from './sessions.ts'
 
 /** The picker's resolution: resume a session id, or leave without resuming. */
@@ -199,16 +199,21 @@ class ResumePickerScreen implements Component {
 /** Open the picker and resolve the chosen session id, or an explicit exit. */
 export function pickSession(home: string, cwd: string): Promise<ResumePickerResult> {
   return new Promise((resolve) => {
+    let adaptiveTheme: AdaptiveThemeBinding | undefined
     try {
       const tui: TUI = new TuiMainScreen(new ProcessTerminal())
       const screen = new ResumePickerScreen(home, cwd, (result) => {
+        adaptiveTheme?.dispose()
         try { tui.stop() } catch { /* already stopped */ }
         resolve(result)
       })
       tui.addChild(screen)
       tui.setFocus(screen)
       tui.start()
+      adaptiveTheme = bindAdaptiveTheme(tui)
+      void adaptiveTheme.detect()
     } catch {
+      adaptiveTheme?.dispose()
       resolve({ kind: 'exit' })
     }
   })
