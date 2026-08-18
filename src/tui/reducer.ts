@@ -141,6 +141,17 @@ function turnEndNotice(reason: { kind: string } & Record<string, unknown>): stri
   }
 }
 
+/** A normally completed turn implicitly closes any task the model left active. */
+function settleTodosAtTurnEnd(todos: readonly TodoSummary[], reason: { kind: string }): TodoSummary[] {
+  if (reason.kind !== 'completed') return [...todos]
+  return todos.map(todo => todo.status === 'in_progress' ? { ...todo, status: 'completed' } : todo)
+}
+
+/** Hide a finished plan when the user starts a later turn; partial plans persist. */
+function todosForNextTurn(todos: readonly TodoSummary[]): TodoSummary[] {
+  return todos.length > 0 && todos.every(todo => todo.status === 'completed') ? [] : [...todos]
+}
+
 /**
  * Apply one Session event to the reducer state. Pure except for the
  * documented throws (sequence gap, unknown required event).
@@ -155,13 +166,14 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
 
   switch (event.type) {
     case 'turn/start':
-      return { ...base, phase: 'running', transcript: commitDraft(state) }
+      return { ...base, phase: 'running', todos: todosForNextTurn(state.todos), transcript: commitDraft(state) }
     case 'turn/end': {
       const transcript = commitDraft(state)
       const notice = turnEndNotice(event.data.reason)
       return {
         ...base,
         phase: 'idle',
+        todos: settleTodosAtTurnEnd(state.todos, event.data.reason),
         transcript: notice === undefined ? transcript : [...transcript, { kind: 'notice', text: notice }],
       }
     }
@@ -179,9 +191,12 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
         return { ...base, phase: 'running', transcript: [...commitDraft(state), { kind: 'user', text: textOf(event.data.content) }] }
       }
       if (source.kind === 'plugin' && source.form === 'notice') {
-        return { ...base, phase: 'running', transcript: [...commitDraft(state), { kind: 'notice', text: source.summary }] }
+        return { ...base, transcript: [...commitDraft(state), { kind: 'notice', text: source.summary }] }
       }
-      return { ...base, phase: 'running' }
+      // Injected context can also be appended by standalone maintenance work
+      // (notably manual compaction). It does not open an agent turn and must
+      // preserve the phase it inherited.
+      return base
     }
 
     case 'assistant/chunk': {
@@ -310,7 +325,11 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       return { ...base, compacting: true }
 
     case 'compaction/end':
-      return { ...base, compacting: false }
+      // Manual compaction (`turn: null`) is standalone maintenance. Force idle
+      // defensively so replay also heals logs produced before injected plugin
+      // messages stopped latching the phase to running. Automatic compaction
+      // belongs to an active turn and therefore preserves its current phase.
+      return { ...base, compacting: false, ...(event.data.turn === null ? { phase: 'idle' as const } : {}) }
 
     default: {
       // Known-but-unrendered events are skipped safely; a type OUTSIDE the

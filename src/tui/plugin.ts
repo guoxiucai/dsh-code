@@ -33,6 +33,7 @@ import { TuiHost } from './host.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 import { theme } from './theme.ts'
 import { addMcpServer, removeMcpServer } from './project-config.ts'
+import { credentialEnvName } from './config-wizard.ts'
 
 /** Stable Cordis plugin name (referenced by id in the profile patch). */
 export const name = 'dsh-code-tui'
@@ -258,7 +259,7 @@ async function run(ctx: Context): Promise<void> {
     input: { hint: '<provider/model>' },
     handler: ({ rawInput }) => {
       void runModelPicker(rawInput.trim())
-      return { kind: 'success', text: 'opening model selector…' }
+      return { kind: 'success' }
     },
   })
 
@@ -296,57 +297,167 @@ async function run(ctx: Context): Promise<void> {
   syncCommands()
   const disposeCommandsChange = ctx.on('commands/change', () => { syncCommands() })
 
-  // Three-step model configuration wizard (DeepSeek / OpenAI / compatible).
-  // Writes through the upstream settings + credentials services, never a second
-  // store. OpenAI-compatible routes land in the pi-ai adapter's `providers` dict.
-  const runConfigWizard = async (): Promise<void> => {
-    const provider = await host.askChoice('Configure which provider?', [
-      { value: 'deepseek', label: 'DeepSeek' },
-      { value: 'openai', label: 'OpenAI' },
-      { value: 'compatible', label: 'OpenAI-compatible' },
-    ])
-    if (provider === undefined) return
+  // Model configuration wizard (DeepSeek / OpenAI / compatible). Every step is
+  // mounted inline; Enter advances and Esc rebuilds the preceding step. Values
+  // are written only after the final step, so backing out never leaves a partial
+  // provider configuration. OpenAI-compatible routes land in pi-ai's providers.
+  const showConfigError = (error: unknown): void => {
+    host.showNotice(`configuration failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
 
-    if (provider === 'deepseek') {
-      const key = await host.askText('DeepSeek API key (stored owner-only in ~/.dsh-code/.credentials.yaml):')
-      if (key === undefined || key === '') return
-      await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), key)
-      const model = await host.askChoice('Default model:', [
-        { value: 'deepseek-v4-flash', label: 'DeepSeek-V4-Flash' },
-        { value: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro' },
-      ])
-      if (model === undefined) return
-      await ctx.settings.update(settingsNamespace('agent-default-model'), { provider: 'deepseek-official', model })
-      host.showNotice(`configured DeepSeek; default model ${model}`)
+  type ConfigProvider = 'deepseek' | 'openai' | 'compatible'
+  interface ConfigDraft {
+    provider: ConfigProvider
+    id?: string
+    baseURL?: string
+    keyEnv?: string
+    keyEnvCustomized?: boolean
+    key?: string
+    model?: string
+  }
+
+  const saveConfig = async (draft: ConfigDraft): Promise<void> => {
+    if (draft.key === undefined || draft.model === undefined) return
+    if (draft.provider === 'deepseek') {
+      await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), draft.key)
+      await ctx.settings.update(settingsNamespace('agent-default-model'), {
+        provider: 'deepseek-official',
+        model: draft.model,
+      })
+      host.showNotice(`configured DeepSeek; default model ${draft.model}`)
       return
     }
-
-    const isOpenai = provider === 'openai'
-    const id = isOpenai ? 'openai' : await host.askText('Provider route id (e.g. mygateway):')
-    if (id === undefined || id === '') return
-    const baseURL = isOpenai ? 'https://api.openai.com/v1' : await host.askText('Base URL (e.g. https://api.example.com/v1):')
-    if (baseURL === undefined || baseURL === '') return
-    const keyEnv = isOpenai ? 'OPENAI_API_KEY' : await host.askText('Credential env-var name (e.g. MYGATEWAY_API_KEY):')
-    if (keyEnv === undefined || keyEnv === '') return
-    const key = await host.askText(`${isOpenai ? 'OpenAI' : 'Provider'} API key (stored owner-only):`)
-    if (key === undefined || key === '') return
-    const model = await host.askText('Model id (e.g. gpt-4o):')
-    if (model === undefined || model === '') return
-    await ctx.credentials.set(credentialRef(keyEnv), key)
+    if (draft.id === undefined || draft.baseURL === undefined || draft.keyEnv === undefined) return
+    await ctx.credentials.set(credentialRef(draft.keyEnv), draft.key)
     const current = ctx.settings.get(settingsNamespace('llm-pi-ai')) as { providers?: Record<string, unknown> } | undefined
     const providers = { ...(current?.providers ?? {}) }
-    providers[id] = { apiKeyEnv: keyEnv, baseURL, api: 'openai-completions', models: [{ id: model }] }
+    providers[draft.id] = {
+      apiKeyEnv: draft.keyEnv,
+      baseURL: draft.baseURL,
+      api: 'openai-completions',
+      models: [{ id: draft.model }],
+    }
     await ctx.settings.replace(settingsNamespace('llm-pi-ai'), { providers })
-    await ctx.settings.update(settingsNamespace('agent-default-model'), { provider: id, model })
-    host.showNotice(`configured ${id}; default model ${model} (restart to reload the provider catalog)`)
+    await ctx.settings.update(settingsNamespace('agent-default-model'), { provider: draft.id, model: draft.model })
+    host.showNotice(`configured ${draft.id}; default model ${draft.model} (restart to reload the provider catalog)`)
+  }
+
+  const showProviderSelector = (): void => {
+    host.showSelector({
+      hint: 'Select a model provider to configure.',
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'deepseek', label: 'DeepSeek', description: 'DeepSeek official API' },
+        { value: 'openai', label: 'OpenAI', description: 'OpenAI official API' },
+        { value: 'compatible', label: 'OpenAI-compatible', description: 'Custom OpenAI-compatible endpoint' },
+      ],
+      onSelect: (provider) => {
+        const draft: ConfigDraft = { provider: provider as ConfigProvider }
+        if (draft.provider === 'deepseek') showApiKeyInput(draft)
+        else if (draft.provider === 'openai') {
+          draft.id = 'openai'
+          draft.baseURL = 'https://api.openai.com/v1'
+          draft.keyEnv = 'OPENAI_API_KEY'
+          showApiKeyInput(draft)
+        } else {
+          showRouteIdInput(draft)
+        }
+      },
+      onCancel: () => {},
+    })
+  }
+
+  const showRouteIdInput = (draft: ConfigDraft): void => {
+    host.showInlineInput({
+      prompt: 'Provider ID (e.g. deepseek):',
+      initialValue: draft.id,
+      borderColor: theme.selectorBorder,
+      onSubmit: (id) => {
+        draft.id = id
+        if (draft.keyEnvCustomized !== true) draft.keyEnv = credentialEnvName(id)
+        showBaseUrlInput(draft)
+      },
+      onCancel: showProviderSelector,
+    })
+  }
+
+  const showBaseUrlInput = (draft: ConfigDraft): void => {
+    host.showInlineInput({
+      prompt: 'Base URL (e.g. https://api.deepseek.com):',
+      initialValue: draft.baseURL,
+      borderColor: theme.selectorBorder,
+      onSubmit: (baseURL) => { draft.baseURL = baseURL; showKeyEnvInput(draft) },
+      onCancel: () => { showRouteIdInput(draft) },
+    })
+  }
+
+  const showKeyEnvInput = (draft: ConfigDraft): void => {
+    // Recompute at the point of display as a defensive fallback: this field is
+    // always a real prefilled value, never merely an example in the prompt.
+    const suggested = draft.keyEnv ?? credentialEnvName(draft.id ?? 'provider')
+    draft.keyEnv = suggested
+    host.showInlineInput({
+      prompt: 'Credential env-var name (e.g. DEEPSEEK_API_KEY):',
+      hint: 'Auto-generated from Provider ID · Enter to accept or edit · Esc to go back',
+      initialValue: suggested,
+      borderColor: theme.selectorBorder,
+      onSubmit: (keyEnv) => {
+        draft.keyEnv = keyEnv
+        draft.keyEnvCustomized = true
+        showApiKeyInput(draft)
+      },
+      onCancel: () => { showBaseUrlInput(draft) },
+    })
+  }
+
+  const showApiKeyInput = (draft: ConfigDraft): void => {
+    const label = draft.provider === 'deepseek' ? 'DeepSeek' : draft.provider === 'openai' ? 'OpenAI' : 'Provider'
+    const example = draft.provider === 'compatible' ? ' (DeepSeek example: sk-...)' : ''
+    host.showInlineInput({
+      prompt: `${label} API key${example} (stored owner-only in ~/.dsh-code/.credentials.yaml):`,
+      initialValue: draft.key,
+      borderColor: theme.selectorBorder,
+      onSubmit: (key) => {
+        draft.key = key
+        if (draft.provider === 'deepseek') showDeepSeekModelSelector(draft)
+        else showModelInput(draft)
+      },
+      onCancel: () => {
+        if (draft.provider === 'compatible') showKeyEnvInput(draft)
+        else showProviderSelector()
+      },
+    })
+  }
+
+  const showDeepSeekModelSelector = (draft: ConfigDraft): void => {
+    host.showSelector({
+      hint: 'Select the default DeepSeek model.',
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'deepseek-v4-flash', label: 'DeepSeek-V4-Flash', description: 'Fast default model' },
+        { value: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro', description: 'Higher-capability model' },
+      ],
+      onSelect: (model) => { draft.model = model; void saveConfig(draft).catch(showConfigError) },
+      onCancel: () => { showApiKeyInput(draft) },
+    })
+  }
+
+  const showModelInput = (draft: ConfigDraft): void => {
+    host.showInlineInput({
+      prompt: 'Model ID (e.g. deepseek-chat):',
+      initialValue: draft.model,
+      borderColor: theme.selectorBorder,
+      onSubmit: (model) => { draft.model = model; void saveConfig(draft).catch(showConfigError) },
+      onCancel: () => { showApiKeyInput(draft) },
+    })
   }
 
   ctx.commands.register({
     name: 'config',
     description: 'Configure a model provider (DeepSeek / OpenAI / OpenAI-compatible)',
     handler: () => {
-      void runConfigWizard()
-      return { kind: 'success', text: 'starting model configuration…' }
+      showProviderSelector()
+      return { kind: 'success' }
     },
   })
 
@@ -517,10 +628,16 @@ async function run(ctx: Context): Promise<void> {
     disposeApproval()
     disposeCommandsChange()
     try {
-      await agent.whenIdle()
       await sessions.flush(agent.session)
     } catch {
-      // Best-effort: the tree disposal below still reaches quiescence.
+      // Best-effort: owned-handle disposal below still drains the agent tree.
+    }
+    try {
+      // We own the handle returned by agents.create/resume. Dispose it through
+      // the public upstream seam so a stale/racing activity cannot strand exit.
+      await handle.dispose()
+    } catch {
+      // appExit still tears down the remaining composition tree.
     }
     ctx.appExit?.(code)
   }

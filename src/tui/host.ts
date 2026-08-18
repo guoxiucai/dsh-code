@@ -1,5 +1,6 @@
 /**
- * Terminal host: the pi-tui `TuiMainScreen` surface plus the transcript, status,
+ * Terminal host: a pi-tui alternate-screen viewport with a scrollable transcript
+ * and a bottom-pinned interaction region (Todo, activity, editor, status).
  * and editor components. It owns terminal lifecycle (raw mode, restore on
  * stop) but no agent semantics — those come from the plugin via callbacks.
  * @module dsh-code/tui/host
@@ -13,11 +14,14 @@ import {
   Loader,
   Markdown,
   ProcessTerminal,
+  ScrollView,
   SelectList,
   Spacer,
   Text,
-  TuiMainScreen,
+  TuiAltScreen,
+  VStack,
   matchesKey,
+  truncateToWidth,
   visibleWidth,
   type Component,
   type EditorTheme,
@@ -27,16 +31,21 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui'
 import { theme } from './theme.ts'
-import { ListSelectorComponent, type SelectorOptions } from './selector.ts'
-import type { ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
+import {
+  InlineTextInputComponent,
+  ListSelectorComponent,
+  type InlineTextInputOptions,
+  type SelectorOptions,
+} from './selector.ts'
+import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 import { diffLines } from 'diff'
 
-/** Editor + autocomplete theme: purple input border, highlighted selection. */
+/** Editor + autocomplete theme: DeepSeek-blue focus, semantic warning states. */
 const EDITOR_THEME: EditorTheme = {
   borderColor: theme.border,
   selectList: {
     selectedPrefix: theme.accent,
-    selectedText: text => theme.selected(theme.accent(text)),
+    selectedText: theme.selected,
     description: theme.dim,
     scrollInfo: theme.dim,
     noMatch: theme.warning,
@@ -236,18 +245,89 @@ export function renderStatus(view: TuiViewModel, model?: { provider: string; mod
       parts.push(theme.dim(`cached ${((cacheReadTokens / totalInput) * 100).toFixed(1)}%`))
     }
   }
-  if (view.todos.length > 0) {
-    const inProgress = view.todos.find(todo => todo.status === 'in_progress')
-    const done = view.todos.filter(todo => todo.status === 'completed').length
-    parts.push(inProgress !== undefined ? theme.warning(`▸ ${inProgress.content}`) : theme.dim(`todo ${done}/${view.todos.length}`))
-  }
   const runningSubagents = view.transcript.filter(item =>
     item.kind === 'tool' && (item.name === 'subagent' || item.name === 'subagent_fork') && item.status === 'running').length
   if (runningSubagents > 0) parts.push(theme.warning(`⚡ ${runningSubagents} subagent`))
   return parts.join(' · ')
 }
 
-/** A status line whose right-aligned suffix is re-derived from the viewport width each render (resize-safe). */
+/** Render the persistent Todo panel, one width-safe row per model-owned task. */
+export function renderTodoLines(todos: readonly TodoSummary[], width: number): string[] {
+  if (width <= 0) return []
+  return todos.map((todo) => {
+    const content = todo.content.replace(/\s+/g, ' ').trim()
+    const line = (() => {
+      switch (todo.status) {
+        case 'completed':
+          return ` ${theme.success('✓')} ${theme.dim(content)}`
+        case 'in_progress':
+          return ` ${theme.accent('▸')} ${theme.bold(content)}`
+        case 'pending':
+          return theme.dim(` ○ ${content}`)
+      }
+    })()
+    return truncateToWidth(line, width, '…')
+  })
+}
+
+/** Add one blank row around a non-empty Todo list to separate adjacent UI. */
+export function renderTodoPanel(todos: readonly TodoSummary[], width: number): string[] {
+  const lines = renderTodoLines(todos, width)
+  return lines.length === 0 ? [] : ['', ...lines, '']
+}
+
+/** Fixed task panel kept separate from the compact model/context status row. */
+class TodoList implements Component {
+  private todos: readonly TodoSummary[] = []
+  set(todos: readonly TodoSummary[]): void { this.todos = todos }
+  invalidate(): void {}
+  render(width: number): string[] { return renderTodoPanel(this.todos, width) }
+}
+
+/**
+ * Build the full-height viewport: only transcript content scrolls, while all
+ * interactive/status components retain their intrinsic height at the bottom.
+ */
+export function createMainViewportLayout(transcript: Component, bottom: Component): VStack {
+  const transcriptScroll = new ScrollView(transcript, {
+    follow: 'end',
+    primary: true,
+    overscroll: 'contain',
+    scrollbar: 'hidden',
+  })
+  return new VStack([
+    { component: transcriptScroll, basis: 0, grow: 1, minSize: 1 },
+    { component: bottom, basis: 'auto', shrink: 1, minSize: 1 },
+  ])
+}
+
+/**
+ * Fit a status row to exactly the terminal width. The right project label gets
+ * at most 35% of the inner row; the activity/status side owns the remainder.
+ * Both sides are ANSI/CJK-aware and truncate rather than crashing pi-tui.
+ */
+export function layoutStatusLine(left: string, right: string, width: number): string {
+  if (width <= 0) return ''
+  const innerWidth = Math.max(0, width - 2)
+  if (innerWidth === 0) return ' '.repeat(width)
+
+  let content: string
+  if (right === '' || innerWidth < 8) {
+    content = truncateToWidth(left, innerWidth, '…')
+  } else {
+    const rightLimit = Math.max(1, Math.floor(innerWidth * 0.35))
+    const fittedRight = truncateToWidth(right, rightLimit, '…')
+    const fittedRightWidth = visibleWidth(fittedRight)
+    const leftLimit = Math.max(1, innerWidth - fittedRightWidth - 1)
+    const fittedLeft = truncateToWidth(left, leftLimit, '…')
+    const gap = Math.max(1, innerWidth - visibleWidth(fittedLeft) - fittedRightWidth)
+    content = `${fittedLeft}${' '.repeat(gap)}${fittedRight}`
+  }
+  const padding = ' '.repeat(Math.max(0, innerWidth - visibleWidth(content)))
+  return ` ${content}${padding} `
+}
+
+/** A resize-safe status line with a right-aligned project suffix. */
 class StatusLine implements Component {
   private left = ''
   private right = ''
@@ -258,11 +338,7 @@ class StatusLine implements Component {
   invalidate(): void {}
   render(width: number): string[] {
     if (this.left === '') return []
-    const content = this.right === ''
-      ? this.left
-      : this.left + ' '.repeat(Math.max(1, width - 2 - visibleWidth(this.left) - visibleWidth(this.right))) + this.right
-    const line = ` ${content} `
-    return [`${line}${' '.repeat(Math.max(0, width - visibleWidth(line)))}`]
+    return [layoutStatusLine(this.left, this.right, width)]
   }
 }
 
@@ -357,6 +433,7 @@ class WelcomeBanner implements Component {
 export class TuiHost {
   readonly tui: TUI
   private readonly transcriptContainer: Container
+  private readonly todoList: TodoList
   private readonly status: StatusLine
   private readonly editor: Editor
   private readonly callbacks: TuiHostCallbacks
@@ -378,14 +455,16 @@ export class TuiHost {
   private readonly editorSlot: Container
   private retryTimer: ReturnType<typeof setInterval> | undefined
   private shellMode = false
-  private readonly selectorContainer: Container
-  private selectorActive = false
+  private readonly inlineContainer: Container
+  private inlineControlActive = false
 
   constructor(callbacks: TuiHostCallbacks) {
     this.callbacks = callbacks
-    this.tui = new TuiMainScreen(new ProcessTerminal())
+    const tui = new TuiAltScreen(new ProcessTerminal())
+    this.tui = tui
     this.transcriptContainer = new Container()
-    this.selectorContainer = new Container()
+    this.inlineContainer = new Container()
+    this.todoList = new TodoList()
     this.status = new StatusLine()
     this.workingContainer = new Container()
     this.workingLoader = new Loader(this.tui, theme.accent, theme.dim, 'Working...')
@@ -397,21 +476,21 @@ export class TuiHost {
     this.editorSlot.addChild(new Spacer())
     this.editorSlot.addChild(this.editor)
 
-    const root = new Container()
-    root.addChild(this.transcriptContainer)
-    root.addChild(this.selectorContainer)
-    root.addChild(this.workingContainer)
-    root.addChild(this.editorSlot)
-    root.addChild(this.status)
-    root.addChild(this.footer)
-    this.tui.addChild(root)
+    const bottom = new Container()
+    bottom.addChild(this.inlineContainer)
+    bottom.addChild(this.todoList)
+    bottom.addChild(this.workingContainer)
+    bottom.addChild(this.editorSlot)
+    bottom.addChild(this.status)
+    bottom.addChild(this.footer)
+    tui.setLayoutRoot(createMainViewportLayout(this.transcriptContainer, bottom))
     this.tui.setFocus(this.editor)
     this.detachInput = this.tui.addInputListener(data => this.handleInput(data))
   }
 
   private handleInput(data: string): { consume: true } | undefined {
-    // While a selector is active, let its own handleInput own every key.
-    if (this.selectorActive) return undefined
+    // While an inline selector/input is active, let it own every key.
+    if (this.inlineControlActive) return undefined
     if (this.activeOverlayCancel !== undefined && matchesKey(data, 'escape')) {
       this.activeOverlayCancel()
       return { consume: true }
@@ -441,6 +520,7 @@ export class TuiHost {
       if (index > 0) this.transcriptContainer.addChild(new Spacer(1))
       this.transcriptContainer.addChild(block)
     })
+    this.todoList.set(view.todos)
     this.updateWorkingIndicator(view)
     this.status.set(renderStatus(view, this.model, this.contextTokens), this.projectLabel())
     this.tui.requestRender()
@@ -544,7 +624,7 @@ export class TuiHost {
     if (this.projectName === '') return ''
     const name = theme.accent(this.projectName)
     if (this.projectBranch === undefined) return name
-    return `${name} · ${theme.code(this.projectBranch)}`
+    return `${name} · ${theme.accent(this.projectBranch)}`
   }
 
   /**
@@ -568,25 +648,40 @@ export class TuiHost {
   showSelector(options: SelectorOptions): void {
     const selector = new ListSelectorComponent({
       ...options,
-      onSelect: (value) => { this.clearSelector(); options.onSelect(value) },
-      onCancel: () => { this.clearSelector(); options.onCancel() },
+      onSelect: (value) => { this.clearInlineControl(); options.onSelect(value) },
+      onCancel: () => { this.clearInlineControl(); options.onCancel() },
     })
-    this.selectorContainer.clear()
-    this.selectorContainer.addChild(selector)
+    this.mountInlineControl(selector)
+  }
+
+  /** Mount an inline single-line field; Esc invokes the caller's back step. */
+  showInlineInput(options: InlineTextInputOptions): void {
+    const input = new InlineTextInputComponent({
+      ...options,
+      onSubmit: (value) => { this.clearInlineControl(); options.onSubmit(value) },
+      onCancel: () => { this.clearInlineControl(); options.onCancel() },
+    })
+    this.mountInlineControl(input)
+  }
+
+  /** Replace the active inline control, hide the editor, and transfer focus. */
+  private mountInlineControl(control: Component & { focused: boolean }): void {
+    this.inlineContainer.clear()
+    this.inlineContainer.addChild(control)
     this.editorSlot.clear()
-    this.selectorActive = true
-    this.tui.setFocus(selector)
+    this.inlineControlActive = true
+    this.tui.setFocus(control)
     this.tui.requestRender()
   }
 
-  /** Dismiss the active selector and return focus to the editor. */
-  clearSelector(): void {
-    this.selectorContainer.clear()
+  /** Dismiss the active inline control and return focus to the editor. */
+  clearInlineControl(): void {
+    this.inlineContainer.clear()
     if (this.editorSlot.children.length === 0) {
       this.editorSlot.addChild(new Spacer())
       this.editorSlot.addChild(this.editor)
     }
-    this.selectorActive = false
+    this.inlineControlActive = false
     this.tui.setFocus(this.editor)
     this.tui.requestRender()
   }

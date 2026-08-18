@@ -20,7 +20,7 @@ cd /path/to/project
 dsh-code
 ```
 
-默认进入纯终端交互式 TUI（基于 `@earendil-works/pi-tui` 的 `TuiMainScreen`），不启动 Web Server、不打开浏览器、不用 Electron。
+默认进入纯终端交互式 TUI（基于 `@earendil-works/pi-tui` 的 `TuiAltScreen`），不启动 Web Server、不打开浏览器、不用 Electron。
 
 ## 2. 仓库与分支
 
@@ -97,10 +97,11 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       reducer.ts               # ★ 纯函数 session/event → ViewModel（去重/乱序 fail-fast/折叠）
       view-model.ts            # ViewModel 类型（TranscriptItem / RetryStatus / ToolDiff 等）
       theme.ts                 # ANSI 调色板（userBg/toolBg/border/bashBorder/selectorBorder…）
-      selector.ts              # 内联列表选择器（model/permission picker）
+      selector.ts              # 内联列表选择器和文本输入（向导控件）
+      config-wizard.ts         # /config 纯辅助函数（如 credential env 自动生成）
       project-config.ts        # 读写项目 .dsh-code/cordis.patch.yml（MCP 配置）
   tests/
-    unit/                      # reducer / args / trust / sessions / project-config
+    unit/                      # reducer / args / trust / sessions / project-config / selector
     integration/mock-loop.spec.ts   # mock LLM 闭环 + 缺凭证失败路径
     fixtures/mock-adapter.mjs       # 无 key 的确定性 mock LLM 适配器
     fixtures/mock.cordis.yml        # mock 组合 overlay
@@ -129,15 +130,29 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 
 ### 5.3 `host.ts` — TUI 主屏
 
-- `TuiMainScreen` + `ProcessTerminal`。
-- 组件树：`transcriptContainer`（转写块）→ `selectorContainer`（内联选择器）→ `status` → `workingContainer`（loading/retry/compaction）→ `editorSlot`（Spacer + editor）→ `footer`（快捷键提示）。
+- `TuiAltScreen` + `ProcessTerminal`，使用 `VStack` 分配终端高度。
+- 布局树：可滚动 `ScrollView(transcriptContainer)` → 底部固定区 `inlineContainer` → `todoList` →
+  `workingContainer`（loading/retry/compaction）→ `editorSlot`（Spacer + editor）→ `status` → `footer`（快捷键提示）。
+- `ScrollView` 在末尾时跟随流式输出；用户向上滚动时保留阅读位置，再滚回末尾后恢复自动跟随。
 - 渲染：`renderItemBlocks`（用户/工具整块背景、助手 Markdown、思考折叠）+ `renderDraftComponents`（流式）+ `renderShellResultBlocks`（shell 结果块）+ notices。
-- 交互：Ctrl+C/D/L/O、Esc 取消 overlay/选择器、`askChoice`/`askText`（overlay）、`showSelector`（内联）。
+- `todoList` 独立固定在 `Working...` 上方，按 `✓` completed / `▸` in progress / `○` pending 逐项展示，
+  面板上下各保留一行空白；长内容用 ANSI/CJK-aware `truncateToWidth` 截断，不再混入状态栏。
+- 状态栏通过 `layoutStatusLine` 按终端宽度分配左右区域，并截断过长的左侧指标/右侧项目名；
+  自定义 `render(width)` 不得返回超过 `width` 的行，否则 pi-tui 渲染器会 fail-fast。
+- 交互：Ctrl+C/D/L/O、Esc 取消 overlay 或返回内联向导上一步、`askChoice`/`askText`（overlay）、
+  `showSelector` / `showInlineInput`（内联）。
 
 ### 5.4 `reducer.ts` — 纯函数事件折叠
 
 - `reduceSessionEvent(state, event)`：按 `seq` 去重、乱序/缺号 `throw`（fail-fast）、未知 `ignorable` 跳过、未知 required 抛错（升级提示）。
-- 处理 `assistant/chunk`（流式 draft）、`assistant/message`（权威落盘）、`tool/call`/`tool/result`（含 diff 提取 + 计时）、`turn/start`/`turn/end`、`approval/asked`/`decided`、`llm/retry`/`retry-started`、`compaction/start`/`end`、`permission/preset`、`plan/mode`、`command/done`、`todo/write`。
+- 处理 `assistant/chunk`（流式 draft）、`assistant/message`（权威落盘）、`tool/call`/`tool/result`（含 diff 提取 + 计时）、
+  `turn/start`/`turn/end`、`approval/asked`/`decided`、`llm/retry`/`retry-started`、`compaction/start`/`end`、
+  `permission/preset`、`plan/mode`、`command/done`、`todo/write`。plugin 注入的 `user/message` 不改变 phase；手工
+  `compaction/end(turn: null)` 明确恢复 idle，确保 live 与 resume 都不会卡在 Working。
+- 正常 `turn/end { reason: completed }` 会将模型遗留的 `in_progress` Todo 收尾为 `completed`；取消、失败、
+  token 截断、blocked 或崩溃恢复不会误标完成，`pending` 项也不会被自动改写。
+- 下一个 `turn/start` 会清除上一轮已全部 completed 的 Todo；若仍有 pending / in-progress 则保留，直到新的
+  `todo/write` 替换完整列表。
 - `KNOWN_UNRENDERED_EVENT_TYPES` 集合需与上游 `KNOWN_SESSION_EVENT_TYPES` 手工同步（基线升级时）。
 
 ## 6. 构建 / 运行 / 测试
@@ -197,7 +212,7 @@ ln -sf "$(pwd)/lib/bin.js" ~/dev/Nodes/node-v22.19.0/bin/dsh-code
 | `-p` 单次 prompt（委托 headless） | ✅ |
 | TUI：转写、流式、工具卡片、状态栏、编辑器 | ✅ |
 | approval overlay（Allow once / Reject） | ✅ |
-| 内联选择器（/model、/permission） | ✅ |
+| 内联选择/输入（/model、/permission、/config 全流程） | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
 | session resume（`resume <id>`、`-c` 最近会话、`-r` 全屏选择器，删除二次确认）、fork | ✅ |
 | 命令面板（/model /config /mcp /session /fork /quit /exit） | ✅ |
@@ -221,11 +236,22 @@ ln -sf "$(pwd)/lib/bin.js" ~/dev/Nodes/node-v22.19.0/bin/dsh-code
 `theme.ts` 提供 `paint(open, close)` 生成 ANSI 角色函数；`NO_COLOR` 时退化为恒等。整块背景用 `Text` 的 `customBgFn`（pi-tui 的 `applyBackgroundToLine` 会自动铺满行宽）。颜色值：
 
 - 用户块背景 `#343541`、工具块背景 `#283228`
-- 输入框边框 `#ca84db`、shell 边框 `#a6da95`、选择器边框 `#89b4fa`
+- 品牌主色统一为欢迎页鲸鱼蓝 `#4d6bfe`：默认输入框与内联控件边框、状态栏重点、活动选项、自动补全、
+  会话/信任选择器、Markdown 标题与链接、加载动画等均复用该颜色
+- shell 边框保留语义绿 `#a6da95`；成功、警告、错误、diff 等继续使用绿/黄/红语义色
 
-### 8.3 选择器（model/permission）
+### 8.3 内联控件（model/permission/config）
 
-`selector.ts` 的 `ListSelectorComponent`（`Container` + `Focusable`）内联挂在 `selectorContainer`，含搜索 `Input` + 列表 + 边框；`handleInput` 处理上下键/Enter/Esc。进入时 `editorSlot.clear()` 隐藏编辑器 + `setFocus(selector)`，退出时恢复 + `setFocus(editor)`。
+`selector.ts` 提供 `ListSelectorComponent` 和 `InlineTextInputComponent`，内联挂在 `inlineContainer`。进入时
+`editorSlot.clear()` 隐藏主编辑器并转移焦点，完成或取消后恢复主编辑器。
+
+`/config` 是多步内联向导：provider 和 DeepSeek 默认模型使用列表选择器，API Key、Base URL、模型 ID 等字段使用
+内联文本输入。Enter 进入下一步，Esc 根据当前草稿重建上一步；只有最后一步完成后才写 credentials/settings，避免留下
+半成品配置。
+
+OpenAI-compatible 保留五个输入步骤，并统一使用 DeepSeek 官方兼容接口作为示例：Provider ID `deepseek`、Base URL
+`https://api.deepseek.com`、credential env `DEEPSEEK_API_KEY`、API Key、Model ID `deepseek-chat`。credential env 根据
+Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再确认。
 
 ### 8.4 模型切换
 
@@ -288,5 +314,5 @@ ln -sf "$(pwd)/lib/bin.js" ~/dev/Nodes/node-v22.19.0/bin/dsh-code
 
 ---
 
-*最后核对：2026-08-18，对应 `main` 分支 `e79d6fb108`（上游 submodule `99f6f02fec`）；含会话选择器
+*最后核对：2026-08-18，对应 `main` 分支（上游 submodule `99f6f02fec`）；含会话选择器
 `-r`/`--resume` + 删除二次确认、`-c`/`--continue`、内联选择器、shell mode、`/session` token/cache 统计。*

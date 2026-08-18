@@ -35,6 +35,46 @@ export interface SelectorOptions {
   onCancel: () => void
 }
 
+/** Inline single-line input options, used by multi-step terminal wizards. */
+export interface InlineTextInputOptions {
+  prompt: string
+  hint?: string
+  initialValue?: string | undefined
+  borderColor: (text: string) => string
+  onSubmit: (value: string) => void
+  onCancel: () => void
+}
+
+/** A bordered inline text field with Enter-to-submit and Esc-to-go-back. */
+export class InlineTextInputComponent extends Container implements Focusable {
+  private readonly input = new Input()
+  private _focused = false
+
+  constructor(options: InlineTextInputOptions) {
+    super()
+    this.addChild(new SelectorBorder(options.borderColor))
+    this.addChild(new Text(options.prompt, 0, 0))
+    this.addChild(new Text(theme.dim(options.hint ?? 'Enter to continue · Esc to go back'), 0, 0))
+    if (options.initialValue !== undefined && options.initialValue !== '') {
+      this.input.setValue(options.initialValue)
+      // Input#setValue preserves its cursor; a new input starts at column zero.
+      this.input.handleInput('\x05')
+    }
+    this.input.onSubmit = (value) => {
+      const trimmed = value.trim()
+      if (trimmed !== '') options.onSubmit(trimmed)
+    }
+    this.input.onEscape = options.onCancel
+    this.addChild(this.input)
+    this.addChild(new SelectorBorder(options.borderColor))
+  }
+
+  get focused(): boolean { return this._focused }
+  set focused(value: boolean) { this._focused = value; this.input.focused = value }
+
+  handleInput(data: string): void { this.input.handleInput(data) }
+}
+
 /** An inline list selector with search and keyboard navigation. */
 export class ListSelectorComponent extends Container implements Focusable {
   private readonly searchInput: Input
@@ -96,10 +136,9 @@ export class ListSelectorComponent extends Container implements Focusable {
       const item = this.filtered[index]
       if (item === undefined) continue
       const isSelected = index === this.selectedIndex
-      const prefix = isSelected ? theme.accent('→ ') : '  '
-      const label = isSelected ? theme.accent(item.label) : item.label
-      const check = item.current === true ? theme.success(' ✓') : ''
-      this.listContainer.addChild(new Text(`${prefix}${label}${check}`, 0, 0))
+      const label = isSelected ? theme.selected(`→ ${item.label}`) : `  ${item.label}`
+      const check = item.current === true ? theme.accent(' ✓') : ''
+      this.listContainer.addChild(new Text(`${label}${check}`, 0, 0))
     }
     const selected = this.filtered[this.selectedIndex]
     if (selected?.description !== undefined) {

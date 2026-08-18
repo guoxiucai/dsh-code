@@ -114,6 +114,84 @@ describe('session event reducer', () => {
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'notice' })
   })
 
+  it('marks an active Todo completed when the turn completes normally', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('todo/write', 1, {
+      todos: [
+        { content: 'inspect', status: 'completed' },
+        { content: 'report', status: 'in_progress' },
+        { content: 'optional follow-up', status: 'pending' },
+      ],
+    }))
+    s = reduceSessionEvent(s, ev('turn/end', 2, { turn: 1, reason: { kind: 'completed' } }))
+
+    expect(s.todos).toEqual([
+      { content: 'inspect', status: 'completed' },
+      { content: 'report', status: 'completed' },
+      { content: 'optional follow-up', status: 'pending' },
+    ])
+  })
+
+  it('removes an all-completed Todo panel when the next turn starts', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('todo/write', 1, {
+      todos: [
+        { content: 'inspect', status: 'completed' },
+        { content: 'report', status: 'in_progress' },
+      ],
+    }))
+    s = reduceSessionEvent(s, ev('turn/end', 2, { turn: 1, reason: { kind: 'completed' } }))
+    expect(s.todos.every(todo => todo.status === 'completed')).toBe(true)
+
+    s = reduceSessionEvent(s, ev('turn/start', 3, { turn: 2 }))
+    expect(s.todos).toEqual([])
+  })
+
+  it('keeps unfinished Todos when a later turn starts', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('todo/write', 1, {
+      todos: [
+        { content: 'done', status: 'completed' },
+        { content: 'still pending', status: 'pending' },
+      ],
+    }))
+    s = reduceSessionEvent(s, ev('turn/end', 2, { turn: 1, reason: { kind: 'completed' } }))
+    s = reduceSessionEvent(s, ev('turn/start', 3, { turn: 2 }))
+
+    expect(s.todos).toEqual([
+      { content: 'done', status: 'completed' },
+      { content: 'still pending', status: 'pending' },
+    ])
+  })
+
+  it.each(['aborted', 'max-tokens', 'interrupted', 'blocked'])('keeps an active Todo open when the turn ends as %s', (kind) => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('todo/write', 1, {
+      todos: [{ content: 'unfinished work', status: 'in_progress' }],
+    }))
+    s = reduceSessionEvent(s, ev('turn/end', 2, { turn: 1, reason: { kind } }))
+
+    expect(s.todos).toEqual([{ content: 'unfinished work', status: 'in_progress' }])
+  })
+
+  it('keeps an active Todo open when the turn fails', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('todo/write', 1, {
+      todos: [{ content: 'unfinished work', status: 'in_progress' }],
+    }))
+    s = reduceSessionEvent(s, ev('turn/end', 2, {
+      turn: 1,
+      reason: { kind: 'error', error: { code: 'FAILED', message: 'boom' } },
+    }))
+
+    expect(s.todos).toEqual([{ content: 'unfinished work', status: 'in_progress' }])
+  })
+
   it('tracks the approval phase (asked → decided)', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
@@ -180,6 +258,30 @@ describe('session event reducer', () => {
     expect(s.compacting).toBe(true)
     s = reduceSessionEvent(s, ev('compaction/end', 1, { compactionId: 'c1', turn: null }))
     expect(s.compacting).toBe(false)
+  })
+
+  it('returns to idle after manual compaction injects its checkpoint message', () => {
+    const events = [
+      ev('turn/start', 0, { turn: 1 }),
+      ev('user/message', 1, {
+        role: 'user', content: [{ type: 'text', text: 'summarize' }], source: { kind: 'user' },
+      }),
+      ev('assistant/message', 2, assistantMessage('summary')),
+      ev('turn/end', 3, { turn: 1, reason: { kind: 'completed' } }),
+      ev('command/run', 4, { commandId: 'cmd-compact', name: 'compact', args: '', source: { kind: 'user' } }),
+      ev('compaction/start', 5, { compactionId: 'compact-1', sourceCommandId: 'cmd-compact', turn: null }),
+      ev('user/message', 6, {
+        role: 'user',
+        content: [{ type: 'text', text: '<compacted-summary>checkpoint</compacted-summary>' }],
+        source: { kind: 'plugin', plugin: 'compact', compactionId: 'compact-1', sourceCommandId: 'cmd-compact' },
+      }),
+      ev('compaction/end', 7, { compactionId: 'compact-1', sourceCommandId: 'cmd-compact', turn: null }),
+      ev('command/done', 8, { commandId: 'cmd-compact', kind: 'success', text: 'Compacted 31 history items.' }),
+    ]
+
+    const state = replayEvents('s1', events)
+    expect(state.compacting).toBe(false)
+    expect(state.phase).toBe('idle')
   })
 
   it('extracts file diffs from a write/edit tool result', () => {

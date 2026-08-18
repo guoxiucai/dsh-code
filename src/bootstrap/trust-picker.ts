@@ -76,10 +76,10 @@ class TrustPickerScreen implements Component {
       const preset = PRESETS[index]
       if (preset === undefined) continue
       const label = `${preset.label.padEnd(LABEL_WIDTH)} — ${preset.description}`
-      const marker = index === this.selectedIndex ? theme.accent('❯') : ' '
+      const marker = index === this.selectedIndex ? theme.selected('❯') : ' '
       lines.push(`${marker} ${index + 1}. ${label}`)
     }
-    const quitMarker = this.selectedIndex === 3 ? theme.accent('❯') : ' '
+    const quitMarker = this.selectedIndex === 3 ? theme.selected('❯') : ' '
     lines.push(`${quitMarker} 4. Quit without trusting`)
     lines.push('')
     lines.push(theme.dim(' Enter to confirm · Esc to cancel'))
