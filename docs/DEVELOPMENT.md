@@ -119,7 +119,8 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 
 ### 5.2 `plugin.ts` — 核心接线（最重要）
 
-- `export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell']`。
+- `inject` 包含 `agents`、`agentDefaultModel`、`sessions`、`commands`、`llm`、`credentials`、`settings`、
+  `permissionPresets`、`shell`、`tokenMeter`。
 - 用 `agents.create` / `agents.resume` 创建/恢复 agent，`installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
 - `onSubmit` 分发：`!` shell → `/permission` 选择器 → `/` 命令 → 普通 `agent.followup`。
@@ -162,6 +163,8 @@ node lib/bin.js resume <id>   # 恢复指定 id 的会话
 
 # 测试
 pnpm test                     # vitest run（tests/**）
+# 或只运行本产品测试
+npx vitest run tests
 
 # 类型检查
 pnpm run typecheck            # tsc -p tsconfig.json --noEmit
@@ -187,7 +190,9 @@ ln -sf "$(pwd)/lib/bin.js" ~/dev/Nodes/node-v22.19.0/bin/dsh-code
 
 | 能力 | 状态 |
 | --- | --- |
-| CLI（help/version/resume/-r/--resume/-c/--continue/-p/config/plugin/import/update） | ✅（config/import/update 是 stub） |
+| CLI（help/version/resume/-r/--resume/-c/--continue/-p/plugin） | ✅ |
+| 产品动词 `config` / `import dsh` / `update` | 🚧 仅解析参数并返回 not implemented |
+| `-p --verbose` | 🚧 接受参数，但尚未接入详细工具输出 |
 | 独立 home、项目信任、profile 初始化、launcher 委托 | ✅ |
 | `-p` 单次 prompt（委托 headless） | ✅ |
 | TUI：转写、流式、工具卡片、状态栏、编辑器 | ✅ |
@@ -252,11 +257,15 @@ ln -sf "$(pwd)/lib/bin.js" ~/dev/Nodes/node-v22.19.0/bin/dsh-code
 
 ## 11. 已知限制与待办
 
-- `config` / `import dsh` / `update` 三个产品动词是 stub（返回 not implemented）。
+- 产品级 `dsh-code config` / `dsh-code import dsh` / `dsh-code update` 三个动词是 stub（返回 not implemented）；
+  TUI 内的 `/config` 已实现模型和凭证配置，不要混淆两者。当前 `--help` 对产品级 `config` 的描述仍是目标行为，
+  不代表已经实现。
+- `dsh-code -p ... --verbose` 目前只完成参数解析，尚未把详细工具跟踪传递给 headless 路径。
 - 会话切换（`/session` 只是展示信息；不支持对话内切到别的会话——已按产品决定移除 `/sessions`）。
 - `@` 文件联想依赖 `fd` 二进制（未安装时走内置遍历，较慢）。
-- `/session` 未展示 Cost（上游无定价表）和完整的 cache 明细（有 cacheRead/cacheWrite/reasoningTokens 字段可补）。
-- 尚未做：npm 打包发布（`workspace:*` 依赖需在发布时替换为固定版本）、跨平台 CI、`dsh-code update` 实装。
+- `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
+- 尚未做：npm 打包发布（根 `package.json` 当前仍为 `private: true`，且 `workspace:*` 依赖需在发布时替换为
+  固定版本）、跨平台 CI、`dsh-code update` 实装。
 - 性能：转写是组件树重建（每次 render 清空重建），长会话未做虚拟化（见设计文档 §23 预算）。
 
 ## 12. 注意事项 / 踩坑
@@ -266,16 +275,18 @@ ln -sf "$(pwd)/lib/bin.js" ~/dev/Nodes/node-v22.19.0/bin/dsh-code
 3. **lint 严格**：`@stylistic(max-len)` 限 140 列，pre-commit 会拦超长行。
 4. **Enter 是 `\r` 不是 `\n`**：PTY 自动化测试喂输入时用 `\r`（`\n` 会被当成编辑器换行而非提交）。
 5. **`arguments` 是保留字**：TS strict mode 下参数名别用 `arguments`。
-6. **model/permission 的 `value` 用 ` ` 分隔 provider 和 model**（避免 model id 里含 `/` 导致 split 错位）。
+6. **model selector 的 `value` 用 `\u0000` 分隔 provider 和 model**（避免 model id 里含 `/` 导致 split 错位）。
 7. **凭证文件**：`~/.dsh-code/.credentials.yaml` 需 `chmod 600`；key 不得进日志/错误栈/session。
-8. **测试从仓库根跑**：`npx vitest run apps/dsh-code/tests`（从 `apps/dsh-code` 子目录跑会找不到测试）。
+8. **测试从仓库根跑**：本仓库根就是 `dsh-code` 包，使用 `pnpm test`（全量）或 `npx vitest run tests`
+   （显式限定本产品测试）；不要使用旧布局中的 `apps/dsh-code/tests` 路径。
 
 ## 13. 提交与推送约定
 
 - **不要默认 git commit/push**，仅在用户明确要求时执行。
-- 提交前自查：`npx vitest run apps/dsh-code/tests` 全绿；lint 不报超长行。
+- 提交前自查：`pnpm test` 与 `pnpm run typecheck` 全绿；lint 不报超长行。
 - pre-commit hook（lefthook）会跑 lint / third-party notices / whitespace / vendor guard，失败会拦截提交。
 
 ---
 
-*最后更新：2026-08-18，对应 `feat/dsh-code` 分支（含会话选择器 `-r`/`--resume` + 删除二次确认、`-c`/`--continue`、内联选择器 + shell mode）。*
+*最后核对：2026-08-18，对应 `main` 分支 `e79d6fb108`（上游 submodule `99f6f02fec`）；含会话选择器
+`-r`/`--resume` + 删除二次确认、`-c`/`--continue`、内联选择器、shell mode、`/session` token/cache 统计。*
