@@ -134,7 +134,12 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - 布局树：可滚动 `ScrollView(transcriptContainer)` → 底部固定区 `inlineContainer` → `todoList` →
   `workingContainer`（loading/retry/compaction）→ `editorSlot`（Spacer + editor）→ `status` → `footer`（快捷键提示）。
 - `ScrollView` 在末尾时跟随流式输出；用户向上滚动时保留阅读位置，再滚回末尾后恢复自动跟随。
+  转写内容不足一屏时由上方弹性 Spacer 吸收剩余高度，使欢迎页/短会话贴近底部交互区；输入框自带的一行
+  Spacer 作为两者之间的唯一垂直间距。
 - 渲染：`renderItemBlocks`（用户/工具整块背景、助手 Markdown、思考折叠）+ `renderDraftComponents`（流式）+ `renderShellResultBlocks`（shell 结果块）+ notices。
+- 欢迎页使用 `halveBlockArt` 将 76×28 鲸鱼源图按 2×2 象限块缩为 38×14；欢迎框水平铺开并在终端左右各留 2 列，
+  鲸鱼/Tips 约按 58%/42% 并排，Welcome 下方和鲸鱼底部保留额外垂直留白；窄屏自动改为上下布局，
+  所有输出均遵守终端宽度。
 - `todoList` 独立固定在 `Working...` 上方，按 `✓` completed / `▸` in progress / `○` pending 逐项展示，
   面板上下各保留一行空白；长内容用 ANSI/CJK-aware `truncateToWidth` 截断，不再混入状态栏。
 - 状态栏通过 `layoutStatusLine` 按终端宽度分配左右区域，并截断过长的左侧指标/右侧项目名；

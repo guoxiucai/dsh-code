@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { visibleWidth, type Component } from '@earendil-works/pi-tui'
+import { stripTerminalSequences, visibleWidth, type Component } from '@earendil-works/pi-tui'
 import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import {
   createMainViewportLayout,
+  halveBlockArt,
   layoutStatusLine,
+  renderWelcomeBanner,
   renderStatus,
   renderTodoLines,
   renderTodoPanel,
+  WELCOME_WHALE,
+  WELCOME_WHALE_SOURCE,
 } from '../../src/tui/host.ts'
 import { theme } from '../../src/tui/theme.ts'
 import { emptyViewModel } from '../../src/tui/view-model.ts'
@@ -36,6 +40,39 @@ describe('layoutStatusLine', () => {
     const line = layoutStatusLine('a very long standalone status value', '', 16)
 
     expect(visibleWidth(line)).toBe(16)
+  })
+})
+
+describe('welcome banner', () => {
+  it('preserves the whale silhouette at exactly half the source dimensions', () => {
+    expect(WELCOME_WHALE_SOURCE).toHaveLength(28)
+    expect(Math.max(...WELCOME_WHALE_SOURCE.map(line => line.length))).toBe(76)
+    expect(halveBlockArt(WELCOME_WHALE_SOURCE)).toEqual(WELCOME_WHALE)
+    expect(WELCOME_WHALE).toHaveLength(14)
+    expect(Math.max(...WELCOME_WHALE.map(line => visibleWidth(line)))).toBe(38)
+  })
+
+  it('fills a wide terminal with small symmetric side margins', () => {
+    const lines = renderWelcomeBanner('0.1.0', 120)
+    const plain = lines.map(stripTerminalSequences)
+
+    expect(plain).toHaveLength(20)
+    expect(plain[0]).toMatch(/^ {2}╭─ dsh-code v0\.1\.0 /)
+    expect(plain.every(line => visibleWidth(line) === 118)).toBe(true)
+    expect(plain.some(line => line.includes('Welcome back!'))).toBe(true)
+    expect(plain.some(line => line.includes('Tips'))).toBe(true)
+  })
+
+  it('stacks the whale and tips without overflowing narrow terminals', () => {
+    const lines = renderWelcomeBanner('0.1.0', 60)
+    const plain = lines.map(stripTerminalSequences)
+
+    expect(plain.some(line => line.trimStart().startsWith('├'))).toBe(true)
+    expect(plain.every(line => visibleWidth(line) <= 60)).toBe(true)
+    expect(plain.some(line => line.includes('@ to reference files'))).toBe(true)
+    for (const width of [20, 12]) {
+      expect(renderWelcomeBanner('0.1.0', width).every(line => visibleWidth(line) <= width)).toBe(true)
+    }
   })
 })
 
@@ -120,5 +157,19 @@ describe('main viewport layout', () => {
     expect(frame.primaryScrollView?.isFollowingEnd).toBe(true)
     expect(frame.lines.slice(-bottomLines.length)).toEqual(bottomLines)
     expect(frame.lines).toContain('line-22')
+  })
+
+  it('bottom-aligns a short welcome transcript immediately above the interaction region', () => {
+    const transcript = new MutableLines(['welcome-top', 'welcome-bottom'])
+    // The leading blank row mirrors editorSlot's existing Spacer.
+    const bottom = new MutableLines(['', 'editor'])
+    const layout = createMainViewportLayout(transcript, bottom)
+
+    const frame = renderLayoutFrame(layout, 40, 8, () => {})
+    expect(frame.lines).toEqual([
+      '', '', '', '',
+      'welcome-top', 'welcome-bottom',
+      '', 'editor',
+    ])
   })
 })

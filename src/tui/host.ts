@@ -295,8 +295,16 @@ export function createMainViewportLayout(transcript: Component, bottom: Componen
     overscroll: 'contain',
     scrollbar: 'hidden',
   })
+  // When the transcript is shorter than its viewport, grow only the spacer
+  // above it so the latest content sits immediately above the interaction
+  // region. Once content exceeds the viewport the spacer collapses to zero and
+  // ScrollView owns the full region as usual.
+  const bottomAlignedTranscript = new VStack([
+    { component: new Spacer(0), basis: 0, grow: 1, minSize: 0 },
+    { component: transcriptScroll, basis: 'auto', shrink: 1, minSize: 1 },
+  ])
   return new VStack([
-    { component: transcriptScroll, basis: 0, grow: 1, minSize: 1 },
+    { component: bottomAlignedTranscript, basis: 0, grow: 1, minSize: 1 },
     { component: bottom, basis: 'auto', shrink: 1, minSize: 1 },
   ])
 }
@@ -354,8 +362,8 @@ function centerText(text: string, width: number): string {
   return ' '.repeat(left) + text + ' '.repeat(pad - left)
 }
 
-/** The welcome whale, drawn in block characters (colored DeepSeek blue at render). */
-const WHALE: readonly string[] = [
+/** Original 76×28 welcome-whale bitmap (`#` = filled source pixel). */
+export const WELCOME_WHALE_SOURCE: readonly string[] = [
   '                                                    ##',
   '                               #########           ####',
   '             #########################             ######                 ##',
@@ -386,6 +394,37 @@ const WHALE: readonly string[] = [
   '                      ################',
 ]
 
+/** Unicode glyphs representing every possible filled quadrant in a 2×2 cell. */
+const QUADRANT_GLYPHS: readonly string[] = [
+  ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟', '▘', '▚', '▌', '▙', '▀', '▜', '▛', '█',
+]
+
+/**
+ * Reduce a monochrome bitmap to exactly half its source rows/columns. Each
+ * terminal cell retains its source 2×2 coverage through a quadrant glyph.
+ */
+export function halveBlockArt(source: readonly string[]): string[] {
+  const sourceWidth = Math.max(0, ...source.map(line => line.length))
+  const output: string[] = []
+  for (let row = 0; row < source.length; row += 2) {
+    let line = ''
+    for (let column = 0; column < sourceWidth; column += 2) {
+      const filled = (sourceRow: number, sourceColumn: number): boolean =>
+        (source[sourceRow]?.[sourceColumn] ?? ' ') !== ' '
+      const mask = (filled(row, column) ? 8 : 0)
+        | (filled(row, column + 1) ? 4 : 0)
+        | (filled(row + 1, column) ? 2 : 0)
+        | (filled(row + 1, column + 1) ? 1 : 0)
+      line += QUADRANT_GLYPHS[mask] ?? ' '
+    }
+    output.push(line.trimEnd())
+  }
+  return output
+}
+
+/** Half-size 38×14 whale, colored DeepSeek blue only when rendered. */
+export const WELCOME_WHALE: readonly string[] = halveBlockArt(WELCOME_WHALE_SOURCE)
+
 /** The usage tips shown beside the whale on a fresh session. */
 const TIPS: readonly string[] = [
   '/ for commands',
@@ -393,37 +432,71 @@ const TIPS: readonly string[] = [
   '@ to reference files',
 ]
 
+const WELCOME_SIDE_MARGIN = 2
+const WELCOME_WHALE_GAP = 2
+
+/** Add a centered compact frame around the responsive welcome content. */
+export function renderWelcomeBanner(version: string, width: number): string[] {
+  if (width <= 0) return []
+  if (width < 20) return [truncateToWidth(theme.bold('Welcome back!'), width, '…')]
+
+  const sideMargin = Math.min(WELCOME_SIDE_MARGIN, Math.max(0, Math.floor((width - 20) / 2)))
+  const boxWidth = width - sideMargin * 2
+  const indent = ' '.repeat(sideMargin)
+  const title = truncateToWidth(theme.accent(`dsh-code v${version}`), Math.max(1, boxWidth - 5), '…')
+  const top = `╭─ ${title} ${'─'.repeat(Math.max(0, boxWidth - visibleWidth(title) - 5))}╮`
+  const bottom = `╰${'─'.repeat(Math.max(0, boxWidth - 2))}╯`
+  const whaleWidth = Math.max(...WELCOME_WHALE.map(line => visibleWidth(line)))
+  const tipsWidth = Math.max(...TIPS.map(line => visibleWidth(line)), visibleWidth('Tips'))
+  const sideBySide = boxWidth >= whaleWidth + tipsWidth + 9
+  const body: string[] = []
+
+  if (sideBySide) {
+    const leftWidth = Math.max(whaleWidth + 2, Math.floor((boxWidth - 7) * 0.58))
+    const rightWidth = boxWidth - 7 - leftWidth
+    const whaleOffset = Math.max(0, Math.floor((leftWidth - whaleWidth) / 2))
+    const left = [
+      centerText(theme.bold('Welcome back!'), leftWidth),
+      ...Array.from({ length: WELCOME_WHALE_GAP }, () => ''),
+      ...WELCOME_WHALE.map(line => padVisible(' '.repeat(whaleOffset) + theme.whale(line), leftWidth)),
+      '',
+    ]
+    const tips = [
+      centerText(theme.bold('Tips'), rightWidth),
+      ...TIPS.map(line => centerText(theme.dim(line), rightWidth)),
+    ]
+    const tipsOffset = Math.max(0, Math.floor((left.length - tips.length) / 2))
+    const right = [...Array.from({ length: tipsOffset }, () => ''), ...tips]
+    for (let index = 0; index < left.length; index++) {
+      body.push(`│ ${padVisible(left[index] ?? '', leftWidth)} │ ${padVisible(right[index] ?? '', rightWidth)} │`)
+    }
+  } else {
+    const contentWidth = Math.max(1, boxWidth - 4)
+    const whaleOffset = Math.max(0, Math.floor((contentWidth - whaleWidth) / 2))
+    body.push(`│ ${centerText(theme.bold('Welcome back!'), contentWidth)} │`)
+    for (let index = 0; index < WELCOME_WHALE_GAP; index++) body.push(`│ ${' '.repeat(contentWidth)} │`)
+    for (const whaleLine of WELCOME_WHALE) {
+      const line = truncateToWidth(' '.repeat(whaleOffset) + theme.whale(whaleLine), contentWidth, '')
+      body.push(`│ ${padVisible(line, contentWidth)} │`)
+    }
+    body.push(`│ ${' '.repeat(contentWidth)} │`)
+    body.push(`├${'─'.repeat(Math.max(0, boxWidth - 2))}┤`)
+    body.push(`│ ${centerText(theme.bold('Tips'), contentWidth)} │`)
+    for (const tip of TIPS) {
+      const fittedTip = truncateToWidth(theme.dim(tip), contentWidth, '…')
+      body.push(`│ ${centerText(fittedTip, contentWidth)} │`)
+    }
+  }
+
+  return [top, ...body, bottom].map(line => indent + line)
+}
+
 /** The boxed welcome banner shown at the top of a fresh (empty) session. */
 class WelcomeBanner implements Component {
   private readonly version: string
   constructor(version: string) { this.version = version }
   invalidate(): void {}
-  render(width: number): string[] {
-    const title = `dsh-code v${this.version}`
-    const top = `╭─ ${theme.accent(title)} ${'─'.repeat(Math.max(1, width - visibleWidth(title) - 5))}╮`
-
-    // Split the inner content 50/50 between the whale and tips regions; the left
-    // region grows to fit the whale when the terminal is too narrow for half.
-    const whaleWidth = Math.max(...WHALE.map(line => line.length))
-    const leftWidth = Math.max(Math.floor((width - 7) / 2), whaleWidth + 2)
-    const rightWidth = Math.max(1, width - 7 - leftWidth)
-
-    const whaleOffset = Math.max(0, Math.floor((leftWidth - whaleWidth) / 2))
-    const left = [
-      centerText(theme.bold('Welcome back!'), leftWidth),
-      '',
-      ...WHALE.map(line => padVisible(' '.repeat(whaleOffset) + theme.whale(line.replace(/#/g, '█')), leftWidth)),
-    ]
-    const right = [theme.bold('Tips'), ...TIPS.map(line => theme.dim(line))]
-    const rows = Math.max(left.length, right.length)
-
-    const lines: string[] = [top]
-    for (let index = 0; index < rows; index++) {
-      lines.push(`│ ${padVisible(left[index] ?? '', leftWidth)} │ ${padVisible(right[index] ?? '', rightWidth)} │`)
-    }
-    lines.push(`╰${'─'.repeat(Math.max(1, width - 2))}╯`)
-    return lines
-  }
+  render(width: number): string[] { return renderWelcomeBanner(this.version, width) }
 }
 
 /**
