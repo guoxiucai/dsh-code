@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { UpdateInvocation } from './args.ts'
 
@@ -12,13 +12,22 @@ interface ProductManifest {
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
-function npmExecutable(): string {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
+function npmInvocation(args: readonly string[]): { command: string; args: string[] } {
+  const nodeDir = dirname(process.execPath)
+  const candidates = [
+    join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    resolve(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ]
+  const cli = candidates.find(existsSync)
+  if (cli !== undefined) return { command: process.execPath, args: [cli, ...args] }
+  if (process.platform !== 'win32') return { command: 'npm', args: [...args] }
+  return { command: process.env.ComSpec ?? 'cmd.exe', args: ['/d', '/s', '/c', 'npm', ...args] }
 }
 
 function runNpm(args: readonly string[], stdio: 'pipe' | 'inherit' = 'pipe'): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(npmExecutable(), [...args], { shell: false, stdio })
+    const invocation = npmInvocation(args)
+    const child = spawn(invocation.command, invocation.args, { shell: false, stdio })
     child.once('error', (error) => {
       process.stderr.write(`dsh-code update: failed to run npm: ${error.message}\n`)
       resolve(1)
@@ -37,7 +46,8 @@ function installedManifest(): { manifest: { name: string; version: string }; roo
 }
 
 function globalPackageRoot(name: string): string | undefined {
-  const result = spawnSync(npmExecutable(), ['root', '--global'], { encoding: 'utf8', shell: false })
+  const invocation = npmInvocation(['root', '--global'])
+  const result = spawnSync(invocation.command, invocation.args, { encoding: 'utf8', shell: false })
   if (result.status !== 0) return undefined
   return join(result.stdout.trim(), ...name.split('/'))
 }
@@ -53,7 +63,8 @@ function isGlobalInstall(name: string, root: string): boolean {
 }
 
 function queryVersion(spec: string): string {
-  const result = spawnSync(npmExecutable(), ['view', spec, 'version', '--json'], {
+  const invocation = npmInvocation(['view', spec, 'version', '--json'])
+  const result = spawnSync(invocation.command, invocation.args, {
     encoding: 'utf8',
     shell: false,
     timeout: 30_000,

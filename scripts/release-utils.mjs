@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -26,13 +26,30 @@ export function hasFlag(args, name) {
   return args.includes(name)
 }
 
+function executable(command, args) {
+  if (command === 'npm') {
+    const nodeDir = dirname(process.execPath)
+    const candidates = [
+      join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      resolve(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    ]
+    const cli = candidates.find(existsSync)
+    if (cli !== undefined) return { command: process.execPath, args: [cli, ...args] }
+  }
+  if (command === 'pnpm' && typeof process.env.npm_execpath === 'string' && existsSync(process.env.npm_execpath)) {
+    return { command: process.execPath, args: [process.env.npm_execpath, ...args] }
+  }
+  return { command, args }
+}
+
 export function run(command, args, options = {}) {
   const env = { ...(options.env ?? process.env) }
   if (command === 'npm') {
     delete env.npm_config_manage_package_manager_versions
     delete env.NPM_CONFIG_MANAGE_PACKAGE_MANAGER_VERSIONS
   }
-  const result = spawnSync(command, args, {
+  const invocation = executable(command, args)
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: options.cwd ?? ROOT,
     encoding: 'utf8',
     env,
