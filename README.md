@@ -3,10 +3,25 @@
 Terminal coding agent powered by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). `dsh-code` is a **thin terminal host** over `@deepseek-ai/dsh-base` — it does not reimplement the Agent Loop, Session, model adapters, tools, Sandbox, permissions, MCP, Skills, Plan/Todo, or sub-Agents. All agent semantics come from the pinned upstream DSH.
 
 ```bash
-npm install -g dsh-code
+npm install -g @tsingwill/dsh-code
 cd /path/to/project
 dsh-code
 ```
+
+The first public release supports macOS 14+ on Apple Silicon and Windows 10+
+on x64, with Node.js 22.19+ (excluding Node 23) or Node.js 24+. The npm package
+uses its own `~/.dsh-code` home and does not replace or reuse a separately
+installed upstream `dsh` command.
+
+Upgrade an npm-global installation explicitly:
+
+```bash
+dsh-code update --check
+dsh-code update
+```
+
+Release engineering and first-publish instructions are documented in
+[`docs/NPM_RELEASE.md`](docs/NPM_RELEASE.md).
 
 ## What it is
 

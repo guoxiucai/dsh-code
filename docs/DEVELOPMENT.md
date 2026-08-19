@@ -15,7 +15,7 @@
 它不是新的 Agent 内核，**不重新实现** DSH 已经提供的 Agent Loop、Session、模型适配、工具、Sandbox、权限、MCP、Skills、Plan/Todo、子 Agent。用户安装后：
 
 ```bash
-npm install -g dsh-code
+npm install -g @tsingwill/dsh-code
 cd /path/to/project
 dsh-code
 ```
@@ -293,21 +293,23 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 
 ## 11. 已知限制与待办
 
-- 产品级 `dsh-code config` / `dsh-code import dsh` / `dsh-code update` 三个动词是 stub（返回 not implemented）；
+- 产品级 `dsh-code config` / `dsh-code import dsh` 两个动词仍是 stub（返回 not implemented）；
   TUI 内的 `/config` 已实现模型和凭证配置，不要混淆两者。当前 `--help` 对产品级 `config` 的描述仍是目标行为，
-  不代表已经实现。
+  不代表已经实现。`dsh-code update` 已实现 npm global 安装的 stable/next/精确版本检查与显式升级。
 - `dsh-code -p ... --verbose` 目前只完成参数解析，尚未把详细工具跟踪传递给 headless 路径。
 - 会话切换（`/session` 只是展示信息；不支持对话内切到别的会话——已按产品决定移除 `/sessions`）。
 - `@` 文件联想依赖 `fd` 二进制（未安装时走内置遍历，较慢）。
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
-- 尚未做：npm 打包发布（根 `package.json` 当前仍为 `private: true`，且 `workspace:*` 依赖需在发布时替换为
-  固定版本）、跨平台 CI、`dsh-code update` 实装。
+- npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；首次 RC 仍需 npm 2FA、
+  Windows CI/Windows 10 真机验收及 trusted publisher bootstrap。不要直接发布当前根包；完整流程见
+  [`docs/NPM_RELEASE.md`](./NPM_RELEASE.md)。
 - 性能：转写是组件树重建（每次 render 清空重建），长会话未做虚拟化（见设计文档 §23 预算）。
 
 ## 12. 注意事项 / 踩坑
 
 1. **软链 entry 检测**：`isEntryPoint` 必须 `realpathSync(process.argv[1])`，否则软链/`npm link` 下 `main()` 不执行、命令静默无输出。
-2. **构建产物可执行位**：`tsc` 不保留 `bin.js` 的可执行位，build 脚本末尾有 `chmod +x lib/bin.js`。
+2. **构建产物可执行位**：`tsc` 不保留 `bin.js` 的可执行位；build 使用跨平台 Node 脚本设置 Unix executable bit，
+   不要改回 POSIX-only 的 `chmod` shell 命令。
 3. **lint 严格**：`@stylistic(max-len)` 限 140 列，pre-commit 会拦超长行。
 4. **Enter 是 `\r` 不是 `\n`**：PTY 自动化测试喂输入时用 `\r`（`\n` 会被当成编辑器换行而非提交）。
 5. **`arguments` 是保留字**：TS strict mode 下参数名别用 `arguments`。
@@ -324,5 +326,5 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 
 ---
 
-*最后核对：2026-08-18，对应 `main` 分支（上游 submodule `99f6f02fec`）；含会话选择器
+*最后核对：2026-08-19，对应 `main` 分支（上游 submodule `99f6f02fec`）；含会话选择器
 `-r`/`--resume` + 删除二次确认、`-c`/`--continue`、内联选择器、shell mode、`/session` token/cache 统计。*

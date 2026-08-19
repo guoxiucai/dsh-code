@@ -12,6 +12,11 @@ Thin-terminal-host implementation over the pinned upstream DSH baseline
   delegation to `@deepseek-ai/dsh/lib/bin.js`.
 - Single-prompt `-p` via the upstream `headless` profile.
 - Absolute `file://` terminal-host plugin loading (no upstream boot path modified).
+- Scoped npm release staging for `@tsingwill/dsh-code`, exact runtime dependency
+  shrinkwrap, package audit, macOS/Windows smoke installation, and protected
+  trusted-publishing workflow.
+- Explicit `dsh-code update` checks and upgrades for npm-global installations.
+- Runtime platform guard for macOS arm64 and Windows 10+ x64.
 
 ### Session lifecycle
 

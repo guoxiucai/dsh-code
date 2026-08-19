@@ -25,6 +25,15 @@ export interface PromptInvocation {
   approve: boolean
 }
 
+/** Explicit product self-update invocation. */
+export interface UpdateInvocation {
+  mode: 'update'
+  check: boolean
+  yes: boolean
+  channel: 'latest' | 'next'
+  version?: string
+}
+
 /** The resolved dsh-code invocation. */
 export type Invocation =
   | { mode: 'help' }
@@ -34,7 +43,7 @@ export type Invocation =
   | { mode: 'config' }
   | { mode: 'plugin'; args: string[] }
   | { mode: 'import-dsh' }
-  | { mode: 'update' }
+  | UpdateInvocation
   | { mode: 'error'; message: string }
 
 const USAGE_HINT = 'run `dsh-code --help` for usage'
@@ -56,7 +65,36 @@ export function parseArgs(argv: readonly string[]): Invocation {
 
   if (first === 'config') return { mode: 'config' }
   if (first === 'plugin') return { mode: 'plugin', args: argv.slice(1) }
-  if (first === 'update') return { mode: 'update' }
+  if (first === 'update') {
+    let check = false
+    let yes = false
+    let channel: UpdateInvocation['channel'] = 'latest'
+    let version: string | undefined
+    for (let index = 1; index < argv.length; index += 1) {
+      const arg = argv[index] ?? ''
+      if (arg === '--check') check = true
+      else if (arg === '--yes' || arg === '-y') yes = true
+      else if (arg === '--channel') {
+        const value = argv[index + 1]
+        if (value !== 'latest' && value !== 'next') return { mode: 'error', message: '--channel expects latest or next' }
+        channel = value
+        index += 1
+      } else if (arg.startsWith('--channel=')) {
+        const value = arg.slice('--channel='.length)
+        if (value !== 'latest' && value !== 'next') return { mode: 'error', message: '--channel expects latest or next' }
+        channel = value
+      } else if (arg === '--version') {
+        version = argv[index + 1]
+        if (version === undefined) return { mode: 'error', message: '--version expects a version' }
+        index += 1
+      } else if (arg.startsWith('--version=')) version = arg.slice('--version='.length)
+      else return { mode: 'error', message: `unknown update flag ${JSON.stringify(arg)}` }
+    }
+    if (version !== undefined && channel !== 'latest') {
+      return { mode: 'error', message: '--version and --channel cannot be combined' }
+    }
+    return { mode: 'update', check, yes, channel, ...(version === undefined ? {} : { version }) }
+  }
 
   if (first === 'import') {
     if (argv[1] === 'dsh') return { mode: 'import-dsh' }
@@ -101,7 +139,8 @@ Usage:
   dsh-code config                  open the model/credential configuration
   dsh-code plugin <add|remove|update|list> ...   manage profile plugins
   dsh-code import dsh              one-time import of an upstream dsh config
-  dsh-code update                  check for and apply a dsh-code update
+  dsh-code update [--check] [--yes] [--channel latest|next] [--version <semver>]
+                                  check for or apply a dsh-code update
   dsh-code --version               print the version
   dsh-code --help                  print this help
 `

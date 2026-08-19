@@ -5,6 +5,20 @@
   "type": "module",
   "license": "MIT",
   "private": true,
+  "keywords": [
+    "deepseek",
+    "coding-agent",
+    "terminal",
+    "tui"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guoxiucai/dsh-code.git"
+  },
+  "homepage": "https://github.com/guoxiucai/dsh-code#readme",
+  "bugs": {
+    "url": "https://github.com/guoxiucai/dsh-code/issues"
+  },
   "bin": {
     "dsh-code": "lib/bin.js"
   },
@@ -18,12 +32,16 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && chmod +x lib/bin.js",
+    "build": "tsc -p tsconfig.json && node scripts/make-bin-executable.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "build:lib": "pnpm run build:lib:host && pnpm run build:lib:client",
     "build:lib:host": "cd deepseek-harness && tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host",
-    "build:lib:client": "cd deepseek-harness && tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client"
+    "build:lib:client": "cd deepseek-harness && tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client",
+    "release:pack": "node scripts/build-release.mjs",
+    "release:verify": "node scripts/verify-tarball.mjs",
+    "release:smoke": "node scripts/smoke-install.mjs",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "workspace:^",

@@ -34,5 +34,18 @@ describe('parseArgs', () => {
   })
 
   it('import dsh', () => { expect(parseArgs(['import', 'dsh'])).toEqual({ mode: 'import-dsh' }) })
-  it('update', () => { expect(parseArgs(['update'])).toEqual({ mode: 'update' }) })
+  it('update defaults to the stable channel', () => {
+    expect(parseArgs(['update'])).toEqual({ mode: 'update', check: false, yes: false, channel: 'latest' })
+  })
+
+  it('parses update flags', () => {
+    expect(parseArgs(['update', '--check', '--channel', 'next']))
+      .toEqual({ mode: 'update', check: true, yes: false, channel: 'next' })
+    expect(parseArgs(['update', '--yes', '--version=0.1.0']))
+      .toEqual({ mode: 'update', check: false, yes: true, channel: 'latest', version: '0.1.0' })
+  })
+
+  it('rejects conflicting update selectors', () => {
+    expect(parseArgs(['update', '--channel=next', '--version', '0.1.0']).mode).toBe('error')
+  })
 })

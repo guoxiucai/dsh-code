@@ -11,16 +11,16 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { HELP_TEXT, parseArgs, type PromptInvocation, type TuiInvocation } from './cli/args.ts'
 import { delegateDsh } from './cli/delegate.ts'
+import { unsupportedPlatformMessage } from './cli/platform.ts'
+import { runUpdate } from './cli/update.ts'
 import { resolveDshCodeHome } from './bootstrap/home.ts'
 import { initDshCodeProfile } from './bootstrap/profile.ts'
 import { listProjectSessions } from './bootstrap/sessions.ts'
-import { pickSession } from './bootstrap/resume-picker.ts'
 import {
   canonicalizeProjectPath,
   isProjectTrusted,
   writeTrustRecord,
 } from './bootstrap/trust.ts'
-import { pickTrust } from './bootstrap/trust-picker.ts'
 
 /** This product's version, read from its checked-in package.json (never the network). */
 function readVersion(): string {
@@ -47,6 +47,7 @@ async function ensureTrusted(home: string, canonical: string, approve: boolean):
   if (isProjectTrusted(home, canonical)) return undefined
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true
   if (tty) {
+    const { pickTrust } = await import('./bootstrap/trust-picker.ts')
     const answer = await pickTrust(canonical)
     if (answer.kind === 'reject') {
       process.stderr.write('dsh-code: project not trusted; not loading project configuration\n')
@@ -95,6 +96,7 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   } else if (invocation.resumePicker === true) {
     // `-r`/`--resume`: pick a session from the full-screen picker. Esc exits
     // without resuming; the picker never falls through to a fresh session.
+    const { pickSession } = await import('./bootstrap/resume-picker.ts')
     const picked = await pickSession(home, canonical)
     if (picked.kind === 'exit') return 0
     appArgs = ['--resume', picked.id]
@@ -131,6 +133,13 @@ function notImplemented(verb: string): number {
 /** Entry point; resolves to the process exit code. */
 export async function main(argv: readonly string[]): Promise<number> {
   const invocation = parseArgs(argv)
+  if (invocation.mode !== 'help' && invocation.mode !== 'version' && invocation.mode !== 'error') {
+    const unsupported = unsupportedPlatformMessage()
+    if (unsupported !== undefined) {
+      process.stderr.write(`dsh-code: ${unsupported}\n`)
+      return 1
+    }
+  }
   switch (invocation.mode) {
     case 'version':
       process.stdout.write(`${readVersion()}\n`)
@@ -152,7 +161,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     case 'import-dsh':
       return notImplemented('import dsh')
     case 'update':
-      return notImplemented('update')
+      return runUpdate(invocation)
   }
 }
 

@@ -428,7 +428,7 @@ export const WELCOME_WHALE: readonly string[] = halveBlockArt(WELCOME_WHALE_SOUR
 /** The usage tips shown beside the whale on a fresh session. */
 const TIPS: readonly string[] = [
   '/ for commands',
-  '! to run bash',
+  process.platform === 'win32' ? '! to run PowerShell' : '! to run shell',
   '@ to reference files',
 ]
 

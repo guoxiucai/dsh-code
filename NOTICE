@@ -1,0 +1,14 @@
+dsh-code
+Copyright (c) 2026 guoxiucai
+
+This product is a downstream terminal host built on DeepSeek Harness, which is
+Copyright (c) 2026 DeepSeek and distributed under the MIT License. The pinned
+upstream revision is recorded in UPSTREAM_BASELINE.md.
+
+The DeepSeek name and whale artwork belong to their respective owners. Their
+use identifies compatibility with and origin from DeepSeek Harness; it does
+not imply that this downstream distribution is an official DeepSeek release.
+
+The package also depends on third-party software distributed under its own
+licenses. See THIRD_PARTY_NOTICES.md, UPSTREAM_THIRD_PARTY_NOTICES.md, and the
+license files shipped by each npm dependency for the applicable terms.

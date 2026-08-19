@@ -35,7 +35,7 @@
 用户安装后，可以在任意项目目录中运行：
 
 ```bash
-npm install -g dsh-code
+npm install -g @tsingwill/dsh-code
 cd /path/to/project
 dsh-code
 ```
@@ -435,13 +435,18 @@ adopted_at: <yyyy-mm-dd>
 
 ## 8. npm 包设计
 
+> **实施文档更新（2026-08-19）：** 本章是早期目标设计。npm 包已确认为
+> `@tsingwill/dsh-code`；
+> 精确依赖 + `npm-shrinkwrap.json`、macOS arm64 / Windows x64 构建矩阵、
+> 一键发布和 `dsh-code update` 以 [`NPM_RELEASE.md`](./NPM_RELEASE.md) 为准。
+
 ### 8.1 package.json 关键字段
 
 以下为目标形态，实际版本必须与固定上游基线一致：
 
 ```json
 {
-  "name": "dsh-code",
+  "name": "@tsingwill/dsh-code",
   "version": "0.1.0",
   "description": "Terminal coding agent powered by DeepSeek Harness",
   "type": "module",
@@ -474,7 +479,7 @@ adopted_at: <yyyy-mm-dd>
 - `pi-tui` 使用精确版本，升级必须经过终端快照和平台测试；
 - npm tarball 中不得出现 `workspace:` 依赖；
 - 包内不得包含源码仓库、测试 fixture、API Key 或本地路径；
-- `npm install -g dsh-code` 不运行下载原生 helper 的 postinstall；
+- `npm install -g @tsingwill/dsh-code` 不运行下载原生 helper 的 postinstall；
 - `--version` 只读取本包版本，不联网。
 
 ### 8.2 构建和发布
@@ -508,7 +513,7 @@ dsh-code update
 V1 行为：
 
 1. 检查当前安装是否为 npm 全局安装；
-2. 执行 `npm install -g dsh-code@latest`；
+2. 执行 `npm install -g @tsingwill/dsh-code@latest`；
 3. 产品更新成功后，再委托上游插件管理命令更新兼容插件；
 4. 插件更新前备份 Profile 的 `package.json` 和 lockfile；
 5. 插件更新失败则恢复插件 manifest 和 lockfile；
@@ -1759,7 +1764,7 @@ RC 必须满足：
 
 每个平台按以下脚本走一遍：
 
-1. 在干净用户环境执行 `npm install -g dsh-code@<rc>`；
+1. 在干净用户环境执行 `npm install -g @tsingwill/dsh-code@<rc>`；
 2. 验证 `dsh-code --version`；
 3. 创建含空格和中文的临时项目路径；
 4. 首次启动，拒绝信任，确认没有项目代码执行；
