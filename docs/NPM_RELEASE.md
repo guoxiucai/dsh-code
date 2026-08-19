@@ -64,7 +64,7 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 - 已补 MIT LICENSE、NOTICE 和上游第三方 notices；
 - 已实现安装平台组合校验和 `dsh-code update`；
 - 已实现 macOS/Windows、Node 22.19/24 的 CI candidate smoke 和 protected publish workflow；
-- macOS arm64 已从真实 tarball clean global install，并验证与不同版本的全局上游 `dsh` 共存。
+- macOS arm64 已从真实 tarball clean global install，并用同名不同版本 fixture 验证全局 `dsh` bin 与产品运行时隔离。
 
 首次 RC 前剩余阻断项：
 
@@ -600,7 +600,7 @@ dist-tag 回退是 registry 外部状态变更，只允许 release maintainer �
 - [ ] Windows PowerShell/cmd 入口、ConPTY、信号/退出、窗口 resize 受测；
 - [ ] 暗色/亮色终端、truecolor 退化、中文宽字符、小窗口宽度受测；
 - [ ] 路径空格、中文、长路径、只读项目、无写 home 权限有明确错误；
-- [x] macOS candidate 已验证与不同版本的单独全局上游 `dsh` 共存且仍解析固定运行时；
+- [x] macOS candidate 已用同名不同版本 fixture 验证独立 `dsh` bin 共存且产品仍解析固定运行时；
 - [ ] 核心功能不要求用户全局安装 pnpm；如 plugin 管理仍需 pnpm，必须检测并给出
   明确安装指引，或由产品使用自己固定的 pnpm 入口。
 

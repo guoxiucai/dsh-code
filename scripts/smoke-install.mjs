@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -35,6 +35,9 @@ const prefix = mkdtempSync(join(tmpdir(), 'dsh-code-npm-smoke-'))
 const globalRoot = process.platform === 'win32' ? join(prefix, 'node_modules') : join(prefix, 'lib', 'node_modules')
 const productRoot = join(globalRoot, '@tsingwill', 'dsh-code')
 const bin = process.platform === 'win32' ? join(prefix, 'dsh-code.cmd') : join(prefix, 'bin', 'dsh-code')
+const dshBin = process.platform === 'win32' ? join(prefix, 'dsh.cmd') : join(prefix, 'bin', 'dsh')
+const coexist = hasFlag(args, '--coexist')
+const upstreamVersion = '0.0.0-smoke'
 
 function runCommandBin(command, arguments_) {
   if (process.platform === 'win32') {
@@ -47,6 +50,25 @@ function runCommandBin(command, arguments_) {
 const runBin = arguments_ => runCommandBin(bin, arguments_)
 
 try {
+  if (coexist) {
+    const fixture = join(prefix, 'fixture-upstream-dsh')
+    const fixtureBin = join(fixture, 'bin.js')
+    mkdirSync(fixture, { recursive: true })
+    writeFileSync(join(fixture, 'package.json'), `${JSON.stringify({
+      name: '@deepseek-ai/dsh',
+      version: upstreamVersion,
+      type: 'module',
+      bin: { dsh: 'bin.js' },
+    }, null, 2)}\n`)
+    writeFileSync(fixtureBin, `#!/usr/bin/env node\nprocess.stdout.write('${upstreamVersion}\\n')\n`)
+    if (process.platform !== 'win32') chmodSync(fixtureBin, 0o755)
+    process.stdout.write(`Seeding simulated pre-existing upstream @deepseek-ai/dsh@${upstreamVersion}...\n`)
+    run('npm', ['install', '--global', '--prefix', prefix, fixture, '--no-audit', '--no-fund'], { timeout: 120_000 })
+    statSync(dshBin)
+    const initialDshVersion = runCommandBin(dshBin, ['--version']).stdout.trim()
+    if (initialDshVersion !== upstreamVersion) throw new Error(`upstream dsh --version returned ${initialDshVersion}`)
+  }
+
   process.stdout.write(`Installing candidate on ${actualPlatform}...\n`)
   run('npm', ['install', '--global', '--prefix', prefix, tarball, '--no-audit', '--no-fund'], { timeout: 1_200_000 })
   process.stdout.write('Candidate installation completed; checking CLI and bundled runtime...\n')
@@ -66,14 +88,7 @@ try {
   const dshManifest = JSON.parse(readFileSync(productRequire.resolve('@deepseek-ai/dsh/package.json'), 'utf8'))
   if (typeof dshManifest.version !== 'string') throw new Error('installed product cannot resolve its DSH runtime')
 
-  if (hasFlag(args, '--coexist')) {
-    const upstreamVersion = option(args, '--upstream-version') ?? '0.1.0-rc.6'
-    process.stdout.write(`Installing independent upstream @deepseek-ai/dsh@${upstreamVersion}...\n`)
-    run('npm', ['install', '--global', '--prefix', prefix, `@deepseek-ai/dsh@${upstreamVersion}`, '--no-audit', '--no-fund'], {
-      timeout: 1_200_000,
-    })
-    const dshBin = process.platform === 'win32' ? join(prefix, 'dsh.cmd') : join(prefix, 'bin', 'dsh')
-    statSync(dshBin)
+  if (coexist) {
     const globalDshVersion = runCommandBin(dshBin, ['--version']).stdout.trim()
     if (globalDshVersion !== upstreamVersion) throw new Error(`upstream dsh --version returned ${globalDshVersion}`)
     const after = runBin(['--version']).stdout.trim()
