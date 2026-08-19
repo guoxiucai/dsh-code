@@ -12,23 +12,27 @@ jobs:
   candidate:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           submodules: recursive
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
         with:
           version: 11.7.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:lib
       - run: pnpm run typecheck
+      - name: Install Linux sandbox backend
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
       - run: pnpm test
       - run: node scripts/build-release.mjs --version 0.0.0-ci.${{ github.run_number }}
       - run: node scripts/verify-tarball.mjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: candidate-${{ github.run_id }}
           path: |
@@ -58,12 +62,12 @@ jobs:
             node: 24.x
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: ${{ matrix.node }}
       - run: npm install --global npm@11.15.0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: candidate-${{ github.run_id }}
           path: dist/npm
