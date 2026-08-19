@@ -28,9 +28,22 @@ if (sbom.bomFormat !== 'CycloneDX' || !Array.isArray(sbom.components) || sbom.co
 for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
   if (typeof version !== 'string' || !SEMVER.test(version)) throw new Error(`dependency ${name} is not exactly pinned: ${version}`)
 }
+const baselineVersion = manifest.dependencies?.['@deepseek-ai/dsh']
+const pinnedDsh = Object.entries(manifest.dependencies ?? {}).filter(([name]) => name.startsWith('@deepseek-ai/dsh'))
+if (pinnedDsh.length < 100) throw new Error(`release manifest pins only ${pinnedDsh.length} DSH packages; expected the reachable runtime closure`)
+for (const [name, version] of pinnedDsh) {
+  if (version !== baselineVersion) throw new Error(`${name}@${version} does not match baseline ${baselineVersion}`)
+}
 if (/\b(?:workspace:|link:|file:|git\+|github:)/.test(shrinkwrap)) throw new Error('shrinkwrap contains a local or Git dependency')
 for (const marker of ['darwin-arm64', 'win32-x64']) {
   if (!shrinkwrap.includes(marker)) throw new Error(`shrinkwrap is missing ${marker} optional dependency metadata`)
+}
+const lock = JSON.parse(shrinkwrap)
+for (const [path, value] of Object.entries(lock.packages ?? {})) {
+  const name = path.split('node_modules/').at(-1)
+  if (name?.startsWith('@deepseek-ai/dsh') && value.version !== baselineVersion) {
+    throw new Error(`shrinkwrap mixed DSH baseline: ${name}@${value.version}`)
+  }
 }
 
 const dryRun = run('npm', ['pack', '--dry-run', '--json'], { cwd: STAGE, capture: true, timeout: 120_000 })
@@ -84,3 +97,4 @@ process.stdout.write(`Tarball: ${metadata.tarball} (${metadata.size} bytes)\n`)
 process.stdout.write(`SHA-256: ${metadata.sha256}\n`)
 process.stdout.write(`npm audit: ${vulnerabilities.total ?? 0} known vulnerabilities (${vulnerabilities.high ?? 0} high, ${vulnerabilities.critical ?? 0} critical)\n`)
 process.stdout.write(`CycloneDX SBOM: ${sbom.components.length} components\n`)
+process.stdout.write(`Pinned DSH closure: ${pinnedDsh.length} packages at ${baselineVersion}\n`)

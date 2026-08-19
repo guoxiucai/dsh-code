@@ -47,15 +47,19 @@ jobs:
           - runner: macos-14
             platform: darwin-arm64
             node: 22.19.0
+            coexist: --coexist
           - runner: macos-14
             platform: darwin-arm64
             node: 24.x
+            coexist: ''
           - runner: windows-2025
             platform: win32-x64
             node: 22.19.0
+            coexist: --coexist
           - runner: windows-2025
             platform: win32-x64
             node: 24.x
+            coexist: ''
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -67,4 +71,4 @@ jobs:
         with:
           name: candidate-${{ github.run_id }}
           path: dist/npm
-      - run: node scripts/smoke-install.mjs --platform ${{ matrix.platform }} --coexist
+      - run: node scripts/smoke-install.mjs --platform ${{ matrix.platform }} ${{ matrix.coexist }}

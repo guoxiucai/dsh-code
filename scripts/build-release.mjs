@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, join } from 'node:path'
 import {
@@ -39,6 +39,39 @@ for (const name of Object.keys(rootManifest.dependencies).sort()) {
     throw new Error(`cannot resolve an exact version for ${name}`)
   }
   dependencies[name] = dependency.version
+}
+
+const dshWorkspace = new Map()
+function collectWorkspacePackages(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (['.git', 'lib', 'node_modules'].includes(entry.name)) continue
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) collectWorkspacePackages(path)
+    else if (entry.name === 'package.json') {
+      const value = JSON.parse(readFileSync(path, 'utf8'))
+      if (typeof value.name === 'string' && value.name.startsWith('@deepseek-ai/dsh')) dshWorkspace.set(value.name, value)
+    }
+  }
+}
+collectWorkspacePackages(join(ROOT, 'deepseek-harness'))
+
+const baselineVersion = dependencies['@deepseek-ai/dsh']
+const pendingDsh = Object.keys(dependencies).filter(name => name.startsWith('@deepseek-ai/dsh'))
+for (let index = 0; index < pendingDsh.length; index += 1) {
+  const name = pendingDsh[index]
+  const workspaceManifest = dshWorkspace.get(name)
+  if (workspaceManifest === undefined) throw new Error(`baseline workspace has no manifest for ${name}`)
+  if (workspaceManifest.version !== baselineVersion) {
+    throw new Error(`${name}@${workspaceManifest.version} does not match the DSH baseline ${baselineVersion}`)
+  }
+  dependencies[name] = baselineVersion
+  for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+    for (const dependencyName of Object.keys(workspaceManifest[field] ?? {})) {
+      if (!dependencyName.startsWith('@deepseek-ai/dsh') || dependencies[dependencyName] !== undefined) continue
+      dependencies[dependencyName] = baselineVersion
+      pendingDsh.push(dependencyName)
+    }
+  }
 }
 
 const manifest = {

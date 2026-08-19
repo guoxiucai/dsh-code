@@ -10,6 +10,15 @@ import {
   run,
 } from './release-utils.mjs'
 
+function annotationValue(value) {
+  return String(value).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+}
+
+process.once('uncaughtException', (error) => {
+  process.stderr.write(`::error title=dsh-code release smoke failed::${annotationValue(error instanceof Error ? error.stack : error)}\n`)
+  process.exitCode = 1
+})
+
 const args = process.argv.slice(2)
 const expectedPlatform = option(args, '--platform')
 const actualPlatform = `${process.platform}-${process.arch}`
@@ -38,7 +47,9 @@ function runCommandBin(command, arguments_) {
 const runBin = arguments_ => runCommandBin(bin, arguments_)
 
 try {
-  run('npm', ['install', '--global', '--prefix', prefix, tarball, '--no-audit', '--no-fund'], { timeout: 600_000 })
+  process.stdout.write(`Installing candidate on ${actualPlatform}...\n`)
+  run('npm', ['install', '--global', '--prefix', prefix, tarball, '--no-audit', '--no-fund'], { timeout: 1_200_000 })
+  process.stdout.write('Candidate installation completed; checking CLI and bundled runtime...\n')
   const version = runBin(['--version']).stdout.trim()
   if (version !== metadata.version) throw new Error(`--version returned ${JSON.stringify(version)}, expected ${metadata.version}`)
   const help = runBin(['--help']).stdout
@@ -47,14 +58,19 @@ try {
   if (process.platform !== 'win32' && (statSync(bin).mode & 0o111) === 0) throw new Error('dsh-code bin is not executable')
   const productManifest = JSON.parse(readFileSync(join(productRoot, 'package.json'), 'utf8'))
   if (productManifest.name !== '@tsingwill/dsh-code') throw new Error('installed product manifest has the wrong name')
+  run('npm', ['list', '--global', '--prefix', prefix, '@tsingwill/dsh-code', '--all', '--json'], {
+    capture: true,
+    timeout: 120_000,
+  })
   const productRequire = createRequire(join(productRoot, 'package.json'))
   const dshManifest = JSON.parse(readFileSync(productRequire.resolve('@deepseek-ai/dsh/package.json'), 'utf8'))
   if (typeof dshManifest.version !== 'string') throw new Error('installed product cannot resolve its DSH runtime')
 
   if (hasFlag(args, '--coexist')) {
     const upstreamVersion = option(args, '--upstream-version') ?? '0.1.0-rc.6'
+    process.stdout.write(`Installing independent upstream @deepseek-ai/dsh@${upstreamVersion}...\n`)
     run('npm', ['install', '--global', '--prefix', prefix, `@deepseek-ai/dsh@${upstreamVersion}`, '--no-audit', '--no-fund'], {
-      timeout: 600_000,
+      timeout: 1_200_000,
     })
     const dshBin = process.platform === 'win32' ? join(prefix, 'dsh.cmd') : join(prefix, 'bin', 'dsh')
     statSync(dshBin)
@@ -72,5 +88,8 @@ try {
   process.stdout.write(`Resolved @deepseek-ai/dsh@${dshManifest.version} from the product installation\n`)
 } finally {
   if (hasFlag(args, '--keep')) process.stdout.write(`Kept smoke prefix: ${prefix}\n`)
-  else rmSync(prefix, { recursive: true, force: true })
+  else {
+    process.stdout.write('Removing temporary npm prefix...\n')
+    rmSync(prefix, { recursive: true, force: true })
+  }
 }
