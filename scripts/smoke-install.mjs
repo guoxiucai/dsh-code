@@ -42,7 +42,9 @@ const upstreamVersion = '0.0.0-smoke'
 function runCommandBin(command, arguments_) {
   if (process.platform === 'win32') {
     const shell = process.env.ComSpec ?? 'cmd.exe'
-    return run(shell, ['/d', '/s', '/c', `"${command}"`, ...arguments_], { capture: true, timeout: 60_000 })
+    // child_process already applies Windows argument quoting. Adding literal quotes
+    // here makes cmd.exe look for a file whose name itself starts with `"`.
+    return run(shell, ['/d', '/s', '/c', command, ...arguments_], { capture: true, timeout: 60_000 })
   }
   return run(command, arguments_, { capture: true, timeout: 60_000 })
 }
