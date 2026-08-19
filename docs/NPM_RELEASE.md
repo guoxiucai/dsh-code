@@ -1,7 +1,8 @@
 # dsh-code npm 发行实施方案
 
-> 状态：发布实现与 macOS 候选包验收完成；待 Windows CI/真机验收和首次 RC
+> 状态：发布实现与 macOS/Windows CI 候选包验收完成；待 Windows 10 真机验收和首次 RC
 > 编写日期：2026-08-19
+> 最近验收：2026-08-20
 > 首批目标平台：macOS arm64、Windows x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
@@ -49,6 +50,9 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
   依赖可完成安装，`dsh-code --version` 和 `--help` 可运行。
 - 在同一临时前缀另外全局安装 `@deepseek-ai/dsh`后，`dsh` 和
   `dsh-code` 的 bin 同时存在，dsh-code 仍解析自己目录下的 DSH。
+- GitHub Actions 已将同一个 candidate tarball 分别在 macOS arm64、Windows x64
+  的 Node 22.19/24 环境完成 clean global install、CLI 和固定运行时验证；Node 22
+  组还通过同名不同版本 fixture 验证了全局 `dsh` bin 共存。
 - 实测 `0.1.0-rc.1` candidate tarball 约 110 KiB，完整全局安装目录此前基线约 317 MB。后者需设
   体积预算和回归门禁，但不构成 npm tarball 上限问题。
 
@@ -64,13 +68,18 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 - 已补 MIT LICENSE、NOTICE 和上游第三方 notices；
 - 已实现安装平台组合校验和 `dsh-code update`；
 - 已实现 macOS/Windows、Node 22.19/24 的 CI candidate smoke 和 protected publish workflow；
-- macOS arm64 已从真实 tarball clean global install，并用同名不同版本 fixture 验证全局 `dsh` bin 与产品运行时隔离。
+- macOS arm64 和 Windows x64 均已从同一个真实 tarball clean global install，并用
+  同名不同版本 fixture 验证全局 `dsh` bin 与产品运行时隔离。
 
 首次 RC 前剩余阻断项：
 
-1. GitHub Actions 跑通 Windows x64 同一 candidate；
-2. 在 Windows 10 x64 真机完成最低系统交互验收；
-3. 首次人工 publish 后配置 trusted publisher 和 `release` environment approval。
+1. 在 Windows 10 x64 真机完成最低系统交互验收；
+2. 首次人工 publish 后配置 trusted publisher 和 `release` environment approval。
+
+2026-08-20 的跨平台验收记录为 GitHub Actions run
+[`32272499534`](https://github.com/guoxiucai/dsh-code/actions/runs/32272499534)：candidate
+构建以及 macOS arm64 / Windows x64 的 Node 22.19 / 24 四组 smoke 全部通过。CI 的
+Windows runner 为 Windows Server 2025，此记录不能替代上表声明的 Windows 10 最低版本真机验收。
 
 ### 2.3 已确认的 npm/GitHub 发布身份
 
@@ -590,17 +599,17 @@ dist-tag 回退是 registry 外部状态变更，只允许 release maintainer �
 - [ ] 上游 SHA/version 与发布包一致；
 - [x] workflow 在所有平台传递同一 candidate tarball 和 SHA-256；
 - [x] `npm pack --json`、文件 allowlist、secret/local dependency scan 全绿；
-- [ ] 两个平台均从 tarball 做 clean global install，不使用 workspace/node_modules cache 代替；
+- [x] 两个平台均从 tarball 做 clean global install，不使用 workspace/node_modules cache 代替；
 - [ ] 发布后再从 npm registry 安装一次，而不只验证本地 tarball；
 - [ ] 产品 tarball、安装体积、冷启动和 TUI 启动时间有回归预算。
 
 ### 11.5 跨平台产品质量
 
-- [ ] macOS arm64 和 Windows x64 的原生包选择受测，不依赖本地编译工具链；
+- [x] macOS arm64 和 Windows x64 的原生包选择受测，不依赖本地编译工具链；
 - [ ] Windows PowerShell/cmd 入口、ConPTY、信号/退出、窗口 resize 受测；
 - [ ] 暗色/亮色终端、truecolor 退化、中文宽字符、小窗口宽度受测；
 - [ ] 路径空格、中文、长路径、只读项目、无写 home 权限有明确错误；
-- [x] macOS candidate 已用同名不同版本 fixture 验证独立 `dsh` bin 共存且产品仍解析固定运行时；
+- [x] macOS/Windows candidate 已用同名不同版本 fixture 验证独立 `dsh` bin 共存且产品仍解析固定运行时；
 - [ ] 核心功能不要求用户全局安装 pnpm；如 plugin 管理仍需 pnpm，必须检测并给出
   明确安装指引，或由产品使用自己固定的 pnpm 入口。
 
@@ -632,7 +641,7 @@ dist-tag 回退是 registry 外部状态变更，只允许 release maintainer �
 5. [完成] 增加平台/Node 早期检查；
 6. [完成] 实现 staging manifest、shrinkwrap、pack audit 和 clean install smoke。
 
-验收：本地 macOS 可从 candidate tarball 安装；Windows CI 可完成同一 tarball 的全流程。
+验收：[通过] 本地 macOS 可从 candidate tarball 安装；Windows CI 可完成同一 tarball 的全流程。
 
 ### Phase B：CI/CD 和 RC
 
