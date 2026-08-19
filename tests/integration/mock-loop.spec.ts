@@ -46,7 +46,15 @@ describe('mock-LLM closed loop (headless composition)', () => {
     const overlayPath = join(home, 'mock.cordis.yml')
     writeFileSync(overlayPath, overlay)
 
-    const env = { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' }
+    // This test owns the project and verifies the model/tool round trip, not an
+    // OS sandbox backend. GitHub-hosted Linux runners do not expose a usable
+    // bwrap/Landlock backend, so use the upstream's explicit test override.
+    const env = {
+      ...process.env,
+      DSH_HOME: home,
+      DSH_TELEMETRY_DISABLED: '1',
+      DSH_PERMISSION_MODE: 'danger-full-access',
+    }
     const { stdout, stderr, code } = await run(
       ['--profile', 'headless', '--patch', overlayPath, 'prove the tool path'],
       proj,
