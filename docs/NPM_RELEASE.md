@@ -647,8 +647,8 @@ dist-tag 回退是 registry 外部状态变更，只允许 release maintainer �
 
 1. [完成] 增加双平台 CI；
 2. [完成] 增加一键 release 脚本和受保护 workflow；
-3. 按首次 bootstrap 流程发布 `0.1.0-rc.1` 到 `next`；
-4. 配置 npm trusted publisher/provenance，后续发布切换到 OIDC；
+3. [完成] 按首次 bootstrap 流程发布 `0.1.0-rc.1` 到 `next`；
+4. [完成] 配置 npm trusted publisher，后续发布切换到 OIDC/provenance；
 5. 从真实 npm registry 在两平台重新安装并手工验收。
 
 验收：`npm install -g @tsingwill/dsh-code@next` 在两平台直接可用；从第二个 RC 起
@@ -657,7 +657,7 @@ dsh 共存测试通过。
 
 ### Phase C：update 和稳定发布
 
-1. [实现完成，待真实 registry RC 验收] 实现 `dsh-code update`；
+1. [实现完成，macOS registry RC 验收通过] 实现 `dsh-code update`；
 2. 验证 stable/next/精确版本/权限错误/网络失败/回滚；
 3. 完成安全、license、SBOM、数据迁移和发布事故手册；
 4. RC 无 P0/P1 问题后发布 stable，再移动 `latest`。

@@ -69,6 +69,10 @@ export function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
+export function sha512Integrity(path) {
+  return `sha512-${createHash('sha512').update(readFileSync(path)).digest('base64')}`
+}
+
 export function candidateMetadata() {
   return readJson(CANDIDATE)
 }

@@ -20,10 +20,9 @@
 </p>
 
 > [!IMPORTANT]
-> `dsh-code` is an independent community project and is currently preparing its
-> first public release. It is not an official DeepSeek distribution. DeepSeek
-> Harness is also in developer preview, so compatibility-breaking upstream
-> changes may occur between pinned baselines.
+> `dsh-code` is an independent community project, not an official DeepSeek
+> distribution. DeepSeek Harness is also in developer preview, so
+> compatibility-breaking upstream changes may occur between pinned baselines.
 
 ## Why dsh-code?
 
@@ -109,8 +108,6 @@ Node.js are not supported in the first release.
 ## Installation
 
 ### npm
-
-Once the first release is available:
 
 ```bash
 npm install -g @tsingwill/dsh-code

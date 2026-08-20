@@ -20,9 +20,8 @@
 </p>
 
 > [!IMPORTANT]
-> `dsh-code` 是独立的社区项目，目前正在准备首次公开发布，并非 DeepSeek
-> 官方发行版。DeepSeek Harness 本身也处于开发者预览阶段，在升级固定基线时
-> 可能出现不兼容变更。
+> `dsh-code` 是独立的社区项目，并非 DeepSeek 官方发行版。DeepSeek Harness
+> 本身也处于开发者预览阶段，在升级固定基线时可能出现不兼容变更。
 
 ## 为什么有 dsh-code？
 
@@ -104,8 +103,6 @@ Profile 初始化、产品更新，以及委托上游 DSH 启动。TUI 只渲染
 ## 安装
 
 ### npm 安装
-
-首次公开版本发布后执行：
 
 ```bash
 npm install -g @tsingwill/dsh-code
