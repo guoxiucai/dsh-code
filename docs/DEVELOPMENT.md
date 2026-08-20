@@ -35,6 +35,108 @@ dsh-code
 
 基线记录在仓库根的 `UPSTREAM_BASELINE.md`（submodule 路径 + 精确 SHA + 版本）。
 
+### 2.1 Windows 10 接手与同步清单
+
+以下步骤面向在 **原生 Windows 10 x64** 上接手开发的协作者。WSL 属于 Linux 环境，适合做通用编译和测试，
+但不能代替 Windows Terminal、PowerShell、ConPTY、`.cmd` 入口和 Windows 文件系统行为的验收。
+
+准备环境：
+
+- Windows 10 x64，建议开启系统长路径支持，并把仓库放在较短路径（如 `C:\src\dsh-code`）；
+- Git for Windows，执行 `git config --global core.longpaths true`；
+- Windows Terminal 与 PowerShell 7；
+- Node.js 22.19.x x64 或 24.x x64；
+- pnpm **11.7.0**，可执行 `npm install --global pnpm@11.7.0` 安装；
+- GitHub 仓库写权限和本人自己的 SSH key 或 GitHub CLI 登录。不要共享 npm、GitHub 或模型凭证。
+
+首次拉取使用递归 submodule clone：
+
+```powershell
+Set-Location C:\src
+git clone --recurse-submodules git@github.com:guoxiucai/dsh-code.git
+Set-Location .\dsh-code
+
+git status --short --branch
+git submodule status
+node -p "process.platform + '-' + process.arch"
+node --version
+pnpm.cmd --version
+```
+
+预期结果：
+
+- 平台为 `win32-x64`；
+- Node 为 `v22.19.x` 或 `v24.x`；
+- pnpm 为 `11.7.0`；
+- `deepseek-harness` 位于 `99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`，行首没有 `-`、`+` 或 `U`；
+- 当前分支跟踪 `origin/main`，工作区干净。
+
+如果 SSH 尚未配置，可先用公开 HTTPS 地址拉取；需要推送时，再配置协作者权限和个人认证：
+
+```powershell
+git clone --recurse-submodules https://github.com/guoxiucai/dsh-code.git
+```
+
+安装、构建和基线验证：
+
+```powershell
+pnpm.cmd install --frozen-lockfile
+pnpm.cmd run build:lib
+pnpm.cmd run typecheck
+pnpm.cmd test
+pnpm.cmd run build
+node .\lib\bin.js --version
+```
+
+如果 PowerShell 执行策略拦截 `pnpm.ps1`，直接使用上面的 `pnpm.cmd`，不要关闭系统安全策略。
+开发期运行交互 TUI 使用 `node .\lib\bin.js`；Windows 下 `!` shell 模式执行 PowerShell，而不是 Bash。
+
+日常同步 `main`：
+
+```powershell
+git status --short
+git switch main
+git pull --ff-only origin main
+git submodule sync --recursive
+git submodule update --init --recursive
+pnpm.cmd install --frozen-lockfile
+```
+
+拉取前先提交或暂存本地工作，不要用强制 reset 覆盖未提交改动。功能开发建议从最新 `main` 创建分支：
+
+```powershell
+git switch -c feat/<topic>
+```
+
+`deepseek-harness/` 正常处于 detached HEAD；不要在子模块内切到长期分支，也不要提交其指针变化，
+除非任务就是升级上游基线。
+
+### 2.2 跨平台换行约定
+
+根目录 [`.gitattributes`](../.gitattributes) 是 Git 的权威规则，[`.editorconfig`](../.editorconfig) 约束编辑器：
+
+- TypeScript、JavaScript、JSON、YAML、Markdown、SVG、patch 等文本在仓库和工作区统一使用 **LF**；
+- 未来加入的 Windows 原生 `.bat` / `.cmd` 在 Git blob 中仍规范化，Windows 工作区呈现为 **CRLF**；
+- PNG、字体、压缩包等二进制文件禁止换行转换；
+- `deepseek-harness` 是独立 Git 仓库，其自身 `.gitattributes` 同样强制文本使用 LF；
+- npm 在 Windows 全局安装时生成的 `dsh-code.cmd` 不受仓库规则影响，会由 npm 按平台自动生成。
+
+因此协作者已有的全局 `core.autocrlf=true` 不会覆盖本仓库显式的 `eol` 属性，无需批量转换文件。
+在 Windows 上可用以下命令复核：
+
+```powershell
+git check-attr text eol -- src/bin.ts scripts/release.mjs README.md
+git ls-files --eol | Select-String 'i/(crlf|mixed)|w/(mixed)'
+git diff --check
+```
+
+前三个样例应显示 `eol: lf`，后两项正常应无输出。未来若加入受规则保护的 `.bat` / `.cmd`，工作区 `w/crlf`
+属于预期；其他源码出现 `mixed` 才是问题。不要通过全仓库格式化来“修复”换行，
+这会制造无意义的大 diff。
+
+LF 同时适用于 macOS、Linux 和 Windows 上的 Node.js、Git 与现代编辑器。这里的“Linux 换行兼容”
+不等于产品首版正式支持 Linux 运行；当前公开产品支持范围仍是 macOS arm64 和 Windows 10+ x64。
+
 ## 3. 架构与硬性边界
 
 ### 3.1 分层
@@ -167,7 +269,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 git submodule update --init --recursive
 
 # 一次性：安装 + 构建上游依赖（submodule 内 host + client 两套 lib）
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run build:lib
 
 # 日常：改完 dsh-code 代码后重编（会自动 chmod +x lib/bin.js）
@@ -198,13 +300,99 @@ node deepseek-harness/apps/cli/lib/bin.js --profile headless \
 # 输出 DSH_CODE round trip complete: DSH_CODE_TOOL_ROUND_TRIP 即通过
 ```
 
-### 本地软链（开发体验）
+### 本地开发命令入口（软链 / npm link）
+
+开发入口必须指向构建后的 `lib/bin.js`。之后每次修改源码只需重新执行 `pnpm run build`，
+入口会继续使用最新产物。这种方式绕过正式 npm tarball，只用于开发；发布前仍需执行
+candidate verify 和 smoke。
+
+#### 当前 macOS 开发机参考（2026-08-20）
+
+| 项目 | 当前值 |
+| --- | --- |
+| 平台 | `darwin-arm64` |
+| 仓库 | `/Users/qingwei/dev/AILearn/dsh-code` |
+| Node | `v22.19.0`，位于 `/Users/qingwei/dev/Nodes/node-v22.19.0/bin/node` |
+| pnpm | 项目内执行 `pnpm --version` 为 `11.7.0` |
+| npm | `11.15.0` |
+| npm global prefix | `/Users/qingwei/dev/Nodes/node-v22.19.0` |
+| 命令入口 | `/Users/qingwei/dev/Nodes/node-v22.19.0/bin/dsh-code` |
+| 软链目标 | `/Users/qingwei/dev/AILearn/dsh-code/lib/bin.js` |
+| 上游全局 `dsh` | 当前未安装；该软链只提供 `dsh-code`，不会创建或覆盖 `dsh` |
+
+当前机器已有软链等价于：
 
 ```bash
-ln -sf "$(pwd)/lib/bin.js" ~/dev/Nodes/node-v22.19.0/bin/dsh-code
+ln -sfn \
+  /Users/qingwei/dev/AILearn/dsh-code/lib/bin.js \
+  /Users/qingwei/dev/Nodes/node-v22.19.0/bin/dsh-code
+
+command -v dsh-code
+ls -l "$(command -v dsh-code)"
+dsh-code --version
 ```
 
-> 注意：软链目录要选在 PATH 里且可写的（本机 `/usr/local/bin` 不可写，用了 `~/dev/Nodes/node-v22.19.0/bin`）。
+该 Node 目录已经在 `PATH` 中且当前用户可写，所以不需要 `sudo`。如果切换到 Node 24 或其他 Node 安装，
+global prefix 通常也会改变，需要在新环境中重新创建入口。
+
+#### macOS / Linux 通用软链方式
+
+不要复制当前机器的绝对路径；先根据正在使用的 Node/npm 找到 global prefix：
+
+```bash
+pnpm run build
+
+node --version
+npm prefix --global
+dev_bin="$(npm prefix --global)/bin"
+test -d "$dev_bin" && test -w "$dev_bin"
+ln -sfn "$PWD/lib/bin.js" "$dev_bin/dsh-code"
+
+command -v dsh-code
+dsh-code --version
+```
+
+如果 `dev_bin` 不在 `PATH` 或不可写，优先修正 Node 版本管理器的用户级安装，不要用 `sudo` 创建开发软链。
+也可以选择 `npm link`，但同一时间只保留一个位于 PATH 首位的 `dsh-code` 入口。
+
+#### Windows 10 原生开发入口
+
+Windows 不要手工把 `.js` 软链进 PATH。推荐从仓库根执行 `npm link`，由 npm 创建 Windows 原生的
+`dsh-code.cmd` / PowerShell shim：
+
+```powershell
+pnpm.cmd run build
+npm.cmd link
+
+Get-Command dsh-code -All
+where.exe dsh-code
+dsh-code.cmd --version
+```
+
+`npm link` 指向当前工作区，因此后续只需重新构建，不必反复 link。如果切换 Node 版本或 npm global prefix，
+需要在新环境中再次执行 `npm.cmd link`。结束源码开发后可移除开发 link，并恢复正式版：
+
+```powershell
+npm.cmd unlink --global dsh-code
+npm.cmd install --global @tsingwill/dsh-code@latest
+```
+
+如果 PowerShell 的执行策略拦截 `.ps1` shim，继续使用 `dsh-code.cmd`，不要关闭系统安全策略。
+
+#### PATH、正式版和开发数据隔离
+
+- `command -v dsh-code`（macOS/Linux）或 `Get-Command dsh-code -All`（Windows）用于确认实际命中的入口；
+- 开发 link 和正式安装的 `@tsingwill/dsh-code` 都提供同名命令，PATH 中靠前者生效；
+- 上游 `dsh` 使用另一个命令名和 `~/.dsh`，不会被上述 link 覆盖；
+- 开发入口默认仍使用 `~/.dsh-code`，会读取现有模型配置和会话；需要隔离调试数据时，先指定独立 home：
+
+```bash
+export DSH_CODE_HOME="${TMPDIR:-/tmp}/dsh-code-dev"
+```
+
+```powershell
+$env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
+```
 
 ## 7. 已实现功能清单
 
@@ -300,9 +488,10 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 - 会话切换（`/session` 只是展示信息；不支持对话内切到别的会话——已按产品决定移除 `/sessions`）。
 - `@` 文件联想依赖 `fd` 二进制（未安装时走内置遍历，较慢）。
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
-- npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；首次 RC 仍需 npm 2FA、
-  Windows CI/Windows 10 真机验收及 trusted publisher bootstrap。不要直接发布当前根包；完整流程见
-  [`docs/NPM_RELEASE.md`](./NPM_RELEASE.md)。
+- npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工
+  bootstrap，npm trusted publisher 已绑定仓库、`release.yml` 和 `release` environment，正式版 `0.1.0` 已通过
+  GitHub Actions OIDC + provenance 发布。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
+  不要直接发布当前根包；完整流程见 [`docs/NPM_RELEASE.md`](./NPM_RELEASE.md)。
 - 性能：转写是组件树重建（每次 render 清空重建），长会话未做虚拟化（见设计文档 §23 预算）。
 
 ## 12. 注意事项 / 踩坑
@@ -310,7 +499,8 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 1. **软链 entry 检测**：`isEntryPoint` 必须 `realpathSync(process.argv[1])`，否则软链/`npm link` 下 `main()` 不执行、命令静默无输出。
 2. **构建产物可执行位**：`tsc` 不保留 `bin.js` 的可执行位；build 使用跨平台 Node 脚本设置 Unix executable bit，
    不要改回 POSIX-only 的 `chmod` shell 命令。
-3. **lint 严格**：`@stylistic(max-len)` 限 140 列，pre-commit 会拦超长行。
+3. **代码格式**：根包当前没有 `lint` script；新增代码沿用不超过 140 列的风格，
+   并在提交前执行 `git diff --check`。
 4. **Enter 是 `\r` 不是 `\n`**：PTY 自动化测试喂输入时用 `\r`（`\n` 会被当成编辑器换行而非提交）。
 5. **`arguments` 是保留字**：TS strict mode 下参数名别用 `arguments`。
 6. **model selector 的 `value` 用 `\u0000` 分隔 provider 和 model**（避免 model id 里含 `/` 导致 split 错位）。
@@ -321,10 +511,12 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 ## 13. 提交与推送约定
 
 - **不要默认 git commit/push**，仅在用户明确要求时执行。
-- 提交前自查：`pnpm test` 与 `pnpm run typecheck` 全绿；lint 不报超长行。
-- pre-commit hook（lefthook）会跑 lint / third-party notices / whitespace / vendor guard，失败会拦截提交。
+- 提交前自查：`pnpm test`、`pnpm run typecheck` 与 `git diff --check` 全绿。
+- 根仓库当前没有 `lefthook.yml`，不要把本机全局 hook 输出的 `Can't find lefthook in PATH` 当成项目依赖缺失；
+  该提示目前不会阻止提交。远端 GitHub CI 才是统一门禁，会执行冻结安装、上游构建、类型检查、测试、
+  candidate 打包校验及 macOS/Windows smoke。
 
 ---
 
-*最后核对：2026-08-19，对应 `main` 分支（上游 submodule `99f6f02fec`）；含会话选择器
-`-r`/`--resume` + 删除二次确认、`-c`/`--continue`、内联选择器、shell mode、`/session` token/cache 统计。*
+*最后核对：2026-08-20，对应 `main` 分支（上游 submodule `99f6f02fec`）；已加入 Windows 10 原生开发接手流程、
+跨平台换行规则，并记录 npm `0.1.0` OIDC 正式发布状态。*
