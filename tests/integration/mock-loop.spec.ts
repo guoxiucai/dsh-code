@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+
+import { mockOverlay } from '../../scripts/make-mock-overlay.mjs'
 
 /** Repo root (tests/integration → ../..). */
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
@@ -32,17 +34,8 @@ describe('mock-LLM closed loop (headless composition)', () => {
     dirs.push(proj)
 
     // Repoint the default model at the keyless mock adapter via a --patch overlay.
-    const overlay = [
-      '- insert:',
-      '    - id: dsh-code-mock-llm',
-      `      name: ${JSON.stringify(pathToFileURL(mockAdapter).href)}`,
-      '',
-      '- id: agent-default-model',
-      '  config:',
-      '    provider: mock',
-      '    model: mock',
-      '',
-    ].join('\n')
+    // The overlay shape is defined once in scripts/make-mock-overlay.mjs.
+    const overlay = mockOverlay(mockAdapter)
     const overlayPath = join(home, 'mock.cordis.yml')
     writeFileSync(overlayPath, overlay)
 
