@@ -1,101 +1,288 @@
-# dsh-code
+<p align="center">
+  <img src="docs/assets/dsh-code-logo.svg" width="168" alt="dsh-code terminal whale logo">
+</p>
 
-Terminal coding agent powered by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). `dsh-code` is a **thin terminal host** over `@deepseek-ai/dsh-base` — it does not reimplement the Agent Loop, Session, model adapters, tools, Sandbox, permissions, MCP, Skills, Plan/Todo, or sub-Agents. All agent semantics come from the pinned upstream DSH.
+<h1 align="center">dsh-code</h1>
+
+<p align="center">
+  A DeepSeek Harness terminal coding agent for developers who prefer a focused TUI workflow.
+</p>
+
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/guoxiucai/dsh-code/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/guoxiucai/dsh-code/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4D6BFE.svg"></a>
+  <img alt="Node.js 22.19 or 24" src="https://img.shields.io/badge/Node.js-22.19%2B%20%7C%2024%2B-43853D.svg">
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img alt="Powered by dsh" src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white"></a>
+</p>
+
+> [!IMPORTANT]
+> `dsh-code` is an independent community project and is currently preparing its
+> first public release. It is not an official DeepSeek distribution. DeepSeek
+> Harness is also in developer preview, so compatibility-breaking upstream
+> changes may occur between pinned baselines.
+
+## Why dsh-code?
+
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) provides an
+official Web UI and a plugin-first agent runtime. `dsh-code` is for developers
+who prefer to stay in the terminal: it packages the same DSH agent semantics in
+a compact, keyboard-driven interface that works naturally beside shells,
+editors, Git, and remote development environments.
+
+The product draws on the interaction ideas of
+[Pi](https://github.com/earendil-works/pi) and uses
+[`@earendil-works/pi-tui`](https://www.npmjs.com/package/@earendil-works/pi-tui)
+for terminal rendering. It does **not** fork or replace the agent core. The Agent
+Loop, sessions, model adapters, tools, sandbox, permissions, MCP, Skills,
+Plan/Todo, and sub-agents remain owned by the pinned DSH runtime.
+
+In short:
+
+```text
+DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
+```
+
+## Preview
+
+<p align="center">
+  <img src="docs/assets/demo1.png" width="920" alt="dsh-code welcome screen and command autocomplete">
+</p>
+
+## Highlights
+
+- **Terminal-native workflow** — streaming Markdown, reasoning, tool cards,
+  file diffs, collapsible output, shell blocks, and a bottom-pinned composer.
+- **DeepSeek Harness semantics** — uses DSH's public session/events and services;
+  there is no second agent loop, session store, permission engine, or tool registry.
+- **Model setup in the TUI** — configure DeepSeek, OpenAI, or an
+  OpenAI-compatible endpoint through an inline, reversible wizard.
+- **Safe project startup** — canonical-path trust records and `read-only`,
+  `workspace-write`, or `danger-full-access` permission presets.
+- **Persistent sessions** — continue the latest session, search/resume/delete
+  history, inspect session statistics, fork a completed turn, and compact context.
+- **Agent visibility** — dedicated Plan/Todo states, tool progress, retry and
+  compaction indicators, approval prompts, and sub-agent activity.
+- **Fast terminal controls** — slash-command completion, `@` file completion,
+  direct `!` shell mode, inline selectors, and keyboard-first navigation.
+- **Independent installation** — stores product data under `~/.dsh-code`, keeps
+  a separately installed `dsh` command untouched, and supports explicit updates.
+- **Adaptive visuals** — a DeepSeek-blue palette tuned independently for dark
+  and light terminal backgrounds.
+
+## Architecture
+
+`dsh-code` is deliberately a thin terminal host over a fixed DSH baseline:
+
+```mermaid
+flowchart TB
+  User["Terminal user"] --> CLI["dsh-code launcher"]
+  CLI --> TUI["Terminal host<br/>Pi-inspired UX + pi-tui"]
+  TUI --> API["Public DSH services<br/>session/event + AgentHandle"]
+  API --> DSH["@deepseek-ai/dsh-base"]
+  DSH --> Runtime["Agent Loop · Sessions · Models · Tools<br/>Sandbox · Permissions · MCP · Skills<br/>Plan/Todo · Sub-agents"]
+```
+
+The launcher owns only product concerns: command parsing, `~/.dsh-code` home
+isolation, project trust, session selection, profile initialization, updates,
+and delegation to the upstream DSH executable. The TUI renders structured
+events and sends input back through the public `AgentHandle` API.
+
+See the accepted architecture decisions in [`docs/adr/`](docs/adr/) and the
+exact upstream revision in [`UPSTREAM_BASELINE.md`](UPSTREAM_BASELINE.md).
+
+## Requirements
+
+| Component | Supported in the first release |
+| --- | --- |
+| macOS | 14 or later, Apple Silicon (`arm64`) |
+| Windows | Windows 10 or later, x64 |
+| Node.js | `22.19+` (Node 23 excluded) or `24+` |
+| Package manager | npm for normal installation |
+
+Linux, macOS Intel/Rosetta, Windows ARM, and standalone installations without
+Node.js are not supported in the first release.
+
+## Installation
+
+### npm
+
+Once the first release is available:
 
 ```bash
 npm install -g @tsingwill/dsh-code
-cd /path/to/project
+```
+
+Verify the installation:
+
+```bash
+dsh-code --version
+dsh-code --help
+```
+
+The scoped npm package is `@tsingwill/dsh-code`; the installed command remains
+the shorter `dsh-code`.
+
+### Build from source
+
+```bash
+git clone --recurse-submodules https://github.com/guoxiucai/dsh-code.git
+cd dsh-code
+corepack enable
+corepack prepare pnpm@11.7.0 --activate
+pnpm install --frozen-lockfile
+pnpm run build:lib
+pnpm run build
+node lib/bin.js
+```
+
+## Quick start
+
+```bash
+cd /path/to/your/project
 dsh-code
 ```
 
-The first public release supports macOS 14+ on Apple Silicon and Windows 10+
-on x64, with Node.js 22.19+ (excluding Node 23) or Node.js 24+. The npm package
-uses its own `~/.dsh-code` home and does not replace or reuse a separately
-installed upstream `dsh` command.
+On the first launch for a project:
 
-Upgrade an npm-global installation explicitly:
+1. Review the canonical project path and choose a permission preset.
+2. Enter `/config` and select a provider.
+3. Complete the inline setup, then send a task in the editor.
+
+For the official DeepSeek API, `/config` asks for the API key and default model.
+For an OpenAI-compatible service, the wizard keeps five explicit values:
+
+1. provider route ID;
+2. base URL;
+3. credential environment-variable name (pre-filled from the route ID);
+4. API key;
+5. model ID.
+
+The wizard uses DeepSeek-compatible examples, supports `Esc` to return to the
+previous step, and writes values only after the final step succeeds. Credentials
+are stored owner-only in `~/.dsh-code/.credentials.yaml`.
+
+## Usage
+
+### Command line
+
+| Command | Description |
+| --- | --- |
+| `dsh-code` | Start a new interactive TUI session |
+| `dsh-code -c`, `--continue` | Continue the latest session for this project |
+| `dsh-code -r`, `--resume` | Open the searchable session picker |
+| `dsh-code resume [session-id]` | Resume a selected or explicit session |
+| `dsh-code -p "<task>"` | Run one headless task and print the final answer |
+| `dsh-code -p "<task>" --approve` | Trust the project non-interactively using `workspace-write` |
+| `dsh-code plugin <command>` | Delegate profile plugin management to DSH (requires pnpm) |
+| `dsh-code update --check` | Check the stable npm channel for an update |
+| `dsh-code update` | Confirm and install the available update |
+| `dsh-code update --channel next` | Select the release-candidate channel |
+
+### Interactive commands
+
+| Command | Description |
+| --- | --- |
+| `/config` | Configure DeepSeek, OpenAI, or an OpenAI-compatible provider |
+| `/model` | Switch the active model using an inline selector |
+| `/permission` | Select the active permission preset |
+| `/mcp add` | Add a stdio or Streamable HTTP MCP server to this project |
+| `/mcp remove <name>` | Remove a project MCP server |
+| `/session` | Show session, message, tool, model, and token statistics |
+| `/fork` | Fork at the most recent completed turn |
+| `/compact` | Compact the current context through DSH |
+| `/quit`, `/exit` | Exit when the agent is idle |
+| `!<command>` | Run a shell/PowerShell command without sending it to the model |
+
+Additional commands supplied by the pinned DSH profile remain discoverable
+through `/` autocomplete.
+
+### Essential keys
+
+| Key | Action |
+| --- | --- |
+| `Enter` | Send input or confirm an inline selection |
+| `Esc` | Go back/cancel an inline selector or wizard step |
+| `Ctrl+C` | Cancel the active turn; clear/exit when idle according to context |
+| `Ctrl+O` | Expand or collapse reasoning and tool output |
+| `Ctrl+D` | Exit when idle |
+| `/` | Open command completion |
+| `@` | Complete project files (`fd` enables faster fuzzy discovery) |
+
+## Sessions, configuration, and isolation
+
+By default all dsh-code state lives under `~/.dsh-code`:
+
+```text
+~/.dsh-code/
+├── .credentials.yaml       # owner-only provider credentials
+├── profiles/dsh-code/      # fixed DSH profile + terminal host patch
+├── projects/               # canonical-path trust records
+└── sessions/               # persisted sessions grouped by project
+```
+
+Set `DSH_CODE_HOME` to use a different root. On launch, dsh-code sets the
+delegated `DSH_HOME` to this isolated directory and disables DSH telemetry. It
+does not read or overwrite `~/.dsh`, and a globally installed upstream `dsh`
+binary remains independent.
+
+Project MCP configuration is written to `.dsh-code/cordis.patch.yml` inside the
+trusted project and takes effect on the next launch.
+
+## Updating
+
+Updates are explicit; dsh-code does not silently update itself:
 
 ```bash
 dsh-code update --check
 dsh-code update
+dsh-code update --channel next
+dsh-code update --version 0.1.0-rc.1
 ```
 
-Release engineering and first-publish instructions are documented in
-[`docs/NPM_RELEASE.md`](docs/NPM_RELEASE.md).
+The update command is supported for npm-global installations. Source checkouts
+should be updated with Git and rebuilt with the same tool that installed them.
 
-## What it is
-
-`dsh-code` = a fixed upstream baseline + `dsh-base` + a `dsh-code` profile patch that mounts one terminal-host plugin (built on [`@earendil-works/pi-tui`](https://github.com/earendil-works/pi)) + an npm product/launcher layer.
-
-Architectural invariants (see `docs/adr/`):
-
-1. The TUI renders only the public `session/event` feed and public services.
-2. Input flows only through `AgentHandle.followup()` / `steer()` / `cancel()` / `dispose()`.
-3. No second Session Store, Provider Store, Permission Engine, or Tool Registry.
-4. Single-prompt mode delegates to the upstream `headless` profile.
-5. The terminal host is referenced from the profile patch by an absolute `file://` module URL — no upstream boot path is modified.
-
-## CLI
-
-```
-dsh-code                         interactive terminal UI
-dsh-code -c | --continue         resume the most recent session in this directory
-dsh-code -r | --resume           open the session picker (search / delete)
-dsh-code resume [session-id]     resume a persisted session
-dsh-code -p <prompt>             answer one task and exit (delegates to headless)
-                 [--approve]     accept project startup trust non-interactively
-dsh-code plugin <add|remove|...> manage profile plugins (delegates to pnpm)
-dsh-code --version | --help
-```
-
-Home isolation: `DSH_HOME = DSH_CODE_HOME ?? ~/.dsh-code`. `dsh-code` never reuses an existing `~/.dsh` home.
-
-## Development
+## Development and verification
 
 ```bash
-# from the repo root
-git submodule update --init --recursive   # first checkout only
-pnpm install
-pnpm run build:lib                        # build upstream host + client lib (inside the submodule)
-pnpm run build                            # build dsh-code (tsc → lib/)
-pnpm test                                 # unit + integration tests
+pnpm run typecheck
+pnpm test
+pnpm run build
 ```
 
-Upstream `deepseek-ai/deepseek-harness` is a git submodule at `deepseek-harness/`
-(pinned SHA in `UPSTREAM_BASELINE.md`). The build uses plain `tsc` (not tsdown) so
-the TUI plugin's bare DSH imports stay external and resolve to the same instances
-the upstream process loads.
+The repository pins DeepSeek Harness as the `deepseek-harness/` git submodule.
+Product code stays at the repository root; upstream changes belong in a
+dedicated baseline update or should be contributed to DSH first.
 
-## Status
+Release design, platform compilation, candidate verification, and the update
+strategy are documented in [`docs/NPM_RELEASE.md`](docs/NPM_RELEASE.md).
 
-Implemented and verified end-to-end (mock LLM, no real key required):
+## Contributing and security
 
-- CLI (`--help`/`--version`/`-p`/`-c`/`-r`/`resume`), home isolation, project trust
-  gate, profile init, launcher delegation to `@deepseek-ai/dsh/lib/bin.js`.
-- Absolute `file://` terminal-host plugin loading (no upstream boot path modified).
-- Session lifecycle: resume by id, `-c` most-recent, `-r` full-screen picker
-  (search / delete confirmation / project-scope toggle), fork, `/session` stats.
-- TUI (`TuiMainScreen`): transcript, assistant streaming, tool cards, Markdown,
-  diff highlighting, block backgrounds, folding, status bar, editor, keybinding
-  footer, loading/retry/compaction indicators, Ctrl+C cancel, Ctrl+D exit.
-- Model-config wizard, `/model` + `/permission` inline selectors, `/mcp`
-  add/remove, command palette (`/model /config /mcp /session /fork /quit /exit`).
-- Shell mode (`!` prefix) with bordered output.
-- Approval overlay (Allow once / Reject), plan/todo/sub-agent notices.
-- `/` command autocomplete, `@` file autocomplete (fd), `/permission` argument
-  completions.
-- Pure `session/event` reducer (dedup, fail-fast ordering, unknown-event policy).
+- Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+- Use [GitHub Issues](https://github.com/guoxiucai/dsh-code/issues) for public
+  bug reports and feature requests.
+- Report vulnerabilities privately as described in [`SECURITY.md`](SECURITY.md).
+- Never attach unredacted API keys, session logs, credentials, or crash logs.
 
-Deferred: `dsh-code update`, npm publish/packaging (`workspace:*` → fixed
-versions), and cross-platform CI.
+## Relationship and attribution
 
-## Testing
+`dsh-code` is a downstream, independent community project. It is not affiliated
+with or endorsed by DeepSeek AI or the Pi maintainers.
 
-- Unit: reducer (EVT-*), CLI args (CLI-*), trust (TRUST-*).
-- Integration: mock-LLM closed loop (full tool round-trip + final answer), and the
-  missing-credential failure path.
-- A real DeepSeek / OpenAI smoke test requires a user API key (never committed).
+- Agent runtime: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+- TUI renderer and interaction inspiration: [Pi](https://github.com/earendil-works/pi)
+- Product distribution and terminal host: this repository
+
+The dsh-code terminal-whale logo adapts the official DeepSeek whale silhouette
+with a terminal window and prompt. The DeepSeek name and official whale artwork
+belong to their respective owners; see [`NOTICE`](NOTICE) for complete attribution.
 
 ## License
 
-MIT. See `NOTICE` for upstream attribution.
+[MIT](LICENSE) © 2026 guoxiucai. Third-party notices are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

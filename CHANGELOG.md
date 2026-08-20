@@ -17,6 +17,8 @@ Thin-terminal-host implementation over the pinned upstream DSH baseline
   trusted-publishing workflow.
 - Explicit `dsh-code update` checks and upgrades for npm-global installations.
 - Runtime platform guard for macOS arm64 and Windows 10+ x64.
+- English/Chinese product documentation, terminal-whale SVG logo, and packaged
+  README media assets.
 
 ### Session lifecycle
 
@@ -43,9 +45,10 @@ Thin-terminal-host implementation over the pinned upstream DSH baseline
 ### Agent integration
 
 - Approval overlay (Allow once / Reject).
-- Three-step model configuration wizard.
+- Reversible inline model configuration wizard for DeepSeek, OpenAI, and
+  five-field OpenAI-compatible routes.
 - MCP server configuration (add/remove stdio + Streamable HTTP servers).
-- Plan/todo/sub-agent status surfaced as UI notices.
+- Dedicated completed/active/pending Todo panel plus plan and sub-agent status.
 
 ### Internals
 

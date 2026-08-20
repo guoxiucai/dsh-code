@@ -53,7 +53,7 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 - GitHub Actions 已将同一个 candidate tarball 分别在 macOS arm64、Windows x64
   的 Node 22.19/24 环境完成 clean global install、CLI 和固定运行时验证；Node 22
   组还通过同名不同版本 fixture 验证了全局 `dsh` bin 共存。
-- 实测 `0.1.0-rc.1` candidate tarball 约 110 KiB，完整全局安装目录此前基线约 317 MB。后者需设
+- 实测 `0.1.0-rc.1` candidate tarball（含中英文 README、SVG 品牌资源与产品截图）约 216 KiB，完整全局安装目录此前基线约 317 MB。后者需设
   体积预算和回归门禁，但不构成 npm tarball 上限问题。
 
 ### 2.2 已解决缺口与剩余阻断项

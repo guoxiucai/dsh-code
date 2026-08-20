@@ -29,6 +29,8 @@
   "files": [
     "lib",
     "README.md",
+    "README.zh-CN.md",
+    "docs/assets",
     "CHANGELOG.md"
   ],
   "scripts": {

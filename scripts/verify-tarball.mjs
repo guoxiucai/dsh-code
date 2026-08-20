@@ -54,6 +54,8 @@ const allowedRoots = new Set([
   'lib',
   'package.json',
   'README.md',
+  'README.zh-CN.md',
+  'docs',
   'CHANGELOG.md',
   'LICENSE',
   'NOTICE',

@@ -25,7 +25,7 @@ if (!hasFlag(args, '--skip-build')) run('pnpm', ['run', 'build'])
 rmSync(DIST, { recursive: true, force: true })
 mkdirSync(STAGE, { recursive: true })
 
-for (const entry of ['lib', 'README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM_BASELINE.md']) {
+for (const entry of ['lib', 'README.md', 'README.zh-CN.md', 'docs/assets', 'CHANGELOG.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM_BASELINE.md']) {
   cpSync(join(ROOT, entry), join(STAGE, entry), { recursive: true })
 }
 cpSync(join(ROOT, 'deepseek-harness', 'THIRD_PARTY_NOTICES.md'), join(STAGE, 'UPSTREAM_THIRD_PARTY_NOTICES.md'))
@@ -90,6 +90,8 @@ const manifest = {
   files: [
     'lib',
     'README.md',
+    'README.zh-CN.md',
+    'docs/assets',
     'CHANGELOG.md',
     'LICENSE',
     'NOTICE',
