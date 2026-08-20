@@ -1,0 +1,20 @@
+# Keep repository text deterministic across macOS, Linux, and Windows.
+# Git stores text as LF and checks it out as LF unless overridden below.
+* text=auto eol=lf
+
+# Native cmd.exe scripts conventionally use CRLF in the working tree.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets must never pass through line-ending conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+*.tgz binary
