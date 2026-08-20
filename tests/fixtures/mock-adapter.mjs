@@ -1,15 +1,23 @@
 /**
  * Keyless deterministic mock LLM adapter for the dsh-code closed-loop test.
- * First response requests one real `bash` tool round-trip; the second response
- * echoes the tool result as the final answer. Exercises assistant chunks, a
- * tool/call + tool/result pair, and token usage — the same event shapes the TUI
- * reducer consumes. Loaded as a plain .mjs so the `dsh` CLI can import it via an
- * absolute file URL without tsx.
+ * First response requests one real shell tool round-trip (`bash` on macOS/Linux,
+ * `pwsh` on Windows — the upstream base bundle registers one or the other by
+ * platform); the second response echoes the tool result as the final answer.
+ * Exercises assistant chunks, a tool/call + tool/result pair, and token usage —
+ * the same event shapes the TUI reducer consumes. Loaded as a plain .mjs so the
+ * `dsh` CLI can import it via an absolute file URL without tsx.
  */
 
 import { CallId, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 
 const HIGH = ReasoningEffortId('high')
+
+// The base bundle registers `tool-bash` on POSIX (macOS/Linux) and `tool-pwsh` on
+// win32, so emit the call for whichever tool this host actually has, with an
+// equivalent command that prints the same round-trip marker on stdout.
+const TOOL = process.platform === 'win32'
+  ? { name: 'pwsh', command: "Write-Output 'DSH_CODE_TOOL_ROUND_TRIP'" }
+  : { name: 'bash', command: 'printf DSH_CODE_TOOL_ROUND_TRIP' }
 
 class MockAdapter extends LlmAdapter {
   async resolveModel(provider, model) {
@@ -25,10 +33,10 @@ class MockAdapter extends LlmAdapter {
     const last = options.messages.at(-1)
     const toolResult = last?.content.find(block => block.type === 'tool-result')
     if (toolResult === undefined) {
-      const args = JSON.stringify({ command: 'printf DSH_CODE_TOOL_ROUND_TRIP', description: 'Prove the tool round trip.' })
+      const args = JSON.stringify({ command: TOOL.command, description: 'Prove the tool round trip.' })
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
-      yield { type: 'tool-call-delta', index: 0, id: CallId('dsh-code-call'), name: 'bash', argumentsDelta: args }
-      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('dsh-code-call'), name: 'bash', arguments: args } }
+      yield { type: 'tool-call-delta', index: 0, id: CallId('dsh-code-call'), name: TOOL.name, argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('dsh-code-call'), name: TOOL.name, arguments: args } }
       yield { type: 'usage', usage: { inputTokens: 11, outputTokens: 3, cacheReadTokens: 2 } }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
       return

@@ -205,8 +205,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
   tests/
     unit/                      # reducer / args / trust / sessions / project-config / selector
     integration/mock-loop.spec.ts   # mock LLM 闭环 + 缺凭证失败路径
-    fixtures/mock-adapter.mjs       # 无 key 的确定性 mock LLM 适配器
-    fixtures/mock.cordis.yml        # mock 组合 overlay
+    fixtures/mock-adapter.mjs       # 无 key 的确定性 mock LLM 适配器（overlay 由 scripts/make-mock-overlay.mjs 动态生成）
 ```
 
 ## 5. 关键文件说明
@@ -295,8 +294,11 @@ pnpm run typecheck            # tsc -p tsconfig.json --noEmit
 ### 不用真实 key 测模型闭环
 
 ```bash
+# 生成 overlay（`name` 用当前机器的绝对 file:// URL，跨平台可移植）
+node scripts/make-mock-overlay.mjs   # 打印 overlay 路径（默认生成临时文件即可）
+
 node deepseek-harness/apps/cli/lib/bin.js --profile headless \
-  --patch tests/fixtures/mock.cordis.yml "prove the tool path"
+  --patch "$(node scripts/make-mock-overlay.mjs)" "prove the tool path"
 # 输出 DSH_CODE round trip complete: DSH_CODE_TOOL_ROUND_TRIP 即通过
 ```
 
