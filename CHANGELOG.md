@@ -44,7 +44,11 @@ Thin-terminal-host implementation over the pinned upstream DSH baseline
 
 ### Agent integration
 
-- Approval overlay (Allow once / Reject).
+- Bottom-pinned one-shot approval bar (Allow once / Reject) for sandbox
+  escalation and hook-driven asks.
+- Structured `ask_user_question` and plan-review panels with single choice,
+  multi-select, custom answers, bounded Markdown, cancellation, and serialized
+  concurrent requests.
 - Reversible inline model configuration wizard for DeepSeek, OpenAI, and
   five-field OpenAI-compatible routes.
 - MCP server configuration (add/remove stdio + Streamable HTTP servers).

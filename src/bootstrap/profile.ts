@@ -1,9 +1,10 @@
 /**
  * Initialize the fixed `dsh-code` profile under `~/.dsh-code/profiles/dsh-code`.
  * The profile stacks `@deepseek-ai/dsh-base` (the upstream shared core) with one
- * terminal-host plugin row, referenced by an absolute `file://` module URL so
- * the product's own TUI loads from the installed package without any upstream
- * boot-path change.
+ * product interaction rows. The model-facing ask-user tool comes from DSH;
+ * the terminal-host plugin is referenced by an absolute `file://` module URL
+ * so the product's own TUI loads from the installed package without any
+ * upstream boot-path change.
  * @module dsh-code/bootstrap/profile
  */
 
@@ -28,12 +29,15 @@ function profileManifest(): string {
   }, null, 2) + '\n'
 }
 
-/** The profile patch layer: one terminal-host plugin row. */
+/** The profile patch layer: DSH ask-user tool plus the terminal-host plugin. */
 function profilePatch(tuiPluginUrl: string): string {
-  return `# dsh-code terminal host — the product's one composition row over dsh-base.
+  return `# dsh-code interaction layer over dsh-base.
 # The TUI plugin is referenced by absolute module URL so it always loads from
 # the installed dsh-code package, never from the upstream installation.
 - insert:
+    - id: dsh-code-tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+
     - id: dsh-code-tui
       name: ${JSON.stringify(tuiPluginUrl)}
 `

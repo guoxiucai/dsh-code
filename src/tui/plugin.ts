@@ -16,6 +16,11 @@ import { installModelSelection, type Agent, type ModelSelectionRef } from '@deep
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import {
+  UserQuestionError,
+  type AskUserQuestionAnswer,
+  type AskUserQuestionRequest,
+} from '@deepseek-ai/dsh-user-questions'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -40,7 +45,7 @@ import { FIRST_MODEL_CONFIG_ENV } from '../bootstrap/credentials.ts'
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter']
+export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions']
 
 /** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
 const RENDER_INTERVAL_MS = 16
@@ -602,17 +607,32 @@ async function run(ctx: Context): Promise<void> {
     scheduleRender()
   })
 
-  // Permission answerer: a one-shot Allow/Reject overlay for this agent's tool
-  // calls. Never infers a durable grant; Esc/cancel settles as `cancelled`.
+  // Permission answerer: a one-shot Allow/Reject bar for this agent's tool
+  // calls. Never infers a durable grant; Esc/abort settles as `cancelled`.
   const disposeApproval = ctx.on('approval/request', (request, next) => {
     if (request.agent !== agent) return next()
-    const question = request.reason !== undefined && request.reason !== ''
-      ? `Allow \`${request.toolName}\`?\n${request.reason}`
-      : `Allow \`${request.toolName}\`?`
-    return host.askChoice(question, [
-      { value: 'allowed-once', label: 'Allow once' },
-      { value: 'rejected', label: 'Reject' },
-    ]).then(value => value === 'allowed-once' ? 'allowed-once' : value === 'rejected' ? 'rejected' : 'cancelled')
+    return host.askApproval({
+      toolName: request.toolName,
+      ...(request.callId === undefined ? {} : { callId: String(request.callId) }),
+      ...(request.reason === undefined ? {} : { reason: request.reason }),
+    }, request.signal).then(value => value ?? 'cancelled')
+  })
+
+  // Structured user-question provider shared by ask_user_question and the
+  // plan-mode review intent. The host returns one complete, protocol-shaped
+  // answer batch; Esc and turn cancellation stay distinct failures.
+  const disposeQuestions = ctx.userQuestions.registerProvider({
+    async ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {
+      if (request.agent !== undefined && request.agent !== agent) {
+        throw new UserQuestionError('dsh-code can only answer questions for its active root agent', 'CALLER_NOT_LIVE')
+      }
+      const answer = await host.askQuestions(request.questions, request.signal)
+      if (answer !== undefined) return answer
+      if (request.signal?.aborted === true) {
+        throw new UserQuestionError('ask_user_question was aborted before the user answered', 'ASK_ABORTED')
+      }
+      throw new UserQuestionError('the user cancelled ask_user_question', 'ASK_CANCELLED')
+    },
   })
 
   const shutdown = async (code: number): Promise<void> => {
@@ -628,6 +648,7 @@ async function run(ctx: Context): Promise<void> {
     disposeEvents()
     disposeStatus()
     disposeApproval()
+    disposeQuestions()
     disposeCommandsChange()
     try {
       await sessions.flush(agent.session)

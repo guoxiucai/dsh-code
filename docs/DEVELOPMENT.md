@@ -191,7 +191,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       credentials.ts           # 首次启动凭据存在性判断 + launcher→TUI 引导标记
       trust.ts                 # 项目信任（canonical path + sha256 + 三档权限）
       trust-picker.ts          # 全屏 TUI 信任选择器
-      profile.ts               # 初始化 dsh-code profile（bundles: dsh-base + TUI patch）
+      profile.ts               # 初始化 profile（dsh-base + ask-user 工具 + TUI patch）
       sessions.ts              # 会话列表：projectKey + zstd 多 frame 解码 + 首条用户消息
       resume-picker.ts         # 全屏会话选择器（-r/--resume：搜索/删除二次确认/Tab 切换项目范围）
     tui/
@@ -201,6 +201,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       view-model.ts            # ViewModel 类型（TranscriptItem / RetryStatus / ToolDiff 等）
       theme.ts                 # ANSI 调色板（userBg/toolBg/border/bashBorder/selectorBorder…）
       selector.ts              # 内联列表选择器和文本输入（向导控件）
+      interaction.ts           # 一次性审批条、结构化问题与 Plan Review 面板
       config-wizard.ts         # /config 纯辅助函数（如 credential env 自动生成）
       project-config.ts        # 读写项目 .dsh-code/cordis.patch.yml（MCP 配置）
   tests/
@@ -226,14 +227,18 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 ### 5.2 `plugin.ts` — 核心接线（最重要）
 
 - `inject` 包含 `agents`、`agentDefaultModel`、`sessions`、`commands`、`llm`、`credentials`、`settings`、
-  `permissionPresets`、`shell`、`tokenMeter`。
+  `permissionPresets`、`shell`、`tokenMeter`、`userQuestions`。
 - 用 `agents.create` / `agents.resume` 创建/恢复 agent，`installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
 - `onSubmit` 分发：`!` shell → `/permission` 选择器 → `/` 命令 → 普通 `agent.followup`。
 - 注册 slash 命令：`/model` `/config` `/mcp` `/session` `/fork` `/quit` `/exit`。
 - 首次运行收到 `DSH_CODE_FIRST_MODEL_CONFIG=1` 时，在主屏启动和命令注册完成后自动调用同一个
   Provider 配置选择器；Esc 可退出本次引导，未保存 Credential 时下次启动会再次显示。
-- 权限审批：`ctx.on('approval/request')` → `host.askChoice`（Allow once / Reject）。
+- 权限审批：`ctx.on('approval/request')` → `host.askApproval` 内联一次性审批条（Allow once / Reject）；
+  沙箱升级与 Hook `ask` 都由上游进入同一个 waterfall，TUI 不自行判断来源。
+- 结构化提问：向 `ctx.userQuestions` 注册当前 root agent 的唯一 UI provider；`ask_user_question` 与
+  `exit_plan_mode` 的 `plan-review` intent 都通过 `host.askQuestions` 收集协议格式答案。Agent/Session 语义仍由
+  上游服务负责，TUI 只负责展示和回传。
 
 ### 5.3 `host.ts` — TUI 主屏
 
@@ -258,6 +263,9 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
   鼠标松开或 `Ctrl+C` / `Command+C` 通过 `clipboard.ts` 写入系统剪贴板（macOS `pbcopy`、Windows PowerShell）；
   Ctrl+D/L/O、`askChoice`/`askText`（overlay）、
   `showSelector` / `showInlineInput`（内联）。
+- `inlineContainer` 同时承载普通向导和内核发起的人机交互。后者通过 FIFO 队列串行展示，防止并行工具调用互相覆盖；
+  展示期间隐藏主编辑器并暂停 Working spinner，回答、Esc、AbortSignal 或 `stop()` 都通过同一个 once-only settle
+  路径恢复输入框并继续队列。
 - Working 区以 `turn/start` 的事件时间为起点，每秒显示真实持续时间，例如
   `Working (1m 27s • esc to interrupt)`；`turn/end` 后立即清除计时器。
 
@@ -419,7 +427,8 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | 独立 home、项目信任、profile 初始化、launcher 委托 | ✅ |
 | `-p` 单次 prompt（委托 headless） | ✅ |
 | TUI：转写、流式、工具卡片、状态栏、编辑器 | ✅ |
-| approval overlay（Allow once / Reject） | ✅ |
+| 一次性内联审批条（沙箱升级 / Hook ask，Allow once / Reject） | ✅ |
+| 结构化 `ask_user_question` / Plan Review（单选、多选、自定义答案） | ✅ |
 | 内联选择/输入（/model、/permission、/config 全流程） | ✅ |
 | 无已存 Credential 时自动进入首次模型/API Token 配置 | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
@@ -468,7 +477,24 @@ OpenAI-compatible 保留五个输入步骤，并统一使用 DeepSeek 官方兼�
 `https://api.deepseek.com`、credential env `DEEPSEEK_API_KEY`、API Key、Model ID `deepseek-chat`。credential env 根据
 Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再确认。
 
-### 8.4 模型切换
+### 8.4 内核发起的人机交互
+
+`interaction.ts` 的两个组件都固定挂在输入框区域，不使用浮层：
+
+- `ApprovalBarComponent` 展示上游请求中的 `toolName`、`callId`、`reason`，仅返回 `allowed-once`、`rejected`
+  或取消；它不写 permission preset，也不保存长期授权。
+- `QuestionPanelComponent` 按请求顺序逐题回答；单选回传一个 label，多选通过 Space 勾选并可同时附带 custom，
+  没有 options 时直接进入输入状态；`Type an answer…` 是固定的占位行，Enter 后在该行原位切换为 Input，
+  Esc 回到上一层菜单。选项说明区按当前问题的最大说明行数预留，移动选项或切换输入状态都不会改变面板高度。
+- `intent.kind === 'plan-review'` 时把 `detail` 作为 Markdown 计划展示，视窗固定最多 6 行并用 PgUp/PgDn 滚动；
+  intent 只改变展示方式，不改变 `AskUserQuestionAnswer` 协议。
+- `TuiHost.enqueueKernelInteraction` 负责 FIFO、AbortSignal 和 shutdown 收尾。组件不直接调用 Agent、Tool Registry
+  或 Session；`plugin.ts` 是 UI 与 DSH 公共服务间唯一接线点。
+
+固定 profile 的 `cordis.patch.yml` 额外挂载上游 `@deepseek-ai/dsh-tool-ask-user`，提供模型可调用的
+`ask_user_question`。`userQuestions` service 本身已属于 `dsh-base`，Plan Mode 也直接复用该 service。
+
+### 8.5 模型切换
 
 `modelRef`（`ModelSelectionRef`）在 agent 创建时 `installModelSelection` 挂上；`/model` 选择后改 `modelRef.current`（当前 agent 下一轮生效）+ 写 `agent-default-model` 设置（持久化）。
 
@@ -481,6 +507,7 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 | `createUserMessage`、`TokenUsage` | `@deepseek-ai/dsh-llm` |
 | `ctx.commands.list/execute/register` | `@deepseek-ai/dsh-commands` |
 | `ctx.approval`（`approval/request` waterfall） | `@deepseek-ai/dsh-user-approval` |
+| `ctx.userQuestions.ask/registerProvider`、`AskUserQuestionAnswer` | `@deepseek-ai/dsh-user-questions` |
 | `ctx.permissionPresets.names/current/set` | `@deepseek-ai/dsh-permission-presets` |
 | `ctx.settings.update/replace/get`、`ctx.credentials.set` | `@deepseek-ai/dsh-settings` / `-credentials` |
 | `ctx.shell.resolve/run` | `@deepseek-ai/dsh-shell` |

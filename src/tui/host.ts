@@ -1,8 +1,8 @@
 /**
  * Terminal host: a pi-tui alternate-screen viewport with a scrollable transcript
  * and a bottom-pinned interaction region (Todo, activity, editor, status).
- * and editor components. It owns terminal lifecycle (raw mode, restore on
- * stop) but no agent semantics — those come from the plugin via callbacks.
+ * It owns terminal lifecycle (raw mode, restore on stop) but no agent
+ * semantics — those come from the plugin via callbacks.
  * @module dsh-code/tui/host
  */
 
@@ -32,6 +32,8 @@ import {
   type SlashCommand,
   type TUI,
 } from '@earendil-works/pi-tui'
+import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
+import { diffLines } from 'diff'
 import { bindAdaptiveTheme, theme, type AdaptiveThemeBinding } from './theme.ts'
 import { clipboardInvocation, writeClipboard } from './clipboard.ts'
 import {
@@ -41,7 +43,7 @@ import {
   type SelectorOptions,
 } from './selector.ts'
 import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
-import { diffLines } from 'diff'
+import { ApprovalBarComponent, QuestionPanelComponent, type InlineApprovalRequest } from './interaction.ts'
 
 /** Editor + autocomplete theme: DeepSeek-blue focus, semantic warning states. */
 const EDITOR_THEME: EditorTheme = {
@@ -86,6 +88,11 @@ export interface TuiHostCallbacks {
 export interface AssistantDraft {
   text: string
   reasoning: string
+}
+
+interface QueuedKernelInteraction {
+  start(): void
+  cancel(): void
 }
 
 /** Max result lines shown while a tool card is collapsed. */
@@ -677,6 +684,9 @@ export class TuiHost {
   private shellMode = false
   private readonly inlineContainer: Container
   private inlineControlActive = false
+  private readonly kernelInteractionQueue: QueuedKernelInteraction[] = []
+  private activeKernelInteractionCancel: (() => void) | undefined
+  private stopped = false
   private adaptiveTheme: AdaptiveThemeBinding | undefined
 
   constructor(callbacks: TuiHostCallbacks) {
@@ -763,6 +773,15 @@ export class TuiHost {
   }
 
   private updateWorkingIndicator(view: TuiViewModel): void {
+    // A human decision is the active foreground work. Keeping the spinner below
+    // it suggests the model is still generating and wastes scarce bottom-panel
+    // space, so pause it until the interaction settles.
+    if (this.activeKernelInteractionCancel !== undefined) {
+      this.workingContainer.clear()
+      this.workingLoader.stop()
+      this.clearWorkingTimer()
+      return
+    }
     const message = renderWorkingMessage(view)
     if (message === undefined) {
       this.workingContainer.clear()
@@ -885,6 +904,80 @@ export class TuiHost {
     this.mountInlineControl(input)
   }
 
+  /** Show one tool approval in the shared bottom-pinned interaction queue. */
+  askApproval(
+    request: InlineApprovalRequest,
+    signal?: AbortSignal,
+  ): Promise<'allowed-once' | 'rejected' | undefined> {
+    return this.enqueueKernelInteraction(signal, settle => new ApprovalBarComponent(
+      request,
+      outcome => { settle(outcome) },
+      () => { settle(undefined) },
+    ))
+  }
+
+  /** Collect a complete structured answer batch for ask_user_question/plan review. */
+  askQuestions(
+    questions: readonly AskUserQuestionItem[],
+    signal?: AbortSignal,
+  ): Promise<AskUserQuestionAnswer | undefined> {
+    return this.enqueueKernelInteraction(signal, settle => new QuestionPanelComponent(
+      questions,
+      answer => { settle(answer) },
+      () => { settle(undefined) },
+    ))
+  }
+
+  /** Serialize kernel-owned interactions so parallel tool calls cannot replace each other's UI. */
+  private enqueueKernelInteraction<T>(
+    signal: AbortSignal | undefined,
+    create: (settle: (value: T | undefined) => void) => Component & { focused: boolean },
+  ): Promise<T | undefined> {
+    return new Promise(resolve => {
+      let started = false
+      let settled = false
+      const onAbort = (): void => { settle(undefined) }
+      const settle = (value: T | undefined): void => {
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        if (started) {
+          this.activeKernelInteractionCancel = undefined
+          this.clearInlineControl()
+          if (this.lastView !== undefined) this.updateWorkingIndicator(this.lastView)
+        }
+        resolve(value)
+      }
+      const entry: QueuedKernelInteraction = {
+        start: () => {
+          if (settled || this.stopped) { settle(undefined); this.pumpKernelInteractions(); return }
+          started = true
+          this.activeKernelInteractionCancel = () => { settle(undefined) }
+          try {
+            this.mountInlineControl(create(settle))
+            if (this.lastView !== undefined) this.updateWorkingIndicator(this.lastView)
+          } catch {
+            settle(undefined)
+          }
+        },
+        cancel: () => { settle(undefined) },
+      }
+      if (signal?.aborted === true || this.stopped) {
+        settle(undefined)
+        return
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      this.kernelInteractionQueue.push(entry)
+      this.pumpKernelInteractions()
+    })
+  }
+
+  private pumpKernelInteractions(): void {
+    if (this.stopped || this.inlineControlActive || this.activeKernelInteractionCancel !== undefined) return
+    const next = this.kernelInteractionQueue.shift()
+    if (next !== undefined) next.start()
+  }
+
   /** Replace the active inline control, hide the editor, and transfer focus. */
   private mountInlineControl(control: Component & { focused: boolean }): void {
     this.inlineContainer.clear()
@@ -905,6 +998,10 @@ export class TuiHost {
     this.inlineControlActive = false
     this.tui.setFocus(this.editor)
     this.tui.requestRender()
+    // Config wizards synchronously mount their next step after clearing the
+    // current one. Deferring the pump prevents a queued kernel prompt from
+    // being mounted and immediately replaced inside that callback.
+    queueMicrotask(() => { this.pumpKernelInteractions() })
   }
 
   getText(): string { return this.editor.getText() }
@@ -972,6 +1069,7 @@ export class TuiHost {
   }
 
   start(): void {
+    this.stopped = false
     this.tui.start()
     this.adaptiveTheme = bindAdaptiveTheme(this.tui, () => {
       if (this.lastView !== undefined) this.render(this.lastView)
@@ -979,6 +1077,11 @@ export class TuiHost {
     void this.adaptiveTheme.detect()
   }
   stop(): void {
+    this.stopped = true
+    const queued = this.kernelInteractionQueue.splice(0)
+    for (const interaction of queued) interaction.cancel()
+    this.activeKernelInteractionCancel?.()
+    this.activeKernelInteractionCancel = undefined
     this.clearWorkingTimer()
     this.adaptiveTheme?.dispose()
     this.adaptiveTheme = undefined

@@ -64,8 +64,9 @@ DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
   `workspace-write`, or `danger-full-access` permission presets.
 - **Persistent sessions** — continue the latest session, search/resume/delete
   history, inspect session statistics, fork a completed turn, and compact context.
-- **Agent visibility** — dedicated Plan/Todo states, tool progress, retry and
-  compaction indicators, approval prompts, and sub-agent activity.
+- **Agent visibility and decisions** — dedicated Plan/Todo states, tool
+  progress, retry and compaction indicators, one-shot approval bars,
+  structured questions, plan review, and sub-agent activity.
 - **Fast terminal controls** — slash-command completion, `@` file completion,
   direct `!` shell mode, inline selectors, and keyboard-first navigation.
 - **Independent installation** — stores product data under `~/.dsh-code`, keeps
@@ -211,6 +212,21 @@ through `/` autocomplete.
 | `Ctrl+D` | Exit when idle |
 | `/` | Open command completion |
 | `@` | Complete project files (`fd` enables faster fuzzy discovery) |
+
+### Approvals and structured questions
+
+When a tool requests sandbox escalation or a hook returns `ask`, dsh-code pins
+a one-shot **Allow once / Reject** bar above the composer. The choice applies
+only to that request; `Esc` cancels it and does not create a persistent grant.
+
+The DSH `ask_user_question` tool and plan-mode review use the same bottom-pinned
+interaction area. Single-choice questions submit immediately; multi-choice
+questions use `Space` to toggle entries and `Enter` on **Continue** to submit.
+Select **Type an answer…** and press `Enter` to edit that same row in place; no
+panel content shifts. While editing, `Esc` returns to the preceding menu. Long
+plan Markdown is bounded to six lines and scrolls with
+`PgUp` / `PgDn`. Parallel requests are queued so one prompt cannot replace
+another.
 
 ## Sessions, configuration, and isolation
 
