@@ -19,10 +19,14 @@ describe('adaptive terminal theme', () => {
       accent: '107;132;255',
       userBg: '52;53;65',
       toolBg: '40;50;40',
+      diffAddedBg: '29;63;42',
+      diffRemovedBg: '74;35;35',
     })
     if (process.env.NO_COLOR === undefined) {
       expect(theme.accent('brand')).toContain('\x1b[38;2;107;132;255m')
       expect(theme.userBg('block')).toContain('\x1b[48;2;52;53;65m')
+      expect(theme.diffAddedBg('line')).toContain('\x1b[48;2;29;63;42m')
+      expect(theme.diffRemovedBg('line')).toContain('\x1b[48;2;74;35;35m')
     } else {
       expect(theme.accent('brand')).toBe('brand')
       expect(theme.userBg('block')).toBe('block')
@@ -37,11 +41,15 @@ describe('adaptive terminal theme', () => {
       accent: '64;91;216',
       userBg: '238;241;255',
       toolBg: '239;247;240',
+      diffAddedBg: '218;242;225',
+      diffRemovedBg: '250;218;218',
     })
     if (process.env.NO_COLOR === undefined) {
       expect(theme.accent('brand')).toContain('\x1b[38;2;64;91;216m')
       expect(theme.userBg('block')).toContain('\x1b[48;2;238;241;255m')
       expect(theme.toolBg('block')).toContain('\x1b[48;2;239;247;240m')
+      expect(theme.diffAddedBg('line')).toContain('\x1b[48;2;218;242;225m')
+      expect(theme.diffRemovedBg('line')).toContain('\x1b[48;2;250;218;218m')
     }
   })
 

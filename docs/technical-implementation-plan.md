@@ -828,7 +828,7 @@ interface TuiViewModel {
 | --- | --- | --- | --- |
 | Enter | 提交 | 根据上游能力 followup/排队 | 确认选项 |
 | Shift+Enter | 换行 | 换行 | 无 |
-| Ctrl+C | 复制选中的终端文本 | 复制选中的终端文本 | 复制选中的终端文本 |
+| Ctrl+C / Command+C | 复制结果区选中的文本 | 复制结果区选中的文本 | 复制结果区选中的文本 |
 | Ctrl+D | 空 editor 时退出 | 不退出 | 无 |
 | Esc | 返回当前内联步骤 | 调用 cancel，保持进程存活 | 取消/返回 |
 | Ctrl+L | 请求重绘 | 请求重绘 | 请求重绘 |

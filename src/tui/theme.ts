@@ -13,12 +13,26 @@ interface ThemePalette {
   accent: string
   userBg: string
   toolBg: string
+  diffAddedBg: string
+  diffRemovedBg: string
 }
 
 /** Same DeepSeek-blue hue, tuned separately for dark and light terminals. */
 export const THEME_PALETTES: Readonly<Record<TerminalColorScheme, ThemePalette>> = {
-  dark: { accent: '107;132;255', userBg: '52;53;65', toolBg: '40;50;40' },
-  light: { accent: '64;91;216', userBg: '238;241;255', toolBg: '239;247;240' },
+  dark: {
+    accent: '107;132;255',
+    userBg: '52;53;65',
+    toolBg: '40;50;40',
+    diffAddedBg: '29;63;42',
+    diffRemovedBg: '74;35;35',
+  },
+  light: {
+    accent: '64;91;216',
+    userBg: '238;241;255',
+    toolBg: '239;247;240',
+    diffAddedBg: '218;242;225',
+    diffRemovedBg: '250;218;218',
+  },
 }
 
 let colorScheme: TerminalColorScheme = 'dark'
@@ -54,6 +68,8 @@ const brand = adaptivePaint(() => `38;2;${THEME_PALETTES[colorScheme].accent}`, 
 const selected = adaptivePaint(() => `1;38;2;${THEME_PALETTES[colorScheme].accent}`, '22;39')
 const userBg = adaptivePaint(() => `48;2;${THEME_PALETTES[colorScheme].userBg}`, '49')
 const toolBg = adaptivePaint(() => `48;2;${THEME_PALETTES[colorScheme].toolBg}`, '49')
+const diffAddedBg = adaptivePaint(() => `48;2;${THEME_PALETTES[colorScheme].diffAddedBg}`, '49')
+const diffRemovedBg = adaptivePaint(() => `48;2;${THEME_PALETTES[colorScheme].diffRemovedBg}`, '49')
 
 export interface AdaptiveThemeBinding {
   /** Query the initial preference after the terminal has started. */
@@ -123,6 +139,10 @@ export const theme = {
   userBg,
   /** Full-width tool-call background: dark green-gray or light green-gray. */
   toolBg,
+  /** Full-width added-code background: dark green or light green tint. */
+  diffAddedBg,
+  /** Full-width removed-code background: dark red or light red tint. */
+  diffRemovedBg,
   /** Default editor border — adaptive DeepSeek brand blue. */
   border: brand,
   /** Editor border color in shell mode (`!` prefix) — a distinct green. */

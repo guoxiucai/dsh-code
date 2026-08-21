@@ -53,8 +53,9 @@ DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
 
 ## Highlights
 
-- **Terminal-native workflow** — streaming Markdown, reasoning, tool cards,
-  file diffs, collapsible output, shell blocks, and a bottom-pinned composer.
+- **Terminal-native workflow** — streaming Markdown, a five-line live reasoning
+  window, line-numbered file diffs, selectable/copyable results, shell blocks,
+  and a bottom-pinned composer.
 - **DeepSeek Harness semantics** — uses DSH's public session/events and services;
   there is no second agent loop, session store, permission engine, or tool registry.
 - **Model setup in the TUI** — configure DeepSeek, OpenAI, or an
@@ -203,8 +204,8 @@ through `/` autocomplete.
 | --- | --- |
 | `Enter` | Send input or confirm an inline selection |
 | `Esc` | Go back/cancel an inline step; interrupt the active turn |
-| `Ctrl+C` | Copy selected terminal text; never interrupts the active turn |
-| `Ctrl+O` | Expand or collapse reasoning and tool output |
+| `Ctrl+C` / `Command+C` | Copy the selected result text; never interrupts the active turn |
+| `Ctrl+O` | Expand or collapse reasoning (latest 5 lines by default) and tool output |
 | `Ctrl+D` | Exit when idle |
 | `/` | Open command completion |
 | `@` | Complete project files (`fd` enables faster fuzzy discovery) |

@@ -7,6 +7,9 @@ import {
   halveBlockArt,
   isTurnInterruptInput,
   layoutStatusLine,
+  renderDiffRow,
+  renderDiffRows,
+  renderReasoningLines,
   renderWorkingMessage,
   renderWelcomeBanner,
   renderStatus,
@@ -79,6 +82,79 @@ describe('layoutStatusLine', () => {
     const line = layoutStatusLine('a very long standalone status value', '', 16)
 
     expect(visibleWidth(line)).toBe(16)
+  })
+})
+
+describe('tool diff rendering', () => {
+  it('uses old line numbers for removals and new line numbers otherwise', () => {
+    const rows = renderDiffRows([{
+      path: 'src/example.ts',
+      oldText: 'const first = 1\nconst retry = true\nconst last = 3\n',
+      newText: 'const first = 1\nconst working = true\nconst last = 3\n',
+    }])
+    const plain = rows.map(row => stripTerminalSequences(row.text))
+
+    expect(rows.map(row => row.kind)).toEqual(['context', 'context', 'removed', 'added', 'context'])
+    expect(plain).toEqual([
+      '  src/example.ts',
+      ' 1    const first = 1',
+      ' 2 -  const retry = true',
+      ' 2 +  const working = true',
+      ' 3    const last = 3',
+    ])
+  })
+
+  it('aligns every line-number field to the widest file line number', () => {
+    const oldText = Array.from({ length: 99 }, (_, index) => `old-${index + 1}`).join('\n')
+    const newText = `${oldText}\nnew-100`
+    const rows = renderDiffRows([{ path: 'large.ts', oldText, newText }])
+    const plain = rows.map(row => stripTerminalSequences(row.text))
+
+    expect(plain[1]).toMatch(/^   1    old-1$/)
+    expect(plain.at(-1)).toBe(' 100 +  new-100')
+  })
+
+  it('paints added and removed rows across the complete terminal width', () => {
+    const added = renderDiffRow({ text: ' 2 +  next', kind: 'added' }, 24)
+    const removed = renderDiffRow({ text: ' 2 -  previous', kind: 'removed' }, 24)
+
+    expect(visibleWidth(added)).toBe(24)
+    expect(visibleWidth(removed)).toBe(24)
+    if (process.env.NO_COLOR === undefined) {
+      expect(added).toContain('\x1b[48;2;29;63;42m')
+      expect(removed).toContain('\x1b[48;2;74;35;35m')
+    }
+  })
+})
+
+describe('reasoning rendering', () => {
+  const reasoning = Array.from({ length: 8 }, (_, index) => `thought-${index + 1}`).join('\n')
+
+  it('shows only the latest five visual lines when collapsed', () => {
+    const lines = renderReasoningLines(reasoning, 30, false)
+    const plain = lines.map(line => stripTerminalSequences(line))
+
+    expect(lines).toHaveLength(5)
+    expect(plain[0]).toContain('… thought-4')
+    expect(plain.at(-1)).toContain('thought-8')
+    expect(plain.join('\n')).not.toContain('thought-1')
+    expect(lines.every(line => visibleWidth(line) === 30)).toBe(true)
+  })
+
+  it('shows every visual line after Ctrl+O expansion', () => {
+    const lines = renderReasoningLines(reasoning, 30, true)
+    const plain = lines.map(line => stripTerminalSequences(line))
+
+    expect(lines).toHaveLength(8)
+    expect(plain[0]).toContain('◌ thought-1')
+    expect(plain.at(-1)).toContain('thought-8')
+  })
+
+  it('applies the five-line limit after wrapping long reasoning text', () => {
+    const lines = renderReasoningLines('0123456789 '.repeat(12), 12, false)
+
+    expect(lines).toHaveLength(5)
+    expect(lines.every(line => visibleWidth(line) === 12)).toBe(true)
   })
 })
 

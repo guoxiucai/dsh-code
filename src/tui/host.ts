@@ -20,9 +20,11 @@ import {
   Text,
   TuiAltScreen,
   VStack,
+  isKeyRelease,
   matchesKey,
   truncateToWidth,
   visibleWidth,
+  wrapTextWithAnsi,
   type Component,
   type EditorTheme,
   type MarkdownTheme,
@@ -31,6 +33,7 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui'
 import { bindAdaptiveTheme, theme, type AdaptiveThemeBinding } from './theme.ts'
+import { clipboardInvocation, writeClipboard } from './clipboard.ts'
 import {
   InlineTextInputComponent,
   ListSelectorComponent,
@@ -87,6 +90,9 @@ export interface AssistantDraft {
 
 /** Max result lines shown while a tool card is collapsed. */
 const MAX_TOOL_OUTPUT_LINES = 5
+
+/** Max visual reasoning lines shown while thinking is collapsed. */
+const MAX_REASONING_LINES = 5
 
 /** Format a millisecond duration for a timing footer. */
 function formatDuration(ms: number): string {
@@ -151,20 +157,54 @@ function toolArgumentSummary(rawArguments: string): string {
   return rawArguments
 }
 
-/** Render a write/edit tool's file diffs as colored +/− lines. */
-function renderDiff(diffs: readonly ToolDiff[]): string[] {
-  const lines: string[] = []
+/** One rendered diff row with its full-width semantic background. */
+export interface RenderedDiffRow {
+  text: string
+  kind: 'context' | 'added' | 'removed'
+}
+
+/** Split a diff chunk without inventing a line after its final newline. */
+function diffChunkLines(value: string): string[] {
+  if (value === '') return []
+  const lines = value.split('\n')
+  if (value.endsWith('\n')) lines.pop()
+  return lines
+}
+
+/** Count logical lines using the same trailing-newline convention as diff chunks. */
+function logicalLineCount(value: string): number {
+  return diffChunkLines(value).length
+}
+
+/** Render write/edit diffs with old numbers for removals and new numbers otherwise. */
+export function renderDiffRows(diffs: readonly ToolDiff[]): RenderedDiffRow[] {
+  const rows: RenderedDiffRow[] = []
   for (const diff of diffs) {
-    lines.push(theme.dim(`  ${diff.path}`))
+    const oldText = diff.oldText ?? ''
+    const numberWidth = Math.max(1, String(Math.max(logicalLineCount(oldText), logicalLineCount(diff.newText))).length)
+    let oldLine = 1
+    let newLine = 1
+    rows.push({ text: theme.dim(`  ${diff.path}`), kind: 'context' })
     for (const chunk of diffLines(diff.oldText ?? '', diff.newText)) {
-      const value = chunk.value.replace(/\n$/, '')
-      if (value === '') continue
-      if (chunk.added) lines.push(theme.success(`  + ${value}`))
-      else if (chunk.removed) lines.push(theme.error(`  - ${value}`))
-      else lines.push(theme.dim(`  ${value}`))
+      for (const line of diffChunkLines(chunk.value)) {
+        if (chunk.added) {
+          const number = theme.dim(String(newLine).padStart(numberWidth))
+          rows.push({ text: ` ${number} ${theme.success('+')}  ${line}`, kind: 'added' })
+          newLine += 1
+        } else if (chunk.removed) {
+          const number = theme.dim(String(oldLine).padStart(numberWidth))
+          rows.push({ text: ` ${number} ${theme.error('-')}  ${line}`, kind: 'removed' })
+          oldLine += 1
+        } else {
+          const number = theme.dim(String(newLine).padStart(numberWidth))
+          rows.push({ text: ` ${number}    ${line}`, kind: 'context' })
+          oldLine += 1
+          newLine += 1
+        }
+      }
     }
   }
-  return lines
+  return rows
 }
 
 /** Collapse output lines to the last N with an expand hint. */
@@ -172,6 +212,78 @@ function collapseLines(lines: readonly string[], expanded: boolean): string[] {
   if (expanded || lines.length <= MAX_TOOL_OUTPUT_LINES) return [...lines]
   const hidden = lines.length - MAX_TOOL_OUTPUT_LINES
   return [theme.dim(`  … (${hidden} earlier lines, ctrl+o to expand)`), ...lines.slice(-MAX_TOOL_OUTPUT_LINES)]
+}
+
+/** Collapse structured diff rows while retaining their per-row backgrounds. */
+function collapseDiffRows(rows: readonly RenderedDiffRow[], expanded: boolean): RenderedDiffRow[] {
+  if (expanded || rows.length <= MAX_TOOL_OUTPUT_LINES) return [...rows]
+  const hidden = rows.length - MAX_TOOL_OUTPUT_LINES
+  return [
+    { text: theme.dim(`  … (${hidden} earlier lines, ctrl+o to expand)`), kind: 'context' },
+    ...rows.slice(-MAX_TOOL_OUTPUT_LINES),
+  ]
+}
+
+/** Apply a semantic background and pad/truncate to exactly one terminal row. */
+function paintFullRow(text: string, width: number, background: (value: string) => string): string {
+  const fitted = truncateToWidth(text, width, '…')
+  return background(fitted + ' '.repeat(Math.max(0, width - visibleWidth(fitted))))
+}
+
+/** Paint one semantic diff row across the complete terminal width. */
+export function renderDiffRow(row: RenderedDiffRow, width: number): string {
+  const background = row.kind === 'added' ? theme.diffAddedBg
+    : row.kind === 'removed' ? theme.diffRemovedBg
+      : theme.toolBg
+  return paintFullRow(row.text, width, background)
+}
+
+type ToolCardRow = { text: string; kind: 'normal' } | RenderedDiffRow
+
+/** Tool card that can paint individual diff rows while keeping one compact block. */
+class ToolCard implements Component {
+  constructor(private readonly rows: readonly ToolCardRow[]) {}
+  invalidate(): void {}
+  render(width: number): string[] {
+    if (width <= 0) return []
+    const output: string[] = [theme.toolBg(' '.repeat(width))]
+    for (const row of this.rows) {
+      if (row.kind === 'normal') {
+        const padding = width >= 2 ? 1 : 0
+        const contentWidth = Math.max(1, width - padding * 2)
+        for (const wrapped of wrapTextWithAnsi(row.text, contentWidth)) {
+          output.push(paintFullRow(`${' '.repeat(padding)}${wrapped}`, width, theme.toolBg))
+        }
+      } else {
+        output.push(renderDiffRow(row, width))
+      }
+    }
+    output.push(theme.toolBg(' '.repeat(width)))
+    return output
+  }
+}
+
+/** Render at most the latest five visual reasoning rows unless expanded. */
+export function renderReasoningLines(reasoning: string, width: number, expanded: boolean): string[] {
+  if (width <= 0 || reasoning === '') return []
+  const padding = width >= 2 ? 1 : 0
+  const prefixWidth = width - padding * 2 >= 3 ? 2 : 0
+  const contentWidth = Math.max(1, width - padding * 2 - prefixWidth)
+  const wrapped = wrapTextWithAnsi(theme.italic(theme.dim(reasoning)), contentWidth)
+  const truncated = !expanded && wrapped.length > MAX_REASONING_LINES
+  const visible = truncated ? wrapped.slice(-MAX_REASONING_LINES) : wrapped
+  return visible.map((line, index) => {
+    const prefix = prefixWidth === 0 ? '' : index === 0 ? (truncated ? '… ' : '◌ ') : '  '
+    const content = truncateToWidth(`${' '.repeat(padding)}${prefix}${line}`, width, '…')
+    return content + ' '.repeat(Math.max(0, width - visibleWidth(content)))
+  })
+}
+
+/** Width-aware reasoning window shared by committed and streaming thoughts. */
+class ReasoningBlock implements Component {
+  constructor(private readonly reasoning: string, private readonly expanded: boolean) {}
+  invalidate(): void {}
+  render(width: number): string[] { return renderReasoningLines(this.reasoning, width, this.expanded) }
 }
 
 /** Build the blocks for one transcript item (assistant splits reasoning + markdown text). */
@@ -182,34 +294,31 @@ function renderItemBlocks(item: TranscriptItem, expanded: boolean): Component[] 
     case 'assistant': {
       const blocks: Component[] = []
       if (item.reasoning !== undefined && item.reasoning !== '') {
-        const reasoning = expanded
-          ? theme.italic(theme.dim(`◌ ${item.reasoning}`))
-          : theme.dim(`${item.reasoningDurationMs !== undefined ? `Thought for ${Math.max(1, Math.round(item.reasoningDurationMs / 1000))}s` : 'Thought'} (ctrl+o to expand)`)
-        blocks.push(new Text(reasoning, 1, 0))
+        blocks.push(new ReasoningBlock(item.reasoning, expanded))
       }
       if (item.text !== '') blocks.push(new Markdown(item.text, 1, 0, MARKDOWN_THEME))
       return blocks
     }
     case 'tool': {
-      const lines: string[] = []
+      const rows: ToolCardRow[] = []
       const command = toolArgumentSummary(item.arguments)
       const head = `${theme.accent('⚙')} ${theme.bold(item.name)}`
       if (item.status === 'running') {
-        lines.push(theme.warning(`${head} …`))
-        if (command !== '') lines.push(theme.dim(`  $ ${command}`))
-        return [new Text(lines.join('\n'), 1, 1, theme.toolBg)]
+        rows.push({ text: theme.warning(`${head} …`), kind: 'normal' })
+        if (command !== '') rows.push({ text: theme.dim(`  $ ${command}`), kind: 'normal' })
+        return [new ToolCard(rows)]
       }
       const mark = item.status === 'error' ? theme.error(`✗ ${item.errorCode ?? 'error'}`) : theme.success('✓')
-      lines.push(`${head} ${mark}`)
-      if (command !== '') lines.push(theme.dim(`  $ ${command}`))
-      const output = item.diffs !== undefined && item.diffs.length > 0
-        ? collapseLines(renderDiff(item.diffs), expanded)
-        : item.resultText !== undefined && item.resultText !== ''
-          ? collapseLines(item.resultText.split('\n').map(line => theme.dim(`  ${line}`)), expanded)
-          : []
-      lines.push(...output)
-      if (item.elapsedMs !== undefined) lines.push(theme.dim(`  Took ${formatDuration(item.elapsedMs)}`))
-      return [new Text(lines.join('\n'), 1, 1, theme.toolBg)]
+      rows.push({ text: `${head} ${mark}`, kind: 'normal' })
+      if (command !== '') rows.push({ text: theme.dim(`  $ ${command}`), kind: 'normal' })
+      if (item.diffs !== undefined && item.diffs.length > 0) {
+        rows.push(...collapseDiffRows(renderDiffRows(item.diffs), expanded))
+      } else if (item.resultText !== undefined && item.resultText !== '') {
+        rows.push(...collapseLines(item.resultText.split('\n').map(line => theme.dim(`  ${line}`)), expanded)
+          .map(text => ({ text, kind: 'normal' as const })))
+      }
+      if (item.elapsedMs !== undefined) rows.push({ text: theme.dim(`  Took ${formatDuration(item.elapsedMs)}`), kind: 'normal' })
+      return [new ToolCard(rows)]
     }
     case 'notice':
       return [new Text(theme.dim(`· ${item.text}`), 1, 0)]
@@ -217,10 +326,10 @@ function renderItemBlocks(item: TranscriptItem, expanded: boolean): Component[] 
 }
 
 /** Build the live streaming draft blocks (reasoning text + streaming markdown). */
-function renderDraftComponents(draft: AssistantDraft | undefined): Component[] {
+function renderDraftComponents(draft: AssistantDraft | undefined, expanded: boolean): Component[] {
   if (draft === undefined) return []
   const blocks: Component[] = []
-  if (draft.reasoning !== '') blocks.push(new Text(theme.italic(theme.dim(`◌ ${draft.reasoning}`)), 1, 0))
+  if (draft.reasoning !== '') blocks.push(new ReasoningBlock(draft.reasoning, expanded))
   if (draft.text !== '') blocks.push(new Markdown(draft.text, 1, 0, MARKDOWN_THEME))
   return blocks
 }
@@ -572,7 +681,10 @@ export class TuiHost {
 
   constructor(callbacks: TuiHostCallbacks) {
     this.callbacks = callbacks
-    const tui = new TuiAltScreen(new ProcessTerminal())
+    // Keep pi-tui's OSC 52 fallback on platforms without a native bridge.
+    const copySelection = clipboardInvocation('', process.platform) === undefined ? undefined : writeClipboard
+    const tuiOptions = copySelection === undefined ? {} : { copySelection }
+    const tui = new TuiAltScreen(new ProcessTerminal(), undefined, undefined, tuiOptions)
     this.tui = tui
     this.transcriptContainer = new Container()
     this.inlineContainer = new Container()
@@ -601,11 +713,12 @@ export class TuiHost {
   }
 
   private handleInput(data: string): { consume: true } | undefined {
+    if (matchesKey(data, Key.ctrl('c')) || matchesKey(data, Key.super('c'))) {
+      if (!isKeyRelease(data)) this.copyTranscriptSelection()
+      return { consume: true }
+    }
     // While an inline selector/input is active, let it own every key.
     if (this.inlineControlActive) return undefined
-    // Ctrl+C is reserved for terminal-native text copy. In an overlay, consume
-    // the raw key so pi-tui's default selection binding cannot treat it as Esc.
-    if (this.activeOverlayCancel !== undefined && matchesKey(data, Key.ctrl('c'))) return { consume: true }
     if (this.activeOverlayCancel !== undefined && matchesKey(data, 'escape')) {
       this.activeOverlayCancel()
       return { consume: true }
@@ -628,7 +741,7 @@ export class TuiHost {
     const blocks: Component[] = []
     if (view.transcript.length === 0) blocks.push(new WelcomeBanner(this.version))
     for (const item of view.transcript) blocks.push(...renderItemBlocks(item, this.expanded))
-    blocks.push(...renderDraftComponents(this.draft))
+    blocks.push(...renderDraftComponents(this.draft, this.expanded))
     blocks.push(...renderShellResultBlocks(this.shellResults))
     if (this.notices.length > 0) blocks.push(new Text(this.notices.map(text => `· ${text}`).join('\n'), 1, 0))
     blocks.forEach((block, index) => {
@@ -639,6 +752,14 @@ export class TuiHost {
     this.updateWorkingIndicator(view)
     this.status.set(renderStatus(view, this.model, this.contextTokens), this.projectLabel())
     this.tui.requestRender()
+  }
+
+  /** Copy pi-tui's application-owned transcript selection through its pinned selection seam. */
+  private copyTranscriptSelection(): void {
+    const selectionTui = this.tui as TUI & { copySelectionToClipboard?: () => Promise<void> }
+    if (selectionTui.copySelectionToClipboard !== undefined) {
+      void selectionTui.copySelectionToClipboard.call(this.tui)
+    }
   }
 
   private updateWorkingIndicator(view: TuiViewModel): void {

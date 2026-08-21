@@ -238,6 +238,9 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
   转写内容不足一屏时由上方弹性 Spacer 吸收剩余高度，使欢迎页/短会话贴近底部交互区；输入框自带的一行
   Spacer 作为两者之间的唯一垂直间距。
 - 渲染：`renderItemBlocks`（用户/工具整块背景、助手 Markdown、思考折叠）+ `renderDraftComponents`（流式）+ `renderShellResultBlocks`（shell 结果块）+ notices。
+  思考过程按终端换行后的可视行计算，折叠态固定展示最新 5 行，`Ctrl+O` 可展开/收起；流式与已提交内容复用同一组件。
+- 工具 diff 使用统一行视图：删除行显示旧文件行号，新增行与上下文显示新文件行号；行号、`+/-` 与源码列对齐，
+  删除/新增分别铺满自适应暗红/绿色整行背景。所有行在渲染前按终端宽度截断或补齐。
 - 欢迎页使用 `halveBlockArt` 将 76×28 鲸鱼源图按 2×2 象限块缩为 38×14；欢迎框水平铺开并在终端左右各留 2 列，
   鲸鱼/Tips 约按 58%/42% 并排，Welcome 下方和鲸鱼底部保留额外垂直留白；窄屏自动改为上下布局，
   所有输出均遵守终端宽度。
@@ -245,7 +248,8 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
   面板上下各保留一行空白；长内容用 ANSI/CJK-aware `truncateToWidth` 截断，不再混入状态栏。
 - 状态栏通过 `layoutStatusLine` 按终端宽度分配左右区域，并截断过长的左侧指标/右侧项目名；
   自定义 `render(width)` 不得返回超过 `width` 的行，否则 pi-tui 渲染器会 fail-fast。
-- 交互：Esc 在运行时中断、在 overlay/内联向导中取消或返回上一步；Ctrl+C 保留给终端文本复制；
+- 交互：Esc 在运行时中断、在 overlay/内联向导中取消或返回上一步；结果区使用 `TuiAltScreen` 的应用内文本选择，
+  鼠标松开或 `Ctrl+C` / `Command+C` 通过 `clipboard.ts` 写入系统剪贴板（macOS `pbcopy`、Windows PowerShell）；
   Ctrl+D/L/O、`askChoice`/`askText`（overlay）、
   `showSelector` / `showInlineInput`（内联）。
 - Working 区以 `turn/start` 的事件时间为起点，每秒显示真实持续时间，例如
@@ -414,8 +418,8 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
 | session resume（`resume <id>`、`-c` 最近会话、`-r` 全屏选择器，删除二次确认）、fork | ✅ |
 | 命令面板（/model /config /mcp /session /fork /quit /exit） | ✅ |
-| Markdown 渲染、工具 diff 高亮 | ✅ |
-| 思考/工具结果折叠（Ctrl+O）、整块背景、块间距、页脚 | ✅ |
+| Markdown 渲染、带行号及整行背景的工具 diff | ✅ |
+| 思考最新 5 行/工具结果折叠（Ctrl+O）、结果选择复制、整块背景、块间距、页脚 | ✅ |
 | loading / retry / compaction 状态指示 | ✅ |
 | `/` 命令联想 + `@` 文件联想(fd) + `/permission` 参数补全 | ✅ |
 
@@ -441,7 +445,8 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
   偏好查询不受支持时再用 OSC 11 查询实际背景色，两者都无法检测时默认暗色调色板。
 - 用户块/工具块背景也随主题切换：暗色保留 `#343541` / `#283228`，亮色使用 `#eef1ff` / `#eff7f0`，
   避免亮色终端的黑色默认前景叠加深色背景。
-- shell 边框保留语义绿 `#a6da95`；成功、警告、错误、diff 等继续使用绿/黄/红语义色
+- diff 新增/删除行采用独立的自适应整行底色：暗色 `#1d3f2a` / `#4a2323`，亮色 `#daf2e1` / `#fadada`。
+- shell 边框保留语义绿 `#a6da95`；成功、警告、错误等继续使用绿/黄/红语义色。
 
 ### 8.3 内联控件（model/permission/config）
 
