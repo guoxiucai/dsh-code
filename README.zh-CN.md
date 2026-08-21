@@ -140,8 +140,10 @@ dsh-code
 首次在某个项目中启动时：
 
 1. 核对规范化后的项目路径并选择权限预设；
-2. 输入 `/config`，选择模型服务商；
-3. 完成内联配置，然后在输入框中发送任务。
+2. 如果 `~/.dsh-code/.credentials.yaml` 尚未保存任何 API Credential，dsh-code
+   会自动打开内联 Provider 配置向导；
+3. 选择服务商，保存第一个 API Token 和默认模型，然后在输入框中发送任务。后续可使用
+   `/config` 添加或修改服务商。
 
 选择 DeepSeek 官方 API 时，`/config` 会要求填写 API Key 并选择默认模型。
 选择 OpenAI-compatible 服务时，向导会明确配置五项内容：

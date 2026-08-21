@@ -188,6 +188,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       delegate.ts              # spawn 上游 @deepseek-ai/dsh/lib/bin.js
     bootstrap/
       home.ts                  # DSH_CODE_HOME 解析（~/.dsh-code，隔离于 ~/.dsh）
+      credentials.ts           # 首次启动凭据存在性判断 + launcher→TUI 引导标记
       trust.ts                 # 项目信任（canonical path + sha256 + 三档权限）
       trust-picker.ts          # 全屏 TUI 信任选择器
       profile.ts               # 初始化 dsh-code profile（bundles: dsh-base + TUI patch）
@@ -216,6 +217,9 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - 设 `DSH_HOME = DSH_CODE_HOME ?? ~/.dsh-code`（隔离）。
 - 项目信任前置检查（`ensureTrusted`），未信任时 TTY 询问 / 非 TTY 需 `--approve`。
 - 初始化 profile 后委托 `@deepseek-ai/dsh/lib/bin.js --profile dsh-code [--patch <项目patch>] [--resume <id>]`。
+- 交互启动前只读检查 `$DSH_HOME/.credentials.yaml`；若没有任何非空字符串凭据，则通过
+  `DSH_CODE_FIRST_MODEL_CONFIG=1` 通知 TUI 自动打开现有 `/config` 向导。普通委托会主动清除此内部标记，
+  凭据解析、写入和权限控制仍完全由上游 `credentials` 服务负责。
 - `-p` 委托上游 `headless` profile。
 - `isEntryPoint()` 用 `realpathSync` 解析软链（否则 npm link/软链调用时 `main()` 不执行）。
 
@@ -227,6 +231,8 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
 - `onSubmit` 分发：`!` shell → `/permission` 选择器 → `/` 命令 → 普通 `agent.followup`。
 - 注册 slash 命令：`/model` `/config` `/mcp` `/session` `/fork` `/quit` `/exit`。
+- 首次运行收到 `DSH_CODE_FIRST_MODEL_CONFIG=1` 时，在主屏启动和命令注册完成后自动调用同一个
+  Provider 配置选择器；Esc 可退出本次引导，未保存 Credential 时下次启动会再次显示。
 - 权限审批：`ctx.on('approval/request')` → `host.askChoice`（Allow once / Reject）。
 
 ### 5.3 `host.ts` — TUI 主屏
@@ -415,6 +421,7 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | TUI：转写、流式、工具卡片、状态栏、编辑器 | ✅ |
 | approval overlay（Allow once / Reject） | ✅ |
 | 内联选择/输入（/model、/permission、/config 全流程） | ✅ |
+| 无已存 Credential 时自动进入首次模型/API Token 配置 | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
 | session resume（`resume <id>`、`-c` 最近会话、`-r` 全屏选择器，删除二次确认）、fork | ✅ |
 | 命令面板（/model /config /mcp /session /fork /quit /exit） | ✅ |

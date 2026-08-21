@@ -14,6 +14,7 @@ import { delegateDsh } from './cli/delegate.ts'
 import { unsupportedPlatformMessage } from './cli/platform.ts'
 import { runUpdate } from './cli/update.ts'
 import { resolveDshCodeHome } from './bootstrap/home.ts'
+import { FIRST_MODEL_CONFIG_ENV, hasStoredCredential } from './bootstrap/credentials.ts'
 import { initDshCodeProfile } from './bootstrap/profile.ts'
 import { listProjectSessions } from './bootstrap/sessions.ts'
 import {
@@ -34,12 +35,16 @@ function tuiPluginUrl(): string {
 }
 
 /** Child-process environment with home isolation and telemetry disabled. */
-function delegatedEnv(home: string): NodeJS.ProcessEnv {
-  return {
+function delegatedEnv(home: string, firstModelConfig = false): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: home,
     DSH_TELEMETRY_DISABLED: '1',
   }
+  // Never inherit a stale/spoofed onboarding signal from the parent shell.
+  delete env[FIRST_MODEL_CONFIG_ENV]
+  if (firstModelConfig) env[FIRST_MODEL_CONFIG_ENV] = '1'
+  return env
 }
 
 /** Interactive first-trust for the TTY surfaces; non-TTY prompt needs `--approve`. */
@@ -103,7 +108,11 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   } else {
     appArgs = []
   }
-  return delegateDsh(['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs], delegatedEnv(home))
+  const firstModelConfig = !hasStoredCredential(home)
+  return delegateDsh(
+    ['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs],
+    delegatedEnv(home, firstModelConfig),
+  )
 }
 
 /** Run one task through the upstream headless profile. */

@@ -34,6 +34,7 @@ import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.t
 import { theme } from './theme.ts'
 import { addMcpServer, removeMcpServer } from './project-config.ts'
 import { credentialEnvName } from './config-wizard.ts'
+import { FIRST_MODEL_CONFIG_ENV } from '../bootstrap/credentials.ts'
 
 /** Stable Cordis plugin name (referenced by id in the profile patch). */
 export const name = 'dsh-code-tui'
@@ -306,6 +307,7 @@ async function run(ctx: Context): Promise<void> {
   type ConfigProvider = 'deepseek' | 'openai' | 'compatible'
   interface ConfigDraft {
     provider: ConfigProvider
+    firstRun?: boolean
     id?: string
     baseURL?: string
     keyEnv?: string
@@ -340,9 +342,11 @@ async function run(ctx: Context): Promise<void> {
     host.showNotice(`configured ${draft.id}; default model ${draft.model} (restart to reload the provider catalog)`)
   }
 
-  const showProviderSelector = (): void => {
+  const showProviderSelector = (firstRun = false): void => {
     host.showSelector({
-      hint: 'Select a model provider to configure.',
+      hint: firstRun
+        ? 'Welcome to dsh-code · Select a provider to configure your first API token.'
+        : 'Select a model provider to configure.',
       borderColor: theme.selectorBorder,
       items: [
         { value: 'deepseek', label: 'DeepSeek', description: 'DeepSeek official API' },
@@ -350,7 +354,7 @@ async function run(ctx: Context): Promise<void> {
         { value: 'compatible', label: 'OpenAI-compatible', description: 'Custom OpenAI-compatible endpoint' },
       ],
       onSelect: (provider) => {
-        const draft: ConfigDraft = { provider: provider as ConfigProvider }
+        const draft: ConfigDraft = { provider: provider as ConfigProvider, firstRun }
         if (draft.provider === 'deepseek') showApiKeyInput(draft)
         else if (draft.provider === 'openai') {
           draft.id = 'openai'
@@ -375,7 +379,7 @@ async function run(ctx: Context): Promise<void> {
         if (draft.keyEnvCustomized !== true) draft.keyEnv = credentialEnvName(id)
         showBaseUrlInput(draft)
       },
-      onCancel: showProviderSelector,
+      onCancel: () => { showProviderSelector(draft.firstRun === true) },
     })
   }
 
@@ -422,7 +426,7 @@ async function run(ctx: Context): Promise<void> {
       },
       onCancel: () => {
         if (draft.provider === 'compatible') showKeyEnvInput(draft)
-        else showProviderSelector()
+        else showProviderSelector(draft.firstRun === true)
       },
     })
   }
@@ -659,6 +663,7 @@ async function run(ctx: Context): Promise<void> {
   host.setContextTokens(ctx.tokenMeter.measure(agent.session).totalTokens)
   host.render(reducer)
   host.start()
+  if (process.env[FIRST_MODEL_CONFIG_ENV] === '1') showProviderSelector(true)
 }
 
 /**

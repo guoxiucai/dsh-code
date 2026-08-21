@@ -147,8 +147,10 @@ dsh-code
 On the first launch for a project:
 
 1. Review the canonical project path and choose a permission preset.
-2. Enter `/config` and select a provider.
-3. Complete the inline setup, then send a task in the editor.
+2. If `~/.dsh-code/.credentials.yaml` has no saved API credential, dsh-code
+   automatically opens the inline provider setup.
+3. Select a provider, save the first API token and default model, then send a
+   task in the editor. Use `/config` later to add or change providers.
 
 For the official DeepSeek API, `/config` asks for the API key and default model.
 For an OpenAI-compatible service, the wizard keeps five explicit values:
