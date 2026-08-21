@@ -33,6 +33,15 @@ describe('session event reducer', () => {
     expect(assistants[0]).toMatchObject({ kind: 'assistant', text: 'Hello world' })
   })
 
+  it('tracks the active turn start time until turn/end', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    expect(s.turnStartedAt).toBe(1000)
+
+    s = reduceSessionEvent(s, ev('turn/end', 1, { turn: 1, reason: { kind: 'completed' } }))
+    expect(s.turnStartedAt).toBeUndefined()
+  })
+
   it('EVT-002: reasoning deltas are kept separate from the answer', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))

@@ -275,7 +275,7 @@ sequenceDiagram
     A->>S: append turn/tool/assistant events
     S-->>T: session/event
     T-->>U: 增量渲染
-    U->>T: Ctrl+C
+    U->>T: Esc
     T->>A: cancel()
     A->>S: append stop/end event
     S-->>T: 最终状态
@@ -289,7 +289,7 @@ sequenceDiagram
 | assistant 流 | `assistant/chunk` | 合并 delta 后限频刷新 |
 | 提交消息 | `agent.followup()` | 创建标准 user message 后提交 |
 | Steering | `agent.steer()` | 仅在上游状态允许时启用 |
-| 取消 | Agent cancel/stop 接口 | Ctrl+C 转发，等待 quiescence |
+| 取消 | Agent cancel/stop 接口 | 运行时 Esc 转发，等待 quiescence |
 | 工具卡片 | turn/step/tool events | 展示名称、状态、耗时和摘要 |
 | 审批 | `ctx.approval` | Overlay 选择上游提供的选项 |
 | 普通问题 | user-questions 服务 | Overlay，不复用权限审批逻辑 |
@@ -762,7 +762,7 @@ new TuiMainScreen(new ProcessTerminal())
 ├ editor
 │ 输入内容
 └ hints
-  enter send · ctrl+c cancel · / commands
+  enter send · esc back · / commands
 ```
 
 在 Main Screen 模式中不实现应用自有全屏 ScrollView。历史滚动由终端负责；Overlay 只覆盖当前可见区域，并在关闭后触发完整重绘。
@@ -828,9 +828,9 @@ interface TuiViewModel {
 | --- | --- | --- | --- |
 | Enter | 提交 | 根据上游能力 followup/排队 | 确认选项 |
 | Shift+Enter | 换行 | 换行 | 无 |
-| Ctrl+C | 清空非空 editor；空 editor 二次退出 | 调用 cancel，保持进程存活 | 取消 Overlay |
+| Ctrl+C | 复制选中的终端文本 | 复制选中的终端文本 | 复制选中的终端文本 |
 | Ctrl+D | 空 editor 时退出 | 不退出 | 无 |
-| Esc | 关闭 Overlay | 关闭非阻塞 Overlay | 返回 |
+| Esc | 返回当前内联步骤 | 调用 cancel，保持进程存活 | 取消/返回 |
 | Ctrl+L | 请求重绘 | 请求重绘 | 请求重绘 |
 | `/` | 打开命令候选 | 可输入允许的命令 | 搜索 Overlay |
 
@@ -1283,7 +1283,7 @@ V1 默认且产品层强制禁用 DSH telemetry：
 - tool card；
 - status bar；
 - resize 和终端恢复；
-- Ctrl+C cancellation。
+- Esc cancellation，Ctrl+C 保留给终端文本复制。
 
 通过规则：
 
@@ -1454,8 +1454,8 @@ V1 默认且产品层强制禁用 DSH telemetry：
 | --- | --- | --- | --- | --- |
 | TUI-001 | P0 | Main Screen | 启动并捕获 ANSI | 不包含进入 alternate-screen 的 `?1049h` |
 | TUI-002 | P0 | 正常退出 | Ctrl+D | raw mode 关闭、光标可见、scrollback 保留 |
-| TUI-003 | P0 | 运行时取消 | Agent 流式输出时 Ctrl+C | 上游 Agent 收到 cancel；TUI 保持可用 |
-| TUI-004 | P0 | 空闲二次退出 | 空 editor 两次 Ctrl+C | 第一次提示，第二次退出并恢复终端 |
+| TUI-003 | P0 | 运行时取消 | Agent 流式输出时按 Esc | 上游 Agent 收到 cancel；TUI 保持可用 |
+| TUI-004 | P0 | 文本复制 | 选中 transcript 后按 Ctrl+C | 文本被复制，Agent 不取消，应用不退出 |
 | TUI-005 | P0 | resize | 连续改变终端宽高 | 无崩溃、无重复消息、editor 内容保留 |
 | TUI-006 | P0 | Unicode | 输入中英文、emoji、组合字符 | 光标和换行位置正确 |
 | TUI-007 | P1 | NO_COLOR | 设置 `NO_COLOR=1` | 信息仍可区分，无仅靠颜色表达的状态 |
@@ -1772,7 +1772,7 @@ RC 必须满足：
 6. 配置一个 Provider；
 7. 请求创建文件、运行测试、读取外部只读文件；
 8. 请求写外部文件，验证一次性审批；
-9. Ctrl+C 取消长命令；
+9. Esc 取消长命令，Ctrl+C 复制选中的 transcript 且不取消任务；
 10. 退出并确认终端恢复；
 11. `dsh-code resume` 恢复会话；
 12. 从已完成回合 Fork；

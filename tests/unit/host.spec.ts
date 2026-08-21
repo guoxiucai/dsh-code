@@ -3,8 +3,11 @@ import { stripTerminalSequences, visibleWidth, type Component } from '@earendil-
 import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import {
   createMainViewportLayout,
+  formatActivityDuration,
   halveBlockArt,
+  isTurnInterruptInput,
   layoutStatusLine,
+  renderWorkingMessage,
   renderWelcomeBanner,
   renderStatus,
   renderTodoLines,
@@ -14,6 +17,42 @@ import {
 } from '../../src/tui/host.ts'
 import { theme } from '../../src/tui/theme.ts'
 import { emptyViewModel } from '../../src/tui/view-model.ts'
+
+describe('working activity', () => {
+  it('formats elapsed time as seconds, minutes, and hours', () => {
+    expect(formatActivityDuration(999)).toBe('0s')
+    expect(formatActivityDuration(87_000)).toBe('1m 27s')
+    expect(formatActivityDuration(3_723_000)).toBe('1h 2m 3s')
+  })
+
+  it('shows the real turn duration and Esc interrupt hint', () => {
+    const now = 1_000_000
+    const view = { ...emptyViewModel('session'), phase: 'running' as const, turnStartedAt: now - 87_000 }
+
+    expect(renderWorkingMessage(view, now)).toBe('Working (1m 27s • esc to interrupt)')
+  })
+
+  it('uses Esc, never Ctrl+C, as the active-turn interrupt key', () => {
+    const running = { ...emptyViewModel('session'), phase: 'running' as const }
+    const idle = emptyViewModel('session')
+
+    expect(isTurnInterruptInput('\x1b', running)).toBe(true)
+    expect(isTurnInterruptInput('\x03', running)).toBe(false)
+    expect(isTurnInterruptInput('\x1b', idle)).toBe(false)
+  })
+
+  it('keeps retry countdowns interruptible without a Ctrl+C hint', () => {
+    const now = 1_000_000
+    const view = {
+      ...emptyViewModel('session'),
+      phase: 'running' as const,
+      turnStartedAt: now - 62_000,
+      retryStatus: { retry: 2, maxRetries: 5, delayMs: 10_000, scheduledAt: now - 4_000 },
+    }
+
+    expect(renderWorkingMessage(view, now)).toBe('Retrying (2/5) in 6s (1m 2s • esc to interrupt)')
+  })
+})
 
 describe('layoutStatusLine', () => {
   it('fits a long status and project label into 120 columns', () => {

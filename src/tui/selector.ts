@@ -5,7 +5,7 @@
  * @module dsh-code/tui/selector
  */
 
-import { Container, Input, Key, Text, matchesKey, type Component, type Focusable } from '@earendil-works/pi-tui'
+import { Container, Input, Text, matchesKey, type Component, type Focusable } from '@earendil-works/pi-tui'
 import { theme } from './theme.ts'
 
 /** A full-width colored border line. */
@@ -72,7 +72,11 @@ export class InlineTextInputComponent extends Container implements Focusable {
   get focused(): boolean { return this._focused }
   set focused(value: boolean) { this._focused = value; this.input.focused = value }
 
-  handleInput(data: string): void { this.input.handleInput(data) }
+  handleInput(data: string): void {
+    // Reserve Ctrl+C for terminal-native selection copy; only Esc goes back.
+    if (matchesKey(data, 'ctrl+c')) return
+    this.input.handleInput(data)
+  }
 }
 
 /** An inline list selector with search and keyboard navigation. */
@@ -149,7 +153,8 @@ export class ListSelectorComponent extends Container implements Focusable {
   handleInput(data: string): void {
     if (matchesKey(data, 'up')) { this.move(-1); return }
     if (matchesKey(data, 'down')) { this.move(1); return }
-    if (matchesKey(data, 'escape') || matchesKey(data, Key.ctrl('c'))) { this.options.onCancel(); return }
+    if (matchesKey(data, 'escape')) { this.options.onCancel(); return }
+    if (matchesKey(data, 'ctrl+c')) return
     this.searchInput.handleInput(data)
     this.filter(this.searchInput.getValue())
   }

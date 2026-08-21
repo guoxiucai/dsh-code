@@ -33,6 +33,20 @@ describe('InlineTextInputComponent', () => {
     expect(onCancel).toHaveBeenCalledOnce()
   })
 
+  it('reserves Ctrl+C for terminal copy instead of going back', () => {
+    const onCancel = vi.fn()
+    const input = new InlineTextInputComponent({
+      prompt: 'Value:',
+      borderColor: identity,
+      onSubmit: vi.fn(),
+      onCancel,
+    })
+
+    input.handleInput('\x03')
+
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
   it('restores an earlier value with the cursor at its end', () => {
     const onSubmit = vi.fn()
     const input = new InlineTextInputComponent({

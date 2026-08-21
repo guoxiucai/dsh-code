@@ -202,8 +202,8 @@ through `/` autocomplete.
 | Key | Action |
 | --- | --- |
 | `Enter` | Send input or confirm an inline selection |
-| `Esc` | Go back/cancel an inline selector or wizard step |
-| `Ctrl+C` | Cancel the active turn; clear/exit when idle according to context |
+| `Esc` | Go back/cancel an inline step; interrupt the active turn |
+| `Ctrl+C` | Copy selected terminal text; never interrupts the active turn |
 | `Ctrl+O` | Expand or collapse reasoning and tool output |
 | `Ctrl+D` | Exit when idle |
 | `/` | Open command completion |

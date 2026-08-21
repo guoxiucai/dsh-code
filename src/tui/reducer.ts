@@ -74,7 +74,23 @@ export interface ReducerState extends TuiViewModel {
 
 /** Create a reducer state seeded from a fresh (or empty) view model. */
 export function createReducerState(sessionId: string): ReducerState {
-  return { sessionId, transcript: [], phase: 'idle', todos: [], tokenUsage: undefined, permission: undefined, plan: false, reasoningEffort: undefined, contextWindow: undefined, retryStatus: undefined, compacting: false, lastSeq: -1, draftAssistant: undefined, stepStartTime: undefined }
+  return {
+    sessionId,
+    transcript: [],
+    phase: 'idle',
+    turnStartedAt: undefined,
+    todos: [],
+    tokenUsage: undefined,
+    permission: undefined,
+    plan: false,
+    reasoningEffort: undefined,
+    contextWindow: undefined,
+    retryStatus: undefined,
+    compacting: false,
+    lastSeq: -1,
+    draftAssistant: undefined,
+    stepStartTime: undefined,
+  }
 }
 
 /** Hard cap on the retained tool-result text (memory safety); the host folds it. */
@@ -166,13 +182,20 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
 
   switch (event.type) {
     case 'turn/start':
-      return { ...base, phase: 'running', todos: todosForNextTurn(state.todos), transcript: commitDraft(state) }
+      return {
+        ...base,
+        phase: 'running',
+        turnStartedAt: event.time,
+        todos: todosForNextTurn(state.todos),
+        transcript: commitDraft(state),
+      }
     case 'turn/end': {
       const transcript = commitDraft(state)
       const notice = turnEndNotice(event.data.reason)
       return {
         ...base,
         phase: 'idle',
+        turnStartedAt: undefined,
         todos: settleTodosAtTurnEnd(state.todos, event.data.reason),
         transcript: notice === undefined ? transcript : [...transcript, { kind: 'notice', text: notice }],
       }

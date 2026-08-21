@@ -42,6 +42,8 @@ export interface TuiViewModel {
   sessionId: string
   transcript: TranscriptItem[]
   phase: Phase
+  /** Wall-clock epoch ms of the active turn's `turn/start`, if any. */
+  turnStartedAt: number | undefined
   todos: TodoSummary[]
   tokenUsage: TokenUsageSummary | undefined
   /** The current permission preset name (last `permission/preset`), if any. */
@@ -72,5 +74,18 @@ export interface RetryStatus {
 
 /** A freshly seeded, empty view model for one session. */
 export function emptyViewModel(sessionId: string): TuiViewModel {
-  return { sessionId, transcript: [], phase: 'idle', todos: [], tokenUsage: undefined, permission: undefined, plan: false, reasoningEffort: undefined, contextWindow: undefined, retryStatus: undefined, compacting: false }
+  return {
+    sessionId,
+    transcript: [],
+    phase: 'idle',
+    turnStartedAt: undefined,
+    todos: [],
+    tokenUsage: undefined,
+    permission: undefined,
+    plan: false,
+    reasoningEffort: undefined,
+    contextWindow: undefined,
+    retryStatus: undefined,
+    compacting: false,
+  }
 }

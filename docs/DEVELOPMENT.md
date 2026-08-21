@@ -245,8 +245,11 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
   面板上下各保留一行空白；长内容用 ANSI/CJK-aware `truncateToWidth` 截断，不再混入状态栏。
 - 状态栏通过 `layoutStatusLine` 按终端宽度分配左右区域，并截断过长的左侧指标/右侧项目名；
   自定义 `render(width)` 不得返回超过 `width` 的行，否则 pi-tui 渲染器会 fail-fast。
-- 交互：Ctrl+C/D/L/O、Esc 取消 overlay 或返回内联向导上一步、`askChoice`/`askText`（overlay）、
+- 交互：Esc 在运行时中断、在 overlay/内联向导中取消或返回上一步；Ctrl+C 保留给终端文本复制；
+  Ctrl+D/L/O、`askChoice`/`askText`（overlay）、
   `showSelector` / `showInlineInput`（内联）。
+- Working 区以 `turn/start` 的事件时间为起点，每秒显示真实持续时间，例如
+  `Working (1m 27s • esc to interrupt)`；`turn/end` 后立即清除计时器。
 
 ### 5.4 `reducer.ts` — 纯函数事件折叠
 

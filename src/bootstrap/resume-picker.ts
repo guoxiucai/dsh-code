@@ -9,7 +9,6 @@
 
 import {
   Input,
-  Key,
   ProcessTerminal,
   TuiMainScreen,
   matchesKey,
@@ -130,15 +129,17 @@ class ResumePickerScreen implements Component {
   handleInput(data: string): void {
     if (this.pendingDelete) {
       if (matchesKey(data, 'enter')) { this.confirmDelete(); return }
-      if (matchesKey(data, 'escape') || matchesKey(data, Key.ctrl('c'))) {
+      if (matchesKey(data, 'escape')) {
         this.pendingDelete = false
       }
+      if (matchesKey(data, 'ctrl+c')) return
       return
     }
-    if (matchesKey(data, 'escape') || matchesKey(data, Key.ctrl('c'))) {
+    if (matchesKey(data, 'escape')) {
       this.resolve({ kind: 'exit' })
       return
     }
+    if (matchesKey(data, 'ctrl+c')) return
     if (matchesKey(data, 'tab')) { this.toggleScope(); return }
     if (matchesKey(data, 'delete')) { this.beginDelete(); return }
     if (matchesKey(data, 'backspace') && this.input.getValue() === '') { this.beginDelete(); return }
@@ -155,7 +156,7 @@ class ResumePickerScreen implements Component {
     const border = theme.dim('─'.repeat(Math.max(1, width)))
     const header = this.scope === 'current' ? 'Resume Session (Current Folder)' : 'Resume Session (All Folder)'
     const hint = this.pendingDelete
-      ? `${theme.darkRed('Delete session?')} ${theme.dim('enter confirm · escape/ctrl+c cancel')}`
+      ? `${theme.darkRed('Delete session?')} ${theme.dim('enter confirm · escape cancel')}`
       : theme.dim(HINT)
     const searchLine = this.input.render(width)[0] ?? ''
     return [border, header, hint, searchLine, ...this.listLines(width), border]

@@ -1,12 +1,11 @@
 /**
  * Interactive first-trust selection: a full-screen pi-tui list. Choosing a
- * permission preset resolves `trust`; "Quit" or Esc/Ctrl+C resolves `reject`
+ * permission preset resolves `trust`; "Quit" or Esc resolves `reject`
  * (fail-closed — no project code loads without a positive answer).
  * @module dsh-code/bootstrap/trust-picker
  */
 
 import {
-  Key,
   ProcessTerminal,
   TuiMainScreen,
   matchesKey,
@@ -50,10 +49,11 @@ class TrustPickerScreen implements Component {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, 'escape') || matchesKey(data, Key.ctrl('c')) || data === '4') {
+    if (matchesKey(data, 'escape') || data === '4') {
       this.resolve({ kind: 'reject' })
       return
     }
+    if (matchesKey(data, 'ctrl+c')) return
     if (matchesKey(data, 'up')) { this.selectedIndex = (this.selectedIndex - 1 + 4) % 4; return }
     if (matchesKey(data, 'down')) { this.selectedIndex = (this.selectedIndex + 1) % 4; return }
     if (matchesKey(data, 'enter')) {

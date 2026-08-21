@@ -474,7 +474,7 @@ Windows smoke 至少验证：
 2. `dsh-code.cmd --version` / `--help` 可在 PowerShell 和 `cmd.exe` 运行；
 3. 选中 win32-x64 的 `node-addon-require-builtin`、Koffi 和 node-pty/ConPTY 资产；
 4. `!` shell 模式使用上游的 PowerShell 路径，UI 不显示错误的 bash 承诺；
-5. Ctrl+C/Ctrl+D/Esc、窗口 resize、中文/宽字符和 ANSI color 不破坏终端；
+5. Ctrl+C 复制、Ctrl+D 退出、Esc 中断/返回、窗口 resize、中文/宽字符和 ANSI color 不破坏终端；
 6. 项目路径包含空格、中文和较长路径时仍可启动；
 7. 与全局 `dsh` 共存、分别卸载、分别升级不相互删除；
 8. Windows Defender 开启时无未解释的二进制拦截；如有，必须记录产物来源和

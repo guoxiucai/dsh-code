@@ -73,7 +73,7 @@ const MARKDOWN_THEME: MarkdownTheme = {
 /** Callbacks the host forwards to the plugin. */
 export interface TuiHostCallbacks {
   onSubmit(text: string): void
-  onCancel(): void
+  onInterrupt(): void
   onExit(): void
   onRedraw(): void
   onEditorChange?(text: string): void
@@ -92,6 +92,44 @@ const MAX_TOOL_OUTPUT_LINES = 5
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
+}
+
+/** Format a live turn duration as seconds, minutes+seconds, or hours+minutes+seconds. */
+export function formatActivityDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const seconds = totalSeconds % 60
+  const totalMinutes = Math.floor(totalSeconds / 60)
+  if (totalMinutes < 1) return `${seconds}s`
+  const minutes = totalMinutes % 60
+  const hours = Math.floor(totalMinutes / 60)
+  return hours < 1 ? `${minutes}m ${seconds}s` : `${hours}h ${minutes}m ${seconds}s`
+}
+
+/** Suffix shared by interruptible activity messages. */
+function activityHint(view: TuiViewModel, now: number): string {
+  if (view.phase !== 'running') return ''
+  const startedAt = view.turnStartedAt ?? now
+  return ` (${formatActivityDuration(now - startedAt)} • esc to interrupt)`
+}
+
+/** Render the transient retry / compaction / active-turn message. */
+export function renderWorkingMessage(view: TuiViewModel, now = Date.now()): string | undefined {
+  if (view.retryStatus !== undefined) {
+    const remainingMs = Math.max(0, view.retryStatus.scheduledAt + view.retryStatus.delayMs - now)
+    const seconds = Math.ceil(remainingMs / 1000)
+    const attempt = view.retryStatus.maxRetries !== undefined
+      ? ` (${view.retryStatus.retry}/${view.retryStatus.maxRetries})`
+      : ` (${view.retryStatus.retry})`
+    return `Retrying${attempt} in ${seconds}s${activityHint(view, now)}`
+  }
+  if (view.compacting) return `Compacting context${activityHint(view, now) || '…'}`
+  if (view.phase === 'running') return `Working${activityHint(view, now)}`
+  return undefined
+}
+
+/** Esc interrupts only an active turn; inline controls and overlays take precedence. */
+export function isTurnInterruptInput(data: string, view: TuiViewModel | undefined): boolean {
+  return view?.phase === 'running' && matchesKey(data, 'escape')
 }
 
 /** Format a token count as a compact figure (8900 → 8.9K, 1000000 → 1M). */
@@ -526,7 +564,7 @@ export class TuiHost {
   private readonly workingLoader: Loader
   private readonly footer: Text
   private readonly editorSlot: Container
-  private retryTimer: ReturnType<typeof setInterval> | undefined
+  private workingTimer: ReturnType<typeof setInterval> | undefined
   private shellMode = false
   private readonly inlineContainer: Container
   private inlineControlActive = false
@@ -542,7 +580,7 @@ export class TuiHost {
     this.status = new StatusLine()
     this.workingContainer = new Container()
     this.workingLoader = new Loader(this.tui, theme.accent, theme.dim, 'Working...')
-    this.footer = new Text(theme.dim('Enter send · Ctrl+C cancel · Ctrl+O expand · Ctrl+D exit · / commands'), 1, 0)
+    this.footer = new Text(theme.dim('Enter send · Esc back · Ctrl+O expand · Ctrl+D exit · / commands'), 1, 0)
     this.editor = new Editor(this.tui, EDITOR_THEME, { paddingX: 1 })
     this.editor.onSubmit = (text) => { this.callbacks.onSubmit(text) }
     this.editor.onChange = (text) => { this.callbacks.onEditorChange?.(text) }
@@ -565,11 +603,14 @@ export class TuiHost {
   private handleInput(data: string): { consume: true } | undefined {
     // While an inline selector/input is active, let it own every key.
     if (this.inlineControlActive) return undefined
+    // Ctrl+C is reserved for terminal-native text copy. In an overlay, consume
+    // the raw key so pi-tui's default selection binding cannot treat it as Esc.
+    if (this.activeOverlayCancel !== undefined && matchesKey(data, Key.ctrl('c'))) return { consume: true }
     if (this.activeOverlayCancel !== undefined && matchesKey(data, 'escape')) {
       this.activeOverlayCancel()
       return { consume: true }
     }
-    if (matchesKey(data, Key.ctrl('c'))) { this.callbacks.onCancel(); return { consume: true } }
+    if (isTurnInterruptInput(data, this.lastView)) { this.callbacks.onInterrupt(); return { consume: true } }
     if (matchesKey(data, Key.ctrl('d'))) { this.callbacks.onExit(); return { consume: true } }
     if (matchesKey(data, Key.ctrl('l'))) { this.callbacks.onRedraw(); return { consume: true } }
     if (matchesKey(data, Key.ctrl('o'))) {
@@ -600,27 +641,12 @@ export class TuiHost {
     this.tui.requestRender()
   }
 
-  /** The transient working-area message, from retry / compaction / running state. */
-  private workingMessage(view: TuiViewModel): string | undefined {
-    if (view.retryStatus !== undefined) {
-      const remainingMs = Math.max(0, view.retryStatus.scheduledAt + view.retryStatus.delayMs - Date.now())
-      const seconds = Math.ceil(remainingMs / 1000)
-      const attempt = view.retryStatus.maxRetries !== undefined
-        ? ` (${view.retryStatus.retry}/${view.retryStatus.maxRetries})`
-        : ` (${view.retryStatus.retry})`
-      return `Retrying${attempt} in ${seconds}s... (Ctrl+C to cancel)`
-    }
-    if (view.compacting) return 'Compacting context…'
-    if (view.phase === 'running') return 'Working...'
-    return undefined
-  }
-
   private updateWorkingIndicator(view: TuiViewModel): void {
-    const message = this.workingMessage(view)
+    const message = renderWorkingMessage(view)
     if (message === undefined) {
       this.workingContainer.clear()
       this.workingLoader.stop()
-      this.clearRetryTimer()
+      this.clearWorkingTimer()
       return
     }
     if (this.workingContainer.children.length === 0) {
@@ -628,28 +654,28 @@ export class TuiHost {
       this.workingLoader.start()
     }
     this.workingLoader.setMessage(message)
-    if (view.retryStatus !== undefined) this.ensureRetryTimer()
-    else this.clearRetryTimer()
+    if (view.phase === 'running') this.ensureWorkingTimer()
+    else this.clearWorkingTimer()
   }
 
-  private ensureRetryTimer(): void {
-    if (this.retryTimer !== undefined) return
-    this.retryTimer = setInterval(() => {
+  private ensureWorkingTimer(): void {
+    if (this.workingTimer !== undefined) return
+    this.workingTimer = setInterval(() => {
       const view = this.lastView
-      if (view?.retryStatus !== undefined) {
-        const message = this.workingMessage(view)
+      if (view?.phase === 'running') {
+        const message = renderWorkingMessage(view)
         if (message !== undefined) this.workingLoader.setMessage(message)
         this.tui.requestRender()
       } else {
-        this.clearRetryTimer()
+        this.clearWorkingTimer()
       }
     }, 1000)
   }
 
-  private clearRetryTimer(): void {
-    if (this.retryTimer !== undefined) {
-      clearInterval(this.retryTimer)
-      this.retryTimer = undefined
+  private clearWorkingTimer(): void {
+    if (this.workingTimer !== undefined) {
+      clearInterval(this.workingTimer)
+      this.workingTimer = undefined
     }
   }
 
@@ -832,6 +858,7 @@ export class TuiHost {
     void this.adaptiveTheme.detect()
   }
   stop(): void {
+    this.clearWorkingTimer()
     this.adaptiveTheme?.dispose()
     this.adaptiveTheme = undefined
     this.detachInput()

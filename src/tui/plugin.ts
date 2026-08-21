@@ -170,10 +170,8 @@ async function run(ctx: Context): Promise<void> {
     onEditorChange: (text) => {
       host.setShellMode(text.trimStart().startsWith('!'))
     },
-    onCancel: () => {
+    onInterrupt: () => {
       if (agent.status === 'running') agent.cancel({ kind: 'user' })
-      else if (host.getText() !== '') host.clearEditor()
-      else void shutdown(0)
     },
     onExit: () => {
       if (agent.status !== 'running') void shutdown(0)
@@ -648,7 +646,7 @@ async function run(ctx: Context): Promise<void> {
       name: exitCommand,
       description: 'Exit the current session',
       handler: () => {
-        if (agent.status === 'running') return { kind: 'error', text: 'cancel the active turn before exiting (Ctrl+C)' }
+        if (agent.status === 'running') return { kind: 'error', text: 'interrupt the active turn before exiting (Esc)' }
         void shutdown(0)
         // No success text: the exit signal is transient, not a durable
         // transcript notice — a persisted "exiting…" would replay on every
