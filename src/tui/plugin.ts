@@ -12,6 +12,8 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+// Declaration-merges the upstream Agent Preset roster onto Context.
+import type {} from '@deepseek-ai/dsh-agent-presets'
 // Empty type imports declaration-merge `agentDefaultModel`, `cmdlineArgs`, and
 // `appExit` onto Context (same contract the upstream headless runner relies on).
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -71,6 +73,7 @@ import {
 } from './skill-preferences.ts'
 import { credentialEnvName } from './config-wizard.ts'
 import { FIRST_MODEL_CONFIG_ENV } from '../bootstrap/credentials.ts'
+import { DEFAULT_AGENT_PRESET } from '../bootstrap/profile.ts'
 import {
   defaultExportFilename,
   exportFormatForPath,
@@ -82,7 +85,7 @@ import {
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'tools']
+export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'tools']
 
 /** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
 const RENDER_INTERVAL_MS = 16
@@ -150,6 +153,7 @@ async function run(ctx: Context): Promise<void> {
   let disabledSkillControl: SkillProviderControl | undefined
 
   const setup = async (agentCtx: Context): Promise<void> => {
+    await ctx.agentPresets.mount(agentCtx, DEFAULT_AGENT_PRESET)
     installModelSelection(agentCtx, modelRef)
     await installDisabledSkillProvider(agentCtx, disabledSkills, (control) => { disabledSkillControl = control })
   }
@@ -160,7 +164,7 @@ async function run(ctx: Context): Promise<void> {
     ? await agents.resume({ resumeSessionId: SessionId(resumeId), agentOptions: modelOptions, setup })
     : await agents.create({
       sessionId: SessionId(`session-${randomUUID()}`),
-      meta: { cwd: process.cwd() },
+      meta: { cwd: process.cwd(), agentPreset: DEFAULT_AGENT_PRESET },
       agentOptions: modelOptions,
       setup,
     })

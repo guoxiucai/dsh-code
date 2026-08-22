@@ -144,7 +144,7 @@ LF 同时适用于 macOS、Linux 和 Windows 上的 Node.js、Git 与现代编�
 ```
 npm 产品层 (dsh-code)
   → 启动层（参数解析、项目路径、信任、选 Profile）
-  → 组合层（dsh-base + dsh-code profile patch，含 TUI plugin）
+  → 组合层（dsh-base + standard Agent Preset + dsh-code profile patch，含 TUI plugin）
   → Agent 核心层（上游 DSH）
   → UI Bridge（公开事件 → 纯 ViewModel）
   → TUI 层（pi-tui Main Screen）
@@ -191,7 +191,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       credentials.ts           # 首次启动凭据存在性判断 + launcher→TUI 引导标记
       trust.ts                 # 项目信任（canonical path + sha256 + 三档权限）
       trust-picker.ts          # 全屏 TUI 信任选择器
-      profile.ts               # 初始化 profile（dsh-base + ask-user 工具 + TUI patch）
+      profile.ts               # 初始化 profile（dsh-base + standard Agent Preset + ask-user/TUI patch）
       sessions.ts              # 会话列表：projectKey + zstd 多 frame 解码 + 首条用户消息
       resume-picker.ts         # 全屏会话选择器（-r/--resume：搜索/删除二次确认/Tab 切换项目范围）
     tui/
@@ -231,9 +231,10 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 
 ### 5.2 `plugin.ts` — 核心接线（最重要）
 
-- `inject` 包含 `agents`、`agentDefaultModel`、`sessions`、`commands`、`llm`、`credentials`、`settings`、
+- `inject` 包含 `agents`、`agentPresets`、`agentDefaultModel`、`sessions`、`commands`、`llm`、`credentials`、`settings`、
   `permissionPresets`、`shell`、`tokenMeter`、`userQuestions`。
-- 用 `agents.create` / `agents.resume` 创建/恢复 agent，`installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。
+- Profile 关闭 `dsh-base` 中改由 Preset 所有的 model-facing 全局行，并注册上游 `agent-presets` roster；上游启动器自动注入随安装包发布的 Preset 根目录。
+- 用 `agents.create` / `agents.resume` 创建/恢复 agent；setup 先挂载官方 `standard` Agent Preset，再用 `installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。新会话 Header 持久化 `agentPreset: standard`，旧会话恢复时也按 standard 组装。目前不提供其他模式切换。
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
 - `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
   上游 Registry 中可由用户调用的 Skill → 普通 `agent.followup`。命令名优先于同名 Skill。

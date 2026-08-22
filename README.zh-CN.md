@@ -77,13 +77,14 @@ flowchart TB
   User["终端用户"] --> CLI["dsh-code 启动器"]
   CLI --> TUI["终端宿主<br/>Pi 风格交互 + pi-tui"]
   TUI --> API["DSH 公共服务<br/>session/event + AgentHandle"]
-  API --> DSH["@deepseek-ai/dsh-base"]
+  API --> DSH["@deepseek-ai/dsh-base<br/>standard Agent Preset"]
   DSH --> Runtime["Agent Loop · 会话 · 模型 · 工具<br/>沙箱 · 权限 · MCP · Skills<br/>Plan/Todo · Sub-Agent"]
 ```
 
 启动器只负责产品层能力：命令解析、`~/.dsh-code` 数据隔离、项目信任、会话选择、
 Profile 初始化、产品更新，以及委托上游 DSH 启动。TUI 只渲染结构化事件，并通过
 公共 `AgentHandle` API 把用户输入送回 Agent。
+TUI 会话会显式挂载上游 `standard` Agent Preset；目前尚未开放其他 Preset 的切换入口。
 
 架构约束见 [`docs/adr/`](docs/adr/)，固定的上游版本见
 [`UPSTREAM_BASELINE.md`](UPSTREAM_BASELINE.md)。

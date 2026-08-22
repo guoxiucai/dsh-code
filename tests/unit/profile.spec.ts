@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { compatibleSkillDirs, initDshCodeProfile, skillProjectRoot } from '../../src/bootstrap/profile.ts'
+import {
+  compatibleSkillDirs,
+  DEFAULT_AGENT_PRESET,
+  initDshCodeProfile,
+  skillProjectRoot,
+} from '../../src/bootstrap/profile.ts'
 
 const homes: string[] = []
 
@@ -17,6 +22,29 @@ afterEach(() => {
 })
 
 describe('dsh-code profile composition', () => {
+  it('moves model-facing rows into the upstream standard Agent Preset', () => {
+    const home = makeHome()
+    const dir = initDshCodeProfile(home, 'file:///plugin.js')
+    const patch = readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')
+
+    expect(DEFAULT_AGENT_PRESET).toBe('standard')
+    expect(patch).toContain("id: agent-presets\n      name: '@deepseek-ai/dsh-agent-presets'")
+    expect(patch).toContain('default: standard')
+    for (const id of [
+      'tool-bash',
+      'tool-pwsh',
+      'tool-fs',
+      'skill-filesystem',
+      'plan-mode',
+      'command-compact',
+      'tool-subagent',
+      'tool-todo',
+      'tool-web',
+    ]) {
+      expect(patch).toContain(`- id: ${id}\n  disabled: true`)
+    }
+  })
+
   it('mounts the upstream ask-user tool before the TUI answer provider', () => {
     const home = makeHome()
     const pluginUrl = 'file:///installed/dsh-code/lib/tui/plugin.js'

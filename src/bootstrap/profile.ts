@@ -15,6 +15,40 @@ import { dirname, join, resolve } from 'node:path'
 /** The profile name dsh-code boots. */
 export const DSH_CODE_PROFILE_NAME = 'dsh-code'
 
+/** The single upstream Agent Preset currently supported by dsh-code. */
+export const DEFAULT_AGENT_PRESET = 'standard'
+
+/**
+ * Model-facing rows supplied by dsh-base for a process-wide TUI agent. Once
+ * that agent formally joins a preset these rows must come from the preset's
+ * scoped composition instead, while their host-plane registries stay mounted.
+ */
+const PRESET_OWNED_BASE_ROWS = [
+  'tool-bash',
+  'tool-pwsh',
+  'tool-jobs',
+  'tool-fs',
+  'tool-fs-search',
+  'tool-str-replace-editor',
+  'skill-filesystem',
+  'tool-skill',
+  'tool-goal',
+  'plan-mode',
+  'compaction-basic',
+  'command-compact',
+  'tool-result-pruner',
+  'tool-subagent-control',
+  'tool-subagent-list-agents',
+  'tool-subagent',
+  'tool-subagent-fork',
+  'workflow-worker-thread',
+  'tool-workflow',
+  'tool-ralph',
+  'agent-instructions',
+  'tool-todo',
+  'tool-web',
+] as const
+
 /** Absolute profile directory under a given dsh-code home. */
 export function profileDir(home: string): string {
   return join(home, 'profiles', DSH_CODE_PROFILE_NAME)
@@ -64,7 +98,16 @@ function profilePatch(tuiPluginUrl: string, projectRoot: string): string {
   return `# dsh-code interaction layer over dsh-base.
 # The TUI plugin is referenced by absolute module URL so it always loads from
 # the installed dsh-code package, never from the upstream installation.
+${PRESET_OWNED_BASE_ROWS.map(id => `- id: ${id}\n  disabled: true`).join('\n\n')}
+
 - insert:
+    # The upstream launcher supplies its shipped preset root automatically
+    # whenever this service is present. dsh-code currently mounts only standard.
+    - id: agent-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      config:
+        default: ${DEFAULT_AGENT_PRESET}
+
     # Discovery only: a second upstream provider reads compatible skill roots.
     # dsh-code never installs, deletes, or copies skills from these products.
     - id: dsh-code-compatible-skills

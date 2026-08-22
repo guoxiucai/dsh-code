@@ -83,7 +83,7 @@ flowchart TB
   User["Terminal user"] --> CLI["dsh-code launcher"]
   CLI --> TUI["Terminal host<br/>Pi-inspired UX + pi-tui"]
   TUI --> API["Public DSH services<br/>session/event + AgentHandle"]
-  API --> DSH["@deepseek-ai/dsh-base"]
+  API --> DSH["@deepseek-ai/dsh-base<br/>standard Agent Preset"]
   DSH --> Runtime["Agent Loop · Sessions · Models · Tools<br/>Sandbox · Permissions · MCP · Skills<br/>Plan/Todo · Sub-agents"]
 ```
 
@@ -91,6 +91,8 @@ The launcher owns only product concerns: command parsing, `~/.dsh-code` home
 isolation, project trust, session selection, profile initialization, updates,
 and delegation to the upstream DSH executable. The TUI renders structured
 events and sends input back through the public `AgentHandle` API.
+TUI sessions explicitly mount the upstream `standard` Agent Preset; alternate
+Preset switching is not exposed yet.
 
 See the accepted architecture decisions in [`docs/adr/`](docs/adr/) and the
 exact upstream revision in [`UPSTREAM_BASELINE.md`](UPSTREAM_BASELINE.md).

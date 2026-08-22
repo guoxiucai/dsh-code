@@ -20,6 +20,8 @@
 - Isolated noisy stdio MCP server stderr from the alternate-screen TUI through
   a transparent cross-platform proxy; diagnostics now rotate under
   `~/.dsh-code/logs/mcp/` instead of corrupting the bottom-pinned layout.
+- Made the upstream `standard` Agent Preset the explicit dsh-code default for
+  new and resumed TUI sessions; mode switching remains intentionally absent.
 
 ## 0.1.0 — 2026-08-20
 

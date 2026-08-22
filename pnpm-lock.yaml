@@ -21,6 +21,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:deepseek-harness/packages/core/agent
+      '@deepseek-ai/dsh-agent-presets':
+        specifier: workspace:^
+        version: link:deepseek-harness/packages/preset/agent-presets
       '@deepseek-ai/dsh-base':
         specifier: workspace:^
         version: link:deepseek-harness/packages/bundle/base
