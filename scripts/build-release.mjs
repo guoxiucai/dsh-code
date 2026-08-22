@@ -1,6 +1,6 @@
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import {
   CANDIDATE,
   DIST,
@@ -31,9 +31,28 @@ for (const entry of ['lib', 'README.md', 'README.zh-CN.md', 'docs/assets', 'CHAN
 cpSync(join(ROOT, 'deepseek-harness', 'THIRD_PARTY_NOTICES.md'), join(STAGE, 'UPSTREAM_THIRD_PARTY_NOTICES.md'))
 
 const require = createRequire(import.meta.url)
+function resolvePackageManifest(name) {
+  try {
+    return require.resolve(`${name}/package.json`)
+  } catch (error) {
+    if (error?.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error
+  }
+  let directory = dirname(require.resolve(name))
+  while (true) {
+    const candidate = join(directory, 'package.json')
+    if (existsSync(candidate)) {
+      const manifest = JSON.parse(readFileSync(candidate, 'utf8'))
+      if (manifest.name === name) return candidate
+    }
+    const parent = dirname(directory)
+    if (parent === directory) throw new Error(`cannot locate package manifest for ${name}`)
+    directory = parent
+  }
+}
+
 const dependencies = {}
 for (const name of Object.keys(rootManifest.dependencies).sort()) {
-  const manifestPath = require.resolve(`${name}/package.json`)
+  const manifestPath = resolvePackageManifest(name)
   const dependency = JSON.parse(readFileSync(manifestPath, 'utf8'))
   if (typeof dependency.version !== 'string' || !SEMVER.test(dependency.version)) {
     throw new Error(`cannot resolve an exact version for ${name}`)

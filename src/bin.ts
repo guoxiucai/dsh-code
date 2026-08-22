@@ -89,7 +89,7 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   const canonical = canonicalizeProjectPath()
   const rejected = await ensureTrusted(home, canonical, false)
   if (rejected !== undefined) return rejected
-  initDshCodeProfile(home, tuiPluginUrl())
+  initDshCodeProfile(home, tuiPluginUrl(), canonical)
   let appArgs: string[]
   if (invocation.resume !== undefined) {
     appArgs = ['--resume', invocation.resume]

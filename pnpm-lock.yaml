@@ -36,6 +36,9 @@ importers:
       '@deepseek-ai/dsh-settings':
         specifier: workspace:^
         version: link:deepseek-harness/packages/settings/settings
+      '@deepseek-ai/dsh-skill-filesystem':
+        specifier: workspace:^
+        version: link:deepseek-harness/packages/skill/skill-filesystem
       '@deepseek-ai/dsh-tool-ask-user':
         specifier: workspace:^
         version: link:deepseek-harness/packages/interaction/tool-ask-user
@@ -51,6 +54,9 @@ importers:
       js-yaml:
         specifier: ^4.2.0
         version: 4.3.1
+      smol-toml:
+        specifier: ^1.8.0
+        version: 1.8.0
     devDependencies:
       '@agentclientprotocol/sdk':
         specifier: 0.25.1
@@ -70,6 +76,12 @@ importers:
       '@deepseek-ai/dsh-compaction':
         specifier: workspace:^
         version: link:deepseek-harness/packages/compaction/compaction
+      '@deepseek-ai/dsh-goal':
+        specifier: workspace:^
+        version: link:deepseek-harness/packages/goal/goal
+      '@deepseek-ai/dsh-jobs':
+        specifier: workspace:^
+        version: link:deepseek-harness/packages/jobs/jobs
       '@deepseek-ai/dsh-llm-retry':
         specifier: workspace:^
         version: link:deepseek-harness/packages/llm/llm-retry
@@ -79,15 +91,27 @@ importers:
       '@deepseek-ai/dsh-plan-mode':
         specifier: workspace:^
         version: link:deepseek-harness/packages/plan/plan-mode
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:deepseek-harness/packages/core/scope
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:^
         version: link:deepseek-harness/packages/session/session-projection
       '@deepseek-ai/dsh-session-query':
         specifier: workspace:^
         version: link:deepseek-harness/packages/session-query/session-query
+      '@deepseek-ai/dsh-session-title':
+        specifier: workspace:^
+        version: link:deepseek-harness/packages/session/session-title
       '@deepseek-ai/dsh-shell':
         specifier: workspace:^
         version: link:deepseek-harness/packages/shell/shell
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:^
+        version: link:deepseek-harness/packages/skill/skill
+      '@deepseek-ai/dsh-subagent':
+        specifier: workspace:^
+        version: link:deepseek-harness/packages/subagent/subagent
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:^
         version: link:deepseek-harness/packages/llm/token-meter
@@ -178,9 +202,6 @@ importers:
       publint:
         specifier: ^0.3.21
         version: 0.3.23
-      smol-toml:
-        specifier: ^1.7.1
-        version: 1.8.0
       spdx-expression-parse:
         specifier: ^5.0.0
         version: 5.0.0

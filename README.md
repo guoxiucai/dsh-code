@@ -190,8 +190,13 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | `/config` | Configure DeepSeek, OpenAI, or an OpenAI-compatible provider |
 | `/model` | Switch the active model using an inline selector |
 | `/permission` | Select the active permission preset |
-| `/mcp add` | Add a stdio or Streamable HTTP MCP server to this project |
-| `/mcp remove <name>` | Remove a project MCP server |
+| `/goal` | View and manage the upstream DSH long-running goal inline |
+| `/skills [search]` | Discover skills; Space toggles dsh-code-only enablement and Enter invokes the selected skill |
+| `/agents` | Inspect the current session's persisted subagent tree |
+| `/mcp` | View MCP servers grouped by DSH/Codex/Claude source with live status, then import or remove them |
+| `/rename [title]` | Rename and pin the current session title |
+| `/jobs` | Inspect output or stop background jobs owned by this session |
+| `/export [path]` | Export the current session as Markdown or JSONL |
 | `/session` | Show session, message, tool, model, and token statistics |
 | `/fork` | Fork at the most recent completed turn |
 | `/compact` | Compact the current context through DSH |
@@ -242,11 +247,29 @@ By default all dsh-code state lives under `~/.dsh-code`:
 
 Set `DSH_CODE_HOME` to use a different root. On launch, dsh-code sets the
 delegated `DSH_HOME` to this isolated directory and disables DSH telemetry. It
-does not read or overwrite `~/.dsh`, and a globally installed upstream `dsh`
-binary remains independent.
+does not import or overwrite standalone DSH settings, credentials, sessions,
+plugins, or MCP configuration, so a globally installed upstream `dsh` binary
+remains independent. The bundled DSH skill registry does perform read-only
+discovery from compatible skill roots: project `.dsh/.agents/.codex/.claude`,
+dsh-code user `~/.dsh-code/skills`, and user `~/.dsh/.agents/.codex/.claude`
+skill directories. dsh-code does not install, delete, copy, or update those
+skills; `/skills` reports the winning upstream registry entry and its source in
+a single-level picker. Space enables or disables the selected entry and Enter
+places an enabled, user-invocable skill in the editor.
+Its enable/disable switch is a dsh-code-only overlay stored at
+`~/.dsh-code/skill-preferences.json`; it never edits the source `SKILL.md` or
+changes another product's skill state. A disabled skill is hidden from both the
+model catalog and user slash invocation in dsh-code.
 
 Project MCP configuration is written to `.dsh-code/cordis.patch.yml` inside the
-trusted project and takes effect on the next launch.
+trusted project and takes effect on the next launch. The `/mcp` view groups
+servers by their standalone DSH, OpenAI Codex, Claude Code, or dsh-code source
+file. A green `● connected` means the current Agent has registered at least one
+tool from that server; an unconnected server is shown in gray. Selecting an
+external entry copies it into dsh-code's project patch without changing its
+source. Imported environment or header values can contain credentials;
+this repository gitignores that patch, and other projects should do the same
+before importing credential-bearing servers.
 
 ## Updating
 

@@ -204,6 +204,8 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       interaction.ts           # 一次性审批条、结构化问题与 Plan Review 面板
       config-wizard.ts         # /config 纯辅助函数（如 credential env 自动生成）
       project-config.ts        # 读写项目 .dsh-code/cordis.patch.yml（MCP 配置）
+      external-mcp.ts          # 只读发现 DSH/Codex/Claude MCP 配置并标准化
+      skill-preferences.ts     # ~/.dsh-code Skill 禁用偏好与 agent-scope shadow provider
   tests/
     unit/                      # reducer / args / trust / sessions / project-config / selector
     integration/mock-loop.spec.ts   # mock LLM 闭环 + 缺凭证失败路径
@@ -230,8 +232,23 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
   `permissionPresets`、`shell`、`tokenMeter`、`userQuestions`。
 - 用 `agents.create` / `agents.resume` 创建/恢复 agent，`installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
-- `onSubmit` 分发：`!` shell → `/permission` 选择器 → `/` 命令 → 普通 `agent.followup`。
-- 注册 slash 命令：`/model` `/config` `/mcp` `/session` `/fork` `/quit` `/exit`。
+- `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
+  上游 Registry 中可由用户调用的 Skill → 普通 `agent.followup`。命令名优先于同名 Skill。
+- 注册 slash 命令：`/model` `/config` `/skills` `/agents` `/mcp` `/session` `/rename`
+  `/jobs` `/export` `/fork` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
+- `/skills` 不建立第二套 Skill Store。基础 provider 读取项目 `.dsh/.agents`、独立
+  `~/.dsh-code/skills` 与 `~/.agents/skills`；Profile 中的第二个上游 filesystem provider
+  只读补充项目 `.codex/.claude` 和用户 `~/.dsh/.codex/.claude`。列表不进入详情二级页：Space
+  就地切换启停，Enter 把可调用 Skill 的 `/<skill-name> ` 放回编辑器，提交时由上游
+  `dsh-tool-skill` 注入 Skill 内容。启停偏好写在
+  `$DSH_HOME/skill-preferences.json`；agent setup 注册最近作用域的 shadow provider，使禁用项同时
+  对 model/user invocation 关闭，但不修改来源文件或独立 DSH/Codex/Claude 状态。
+- `/mcp` 编辑受信项目 `.dsh-code/cordis.patch.yml` 的标准 `dsh-mcp-client` rows，连接、工具注册与
+  生命周期仍由内置 DSH 在下次启动管理。`external-mcp.ts` 只读发现独立 `~/.dsh/profiles/*`、
+  Codex `config.toml` 与 Claude `.mcp.json`/用户配置；只有用户二次确认“共享”才标准化并复制到项目
+  patch，来源文件不被改写。主选择器按产品与来源文件分组；通过当前 Agent Tool Registry 中的
+  `mcp__<server>__*` schema 推导连接状态，connected 使用语义绿，其他状态使用灰色。选择器只显示私密字段数量、不显示值；本仓库忽略项目 patch，其他项目
+  导入带凭据 Server 时 UI 会明确提示不得提交该文件。
 - 首次运行收到 `DSH_CODE_FIRST_MODEL_CONFIG=1` 时，在主屏启动和命令注册完成后自动调用同一个
   Provider 配置选择器；Esc 可退出本次引导，未保存 Credential 时下次启动会再次显示。
 - 权限审批：`ctx.on('approval/request')` → `host.askApproval` 内联一次性审批条（Allow once / Reject）；
@@ -429,15 +446,15 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | TUI：转写、流式、工具卡片、状态栏、编辑器 | ✅ |
 | 一次性内联审批条（沙箱升级 / Hook ask，Allow once / Reject） | ✅ |
 | 结构化 `ask_user_question` / Plan Review（单选、多选、自定义答案） | ✅ |
-| 内联选择/输入（/model、/permission、/config 全流程） | ✅ |
+| 内联选择/输入（/model、/permission、/config、/goal、/skills、/agents、/mcp、/rename、/jobs、/export） | ✅ |
 | 无已存 Credential 时自动进入首次模型/API Token 配置 | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
 | session resume（`resume <id>`、`-c` 最近会话、`-r` 全屏选择器，删除二次确认）、fork | ✅ |
-| 命令面板（/model /config /mcp /session /fork /quit /exit） | ✅ |
+| 命令面板（/model /config /skills /agents /mcp /session /rename /jobs /export /fork /quit /exit） | ✅ |
 | Markdown 渲染、带行号及整行背景的工具 diff | ✅ |
 | 思考最新 5 行/工具结果折叠（Ctrl+O）、结果选择复制、整块背景、块间距、页脚 | ✅ |
 | loading / retry / compaction 状态指示 | ✅ |
-| `/` 命令联想 + `@` 文件联想(fd) + `/permission` 参数补全 | ✅ |
+| `/` 命令/用户可调用 Skill 联想 + `@` 文件联想(fd) + `/permission` 参数补全 | ✅ |
 
 ## 8. 核心设计模式
 
@@ -466,7 +483,8 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 
 ### 8.3 内联控件（model/permission/config）
 
-`selector.ts` 提供 `ListSelectorComponent` 和 `InlineTextInputComponent`，内联挂在 `inlineContainer`。进入时
+`selector.ts` 提供 `ListSelectorComponent` 和 `InlineTextInputComponent`，支持不可选分组标题和保持面板打开的
+Space toggle，内联挂在 `inlineContainer`。进入时
 `editorSlot.clear()` 隐藏主编辑器并转移焦点，完成或取消后恢复主编辑器。
 
 `/config` 是多步内联向导：provider 和 DeepSeek 默认模型使用列表选择器，API Key、Base URL、模型 ID 等字段使用
@@ -513,13 +531,19 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 | `ctx.shell.resolve/run` | `@deepseek-ai/dsh-shell` |
 | `ctx.sessions.fork/flush` | `@deepseek-ai/dsh-session` |
 | `ctx.llm.listProviders/listModels` | `@deepseek-ai/dsh-llm` |
+| `ctx.goals.get/create/edit/pause/resume/clear` | `@deepseek-ai/dsh-goal` |
+| `ctx.skills.list` | `@deepseek-ai/dsh-skill` |
+| `ctx.subagents.listDescendants` | `@deepseek-ai/dsh-subagent` |
+| `ctx.sessionTitle.get/rename` | `@deepseek-ai/dsh-session-title` |
+| `ctx.jobs.list/get/read/kill/attachController` | `@deepseek-ai/dsh-jobs` |
 
 类型通过 `import type {} from '<包>'` 的 declaration-merge 挂到 `Context` / `SessionEventMap` 上。
 
 ## 10. 如何新增一个 slash 命令
 
 1. 在 `plugin.ts` 里 `host` 创建之后 `ctx.commands.register({ name, description, input?, handler })`。
-2. handler 返回 `{ kind: 'success' | 'error', text? }`；需要弹选择器就 `host.showSelector(...)`，需要交互就 `host.askChoice/askText`。
+2. handler 返回 `{ kind: 'success' | 'error', text? }`；需要交互时使用底部固定的
+   `host.showSelector(...)` / `host.showInlineInput(...)`，并让 Esc 明确返回上一步。
 3. 结果经 `command/done` 事件被 reducer 渲染为 notice（无需额外处理）。
 4. 需要参数补全就加 `getArgumentCompletions`（见 `/permission` 的实现）。
 

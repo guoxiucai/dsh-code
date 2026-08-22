@@ -8,6 +8,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
@@ -34,18 +35,46 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 // Declaration-merges the `tokenMeter` service onto Context.
 import type {} from '@deepseek-ai/dsh-token-meter'
+// Declaration-merges the live Tool Registry used for MCP connection status.
+import type {} from '@deepseek-ai/dsh-tools'
+// Declaration-merges the host services used by the richer TUI commands.
+import type { GoalView } from '@deepseek-ai/dsh-goal'
+import type { SkillProviderControl, SkillSummary } from '@deepseek-ai/dsh-skill'
+import type { SubagentDescendantListEntry } from '@deepseek-ai/dsh-subagent'
+import type { JobId, JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type {} from '@deepseek-ai/dsh-session-title'
 import { TuiHost } from './host.ts'
+import type { SelectorItem } from './selector.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 import { theme } from './theme.ts'
-import { addMcpServer, removeMcpServer } from './project-config.ts'
+import { addMcpServer, listMcpServers, parseMcpArguments, removeMcpServer, type McpServerConfig } from './project-config.ts'
+import {
+  connectedMcpServerNames,
+  discoverExternalMcpServers,
+  externalMcpLocation,
+  externalMcpSourceLabel,
+  type DiscoveredMcpServer,
+} from './external-mcp.ts'
+import {
+  installDisabledSkillProvider,
+  readDisabledSkills,
+  writeDisabledSkills,
+  type DisabledSkillRecord,
+} from './skill-preferences.ts'
 import { credentialEnvName } from './config-wizard.ts'
 import { FIRST_MODEL_CONFIG_ENV } from '../bootstrap/credentials.ts'
+import {
+  defaultExportFilename,
+  exportFormatForPath,
+  writeSessionExport,
+  type SessionExportFormat,
+} from './session-export.ts'
 
 /** Stable Cordis plugin name (referenced by id in the profile patch). */
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions']
+export const inject = ['agents', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'tools']
 
 /** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
 const RENDER_INTERVAL_MS = 16
@@ -108,9 +137,13 @@ async function run(ctx: Context): Promise<void> {
   const selection = defaultModel.currentSelection()
   const modelOptions = { provider: selection.provider, model: selection.model }
   const modelRef: ModelSelectionRef = { current: { provider: selection.provider, model: selection.model }, assembled: undefined }
+  const dshCodeHome = process.env.DSH_HOME ?? join(homedir(), '.dsh-code')
+  const disabledSkills = readDisabledSkills(dshCodeHome)
+  let disabledSkillControl: SkillProviderControl | undefined
 
-  const setup = (agentCtx: Context): void => {
+  const setup = async (agentCtx: Context): Promise<void> => {
     installModelSelection(agentCtx, modelRef)
+    await installDisabledSkillProvider(agentCtx, disabledSkills, (control) => { disabledSkillControl = control })
   }
 
   // A requested `--resume` loads the persisted session through the upstream
@@ -132,6 +165,13 @@ async function run(ctx: Context): Promise<void> {
   let shuttingDown = false
   let renderTimer: ReturnType<typeof setTimeout> | undefined
 
+  const submitUserText = (text: string): void => {
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text }],
+      source: { kind: 'user' },
+    }))
+  }
+
   const host = new TuiHost({
     onSubmit: (text) => {
       const trimmed = text.trim()
@@ -149,29 +189,18 @@ async function run(ctx: Context): Promise<void> {
         void runPermissionPicker()
         return
       }
-      // A leading slash is a slash command, executed without a model round trip.
-      if (trimmed.startsWith('/')) {
-        const controller = new AbortController()
-        void ctx.commands.execute(agent, trimmed, controller.signal).then(
-          (execution) => {
-            if (execution === undefined) { host.showNotice(`unknown command: ${trimmed}`); return }
-            const result = execution.result
-            if (result.kind === 'success') {
-              if (result.text !== undefined && result.text !== '') host.showNotice(result.text)
-            } else {
-              host.showNotice(`command failed: ${result.text}`)
-            }
-          },
-          (error: unknown) => {
-            host.showNotice(`command failed: ${error instanceof Error ? error.message : trimmed}`)
-          },
-        )
+      // The upstream /goal remains authoritative for argument forms; the bare
+      // command is a TUI management surface over the same public GoalService.
+      if (trimmed === '/goal') {
+        runGoalPicker()
         return
       }
-      agent.followup(createUserMessage({
-        content: [{ type: 'text', text: trimmed }],
-        source: { kind: 'user' },
-      }))
+      // A leading slash is a slash command, executed without a model round trip.
+      if (trimmed.startsWith('/')) {
+        void runSlashOrSkill(trimmed)
+        return
+      }
+      submitUserText(trimmed)
     },
     onEditorChange: (text) => {
       host.setShellMode(text.trimStart().startsWith('!'))
@@ -190,6 +219,129 @@ async function run(ctx: Context): Promise<void> {
   host.setModel({ provider: selection.provider, model: selection.model })
   host.setProject(basename(process.cwd()), detectGitBranch(process.cwd()))
   host.setVersion(readVersion())
+
+  const showCommandError = (label: string, error: unknown): void => {
+    host.showNotice(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  /** Commands win their closed namespace; unknown names may be DSH user-invocable skills. */
+  const runSlashOrSkill = async (input: string): Promise<void> => {
+    const controller = new AbortController()
+    try {
+      const execution = await ctx.commands.execute(agent, input, controller.signal)
+      if (execution !== undefined) {
+        const result = execution.result
+        if (result.kind === 'success') {
+          if (result.text !== undefined && result.text !== '') host.showNotice(result.text)
+        } else {
+          host.showNotice(`command failed: ${result.text}`)
+        }
+        return
+      }
+      const name = input.match(/^\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s|$)/)?.[1]
+      if (name !== undefined) {
+        const skills = await ctx.skills.list({ cwd: process.cwd(), scope: agent, signal: controller.signal })
+        const skill = skills.find(candidate => candidate.name === name)
+        if (skill?.invocation.userInvocable === true) {
+          submitUserText(input)
+          return
+        }
+      }
+      host.showNotice(`unknown command or user-invocable skill: ${input}`)
+    } catch (error) {
+      showCommandError('command', error)
+    }
+  }
+
+  const goalDescription = (goal: GoalView): string => [
+    `${goal.phase}${goal.activation === 'armed' ? ' · armed' : ''}`,
+    `rounds ${goal.roundsStarted}/${goal.maxGoalRounds}`,
+    goal.objective,
+  ].join(' · ')
+
+  const showGoalInput = (current?: GoalView): void => {
+    host.showInlineInput({
+      prompt: current === undefined ? 'Goal objective:' : 'Edit goal objective:',
+      initialValue: current?.objective,
+      borderColor: theme.selectorBorder,
+      onSubmit: (objective) => {
+        try {
+          const updated = current === undefined || current.phase === 'complete'
+            ? ctx.goals.create(agent, { objective })
+            : ctx.goals.edit(agent, { id: current.id, revision: current.revision }, { objective })
+          host.showNotice(`goal ${current === undefined || current.phase === 'complete' ? 'created' : 'updated'}: ${updated.objective}`)
+        } catch (error) {
+          showCommandError('goal update', error)
+        }
+      },
+      onCancel: () => { if (current !== undefined) runGoalPicker() },
+    })
+  }
+
+  const confirmGoalClear = (current: GoalView): void => {
+    host.showSelector({
+      hint: `Clear goal: ${current.objective}`,
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'clear', label: 'Clear goal' },
+        { value: 'cancel', label: 'Keep goal' },
+      ],
+      onSelect: (choice) => {
+        if (choice !== 'clear') { runGoalPicker(); return }
+        try {
+          ctx.goals.clear(agent, { id: current.id, revision: current.revision })
+          host.showNotice('goal cleared')
+        } catch (error) {
+          showCommandError('goal clear', error)
+        }
+      },
+      onCancel: () => { runGoalPicker() },
+    })
+  }
+
+  const runGoalPicker = (): void => {
+    let current: GoalView | undefined
+    try {
+      current = ctx.goals.get(agent)
+    } catch (error) {
+      showCommandError('goal lookup', error)
+      return
+    }
+    if (current === undefined) {
+      showGoalInput()
+      return
+    }
+    const items = [
+      { value: 'edit', label: current.phase === 'complete' ? 'Create a new goal' : 'Edit objective' },
+      ...(current.phase === 'active' ? [{ value: 'pause', label: 'Pause goal' }] : []),
+      ...((current.phase === 'paused' || current.phase === 'blocked' || (current.phase === 'active' && current.activation === 'disarmed'))
+        ? [{ value: 'resume', label: 'Resume goal' }]
+        : []),
+      { value: 'clear', label: 'Clear goal' },
+    ]
+    host.showSelector({
+      hint: `Goal · ${goalDescription(current)}`,
+      borderColor: theme.selectorBorder,
+      items,
+      onSelect: (action) => {
+        if (action === 'edit') { showGoalInput(current); return }
+        if (action === 'clear') { confirmGoalClear(current); return }
+        try {
+          const ref = { id: current.id, revision: current.revision }
+          if (action === 'pause') {
+            const updated = ctx.goals.pause(agent, ref)
+            host.showNotice(`goal paused: ${updated.objective}`)
+          } else if (action === 'resume') {
+            const updated = ctx.goals.resume(agent, ref)
+            host.showNotice(`goal resumed: ${updated.objective}`)
+          }
+        } catch (error) {
+          showCommandError(`goal ${action}`, error)
+        }
+      },
+      onCancel: () => {},
+    })
+  }
 
   // Direct shell execution (`!` prefix), bypassing the model loop.
   const runShellCommand = async (command: string): Promise<void> => {
@@ -237,6 +389,7 @@ async function run(ctx: Context): Promise<void> {
     })
     host.showSelector({
       hint: 'Only showing models from configured providers.',
+      initialQuery: searchTerm,
       borderColor: theme.selectorBorder,
       items: sorted.map(entry => ({
         value: `${entry.provider}\u0000${entry.model}`,
@@ -267,6 +420,143 @@ async function run(ctx: Context): Promise<void> {
     },
   })
 
+  const skillLocation = (skill: SkillSummary): string => {
+    const base = skill.resourceBase
+    if (base?.kind === 'directory') return base.path
+    if (base?.kind === 'url') return base.url
+    if (base?.kind === 'opaque') return base.description
+    return skill.provider
+  }
+
+  const persistDisabledSkills = (): void => {
+    writeDisabledSkills(dshCodeHome, disabledSkills)
+    disabledSkillControl?.invalidate()
+  }
+
+  const runSkillsPicker = async (searchTerm: string): Promise<void> => {
+    try {
+      const skills = await ctx.skills.list({ cwd: process.cwd(), scope: agent })
+      if (skills.length === 0) {
+        host.showNotice('no skills discovered in project, dsh-code, DSH, Codex, or Claude roots')
+        return
+      }
+      const skillByName = new Map(skills.map(skill => [skill.name, skill]))
+      const userInvocableByName = new Map(skills.map((skill) => {
+        const disabled = disabledSkills.get(skill.name)
+        return [skill.name, disabled === undefined ? skill.invocation.userInvocable : disabled.userInvocable !== false]
+      }))
+      const items = skills.map((skill) => {
+        const record = disabledSkills.get(skill.name)
+        const disabled = record !== undefined
+        const userInvocable = disabled ? record.userInvocable !== false : skill.invocation.userInvocable
+        return {
+          value: skill.name,
+          label: skill.name,
+          current: !disabled,
+          description: disabled
+            ? `${skill.description} · disabled for dsh-code · ${skillLocation(skill)}`
+            : `${skill.description} · ${skill.source} · ${skillLocation(skill)}${userInvocable ? '' : ' · model-only'}`,
+        }
+      })
+      host.showSelector({
+        hint: '↑↓ select · Space enable/disable for dsh-code · Enter use · Esc close',
+        initialQuery: searchTerm,
+        borderColor: theme.selectorBorder,
+        items,
+        onSelect: (skillName) => {
+          const skill = skillByName.get(skillName)
+          if (skill === undefined) return
+          const disabled = disabledSkills.get(skillName)
+          if (disabled !== undefined) { host.showNotice(`skill ${skillName} is disabled; press Space in /skills to enable it`); return }
+          if (userInvocableByName.get(skillName) !== true) { host.showNotice(`skill ${skillName} is model-invocable only`); return }
+          host.setText(`/${skillName} `)
+        },
+        onToggle: (skillName) => {
+          const skill = skillByName.get(skillName)
+          const item = items.find(candidate => candidate.value === skillName)
+          if (skill === undefined || item === undefined) return
+          const disabled = disabledSkills.get(skillName)
+          if (disabled !== undefined) {
+            disabledSkills.delete(skillName)
+            userInvocableByName.set(skillName, disabled.userInvocable !== false)
+            item.current = true
+            item.description = `${disabled.description} · ${disabled.source} · ${disabled.location}${disabled.userInvocable === false ? ' · model-only' : ''}`
+          } else {
+            const entry: DisabledSkillRecord = {
+              name: skill.name,
+              description: skill.description,
+              source: skill.source,
+              location: skillLocation(skill),
+              userInvocable: skill.invocation.userInvocable,
+              modelInvocable: skill.invocation.modelInvocable,
+            }
+            disabledSkills.set(skill.name, entry)
+            userInvocableByName.set(skillName, false)
+            item.current = false
+            item.description = `${skill.description} · disabled for dsh-code · ${skillLocation(skill)}`
+          }
+          persistDisabledSkills()
+        },
+        onCancel: () => {},
+      })
+    } catch (error) {
+      showCommandError('skill discovery', error)
+    }
+  }
+
+  ctx.commands.register({
+    name: 'skills',
+    description: 'Discover and invoke project and user skills',
+    input: { hint: '[search]' },
+    handler: ({ rawInput }) => {
+      void runSkillsPicker(rawInput.trim())
+      return { kind: 'success' }
+    },
+  })
+
+  const subagentDescription = (entry: SubagentDescendantListEntry): string => {
+    if (entry.kind === 'diagnostic') return `${entry.id} · ${entry.reason}`
+    const live = ctx.agents.get(entry.id)
+    const activity = live?.status ?? entry.activity
+    const label = entry.label === undefined ? '' : ` · ${entry.label}`
+    return `${entry.id} · ${entry.mode} · ${activity}${label}`
+  }
+
+  const runAgentsPicker = async (): Promise<void> => {
+    try {
+      const entries = await ctx.subagents.listDescendants(agent.session.id)
+      if (entries.length === 0) {
+        host.showNotice('no subagents for this session')
+        return
+      }
+      host.showSelector({
+        hint: 'Session-backed subagents · read-only view',
+        borderColor: theme.selectorBorder,
+        items: entries.map(entry => ({
+          value: String(entry.id),
+          label: `${'  '.repeat(Math.max(0, entry.depth - 1))}${entry.kind === 'diagnostic' ? '!' : entry.activity === 'running' ? '●' : '○'} ${entry.kind === 'child' ? entry.label ?? entry.id : entry.id}`,
+          description: subagentDescription(entry),
+        })),
+        onSelect: (id) => {
+          const entry = entries.find(candidate => String(candidate.id) === id)
+          if (entry !== undefined) host.showNotice(subagentDescription(entry))
+        },
+        onCancel: () => {},
+      })
+    } catch (error) {
+      showCommandError('subagent listing', error)
+    }
+  }
+
+  ctx.commands.register({
+    name: 'agents',
+    description: 'Inspect this session’s subagent tree',
+    handler: () => {
+      void runAgentsPicker()
+      return { kind: 'success' }
+    },
+  })
+
   // Slash-command autocomplete, refreshed whenever the command registry changes.
   // `fd` (when installed) enables the fast fuzzy file search; `/permission`
   // completes its preset names from the permission-presets service.
@@ -282,10 +572,12 @@ async function run(ctx: Context): Promise<void> {
     return undefined
   }
 
+  let autocompleteRevision = 0
   const syncCommands = (): void => {
+    const revision = ++autocompleteRevision
     const fdPath = findFd()
     const presets = ctx.permissionPresets.names
-    host.setAutocomplete(ctx.commands.list(agent).map(command => ({
+    const commands = ctx.commands.list(agent).map(command => ({
       name: command.name,
       description: command.description,
       ...(command.input !== undefined ? { argumentHint: command.input.hint } : {}),
@@ -296,10 +588,23 @@ async function run(ctx: Context): Promise<void> {
             .map(name => ({ value: name, label: name })),
         }
         : {}),
-    })), process.cwd(), fdPath)
+    }))
+    host.setAutocomplete(commands, process.cwd(), fdPath)
+    void ctx.skills.list({ cwd: process.cwd(), scope: agent }).then((skills) => {
+      if (revision !== autocompleteRevision) return
+      const commandNames = new Set(commands.map(command => command.name))
+      const skillEntries = skills
+        .filter(skill => skill.invocation.userInvocable && !commandNames.has(skill.name))
+        .map(skill => ({ name: skill.name, description: `${skill.description} [skill: ${skill.source}]` }))
+      host.setAutocomplete([...commands, ...skillEntries], process.cwd(), fdPath)
+    }).catch(() => {
+      // A discovery error is reported when /skills is opened; command
+      // autocomplete remains usable with the synchronous registry entries.
+    })
   }
   syncCommands()
   const disposeCommandsChange = ctx.on('commands/change', () => { syncCommands() })
+  const disposeSkillsChange = ctx.on('skills/change', () => { syncCommands() })
 
   // Model configuration wizard (DeepSeek / OpenAI / compatible). Every step is
   // mounted inline; Enter advances and Esc rebuilds the preceding step. Values
@@ -335,7 +640,7 @@ async function run(ctx: Context): Promise<void> {
     if (draft.id === undefined || draft.baseURL === undefined || draft.keyEnv === undefined) return
     await ctx.credentials.set(credentialRef(draft.keyEnv), draft.key)
     const current = ctx.settings.get(settingsNamespace('llm-pi-ai')) as { providers?: Record<string, unknown> } | undefined
-    const providers = { ...(current?.providers ?? {}) }
+    const providers = { ...current?.providers }
     providers[draft.id] = {
       apiKeyEnv: draft.keyEnv,
       baseURL: draft.baseURL,
@@ -468,43 +773,335 @@ async function run(ctx: Context): Promise<void> {
     },
   })
 
-  // MCP configuration: add a stdio or Streamable HTTP server to the project's
-  // `.dsh-code/cordis.patch.yml` (loaded on the next launch via --patch).
-  const runMcpWizard = async (): Promise<void> => {
-    const transport = await host.askChoice('MCP transport:', [
-      { value: 'stdio', label: 'stdio (local command)' },
-      { value: 'streamable-http', label: 'Streamable HTTP (remote)' },
-    ])
-    if (transport === undefined) return
-    const serverName = await host.askText('Server name (namespace for mcp__<name>__ tools):')
-    if (serverName === undefined || serverName === '') return
-    if (transport === 'stdio') {
-      const command = await host.askText('Command (e.g. npx):')
-      if (command === undefined || command === '') return
-      const argsText = await host.askText('Arguments (space-separated, e.g. -y some-mcp-server):')
-      addMcpServer(process.cwd(), { serverName, transport: 'stdio', command, args: (argsText ?? '').split(/\s+/).filter(Boolean) })
-      host.showNotice(`added MCP server ${serverName} (restart dsh-code to connect)`)
+  // MCP configuration stays a dsh Cordis patch: the TUI edits only this
+  // trusted project's `.dsh-code` layer and the bundled DSH MCP plugin owns
+  // connection, tool registration, and lifecycle after restart.
+  interface McpDraft {
+    transport?: McpServerConfig['transport']
+    serverName?: string
+    command?: string
+    argsText?: string
+    args?: string[]
+    env?: Record<string, string>
+    cwd?: string
+    url?: string
+    headers?: Record<string, string>
+  }
+
+  const finishMcpAdd = (draft: McpDraft): void => {
+    if (draft.serverName === undefined || draft.transport === undefined) return
+    if (draft.transport === 'stdio' && draft.command !== undefined) {
+      addMcpServer(process.cwd(), {
+        serverName: draft.serverName,
+        transport: 'stdio',
+        command: draft.command,
+        args: draft.args ?? [],
+        env: draft.env ?? {},
+        ...(draft.cwd === undefined ? {} : { cwd: draft.cwd }),
+      })
+    } else if (draft.transport === 'streamable-http' && draft.url !== undefined) {
+      addMcpServer(process.cwd(), {
+        serverName: draft.serverName,
+        transport: 'streamable-http',
+        url: draft.url,
+        headers: draft.headers ?? {},
+      })
     } else {
-      const url = await host.askText('Server URL (e.g. https://mcp.example.com/mcp):')
-      if (url === undefined || url === '') return
-      addMcpServer(process.cwd(), { serverName, transport: 'streamable-http', url })
-      host.showNotice(`added MCP server ${serverName} (restart dsh-code to connect)`)
+      return
     }
+    host.showNotice(`saved MCP server ${draft.serverName} in project .dsh-code (restart to connect)`)
+  }
+
+  const showMcpArgsInput = (draft: McpDraft): void => {
+    host.showInlineInput({
+      prompt: 'Arguments as a JSON string array:',
+      hint: 'Example: ["-y","some-mcp-server"] · use [] for none · Esc back',
+      initialValue: draft.argsText ?? '[]',
+      borderColor: theme.selectorBorder,
+      onSubmit: (value) => {
+        try {
+          draft.args = parseMcpArguments(value)
+          draft.argsText = JSON.stringify(draft.args)
+          finishMcpAdd(draft)
+        } catch (error) {
+          showCommandError('MCP arguments', error)
+          draft.argsText = value
+          showMcpArgsInput(draft)
+        }
+      },
+      onCancel: () => { showMcpCommandInput(draft) },
+    })
+  }
+
+  const showMcpCommandInput = (draft: McpDraft): void => {
+    host.showInlineInput({
+      prompt: 'Executable command (e.g. npx):',
+      initialValue: draft.command,
+      borderColor: theme.selectorBorder,
+      onSubmit: (command) => { draft.command = command; showMcpArgsInput(draft) },
+      onCancel: () => { showMcpNameInput(draft) },
+    })
+  }
+
+  const showMcpUrlInput = (draft: McpDraft): void => {
+    host.showInlineInput({
+      prompt: 'Streamable HTTP URL:',
+      initialValue: draft.url,
+      borderColor: theme.selectorBorder,
+      onSubmit: (url) => {
+        try {
+          const parsed = new URL(url)
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('URL must use http or https')
+          draft.url = parsed.toString()
+          finishMcpAdd(draft)
+        } catch (error) {
+          showCommandError('MCP URL', error)
+          draft.url = url
+          showMcpUrlInput(draft)
+        }
+      },
+      onCancel: () => { showMcpNameInput(draft) },
+    })
+  }
+
+  const showMcpNameInput = (draft: McpDraft): void => {
+    host.showInlineInput({
+      prompt: 'Server name (namespace for mcp__<name>__ tools):',
+      hint: '1–32 letters, numbers, underscores, or hyphens · Enter continue · Esc back',
+      initialValue: draft.serverName,
+      borderColor: theme.selectorBorder,
+      onSubmit: (serverName) => {
+        if (!/^[A-Za-z0-9_-]{1,32}$/.test(serverName)) {
+          host.showNotice('invalid MCP server name; use 1–32 letters, numbers, underscores, or hyphens')
+          draft.serverName = serverName
+          showMcpNameInput(draft)
+          return
+        }
+        draft.serverName = serverName
+        if (draft.transport === 'stdio') showMcpCommandInput(draft)
+        else showMcpUrlInput(draft)
+      },
+      onCancel: () => { showMcpTransportSelector(draft) },
+    })
+  }
+
+  const showMcpTransportSelector = (draft: McpDraft = {}): void => {
+    host.showSelector({
+      hint: 'Select the MCP transport.',
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'stdio', label: 'stdio', description: 'Local executable managed by the bundled dsh MCP client' },
+        { value: 'streamable-http', label: 'Streamable HTTP', description: 'Remote MCP endpoint managed by the bundled dsh MCP client' },
+      ],
+      onSelect: (transport) => {
+        draft.transport = transport as McpServerConfig['transport']
+        showMcpNameInput(draft)
+      },
+      onCancel: () => { showMcpManager() },
+    })
+  }
+
+  const externalMcpDescription = (server: DiscoveredMcpServer): string => {
+    const endpoint = server.transport === 'stdio' ? `${server.command ?? ''} ${(server.args ?? []).join(' ')}`.trim() : server.url ?? ''
+    const credentialCount = server.transport === 'stdio'
+      ? Object.keys(server.env ?? {}).length
+      : Object.keys(server.headers ?? {}).length
+    return `${externalMcpLocation(server)} · ${endpoint}${server.sourceEnabled ? '' : ' · disabled at source'}${credentialCount === 0 ? '' : ` · ${credentialCount} private value(s)`}`
+  }
+
+  const showMcpManagerLater = (): void => { showMcpManager() }
+
+  const confirmExternalMcpShare = (server: DiscoveredMcpServer, serverName: string): void => {
+    const privateValues = server.transport === 'stdio'
+      ? Object.keys(server.env ?? {}).length
+      : Object.keys(server.headers ?? {}).length
+    const warnings = [
+      ...server.warnings,
+      ...(privateValues > 0 ? ['private environment/header values will be copied into the local project patch; do not commit it'] : []),
+    ]
+    host.showSelector({
+      hint: `Share ${server.product}/${server.serverName} with dsh-code as ${serverName}${warnings.length === 0 ? '' : ` · ${warnings.length} warning(s); keep the project patch private`}`,
+      borderColor: theme.selectorBorder,
+      items: [
+        {
+          value: 'share',
+          label: 'Share with dsh-code',
+          description: warnings.length === 0
+            ? 'Copy into this trusted project; source configuration stays unchanged'
+            : `Copy without changing the source · ${warnings[0]}`,
+        },
+        { value: 'cancel', label: 'Cancel' },
+      ],
+      onSelect: (choice) => {
+        if (choice !== 'share') { showMcpManagerLater(); return }
+        finishMcpAdd({ ...server, serverName })
+      },
+      onCancel: showMcpManagerLater,
+    })
+  }
+
+  const showExternalMcpNameInput = (server: DiscoveredMcpServer): void => {
+    host.showInlineInput({
+      prompt: `dsh-code server name for ${server.product}/${server.serverName}:`,
+      hint: '1–32 letters, numbers, underscores, or hyphens · Esc back',
+      initialValue: server.serverName,
+      borderColor: theme.selectorBorder,
+      onSubmit: (serverName) => {
+        if (!/^[A-Za-z0-9_-]{1,32}$/.test(serverName)) {
+          host.showNotice('invalid MCP server name; use 1–32 letters, numbers, underscores, or hyphens')
+          showExternalMcpNameInput({ ...server, serverName })
+          return
+        }
+        confirmExternalMcpShare(server, serverName)
+      },
+      onCancel: showMcpManagerLater,
+    })
+  }
+
+  const confirmMcpRemoval = (server: McpServerConfig): void => {
+    host.showSelector({
+      hint: `Remove MCP server ${server.serverName} from this project's .dsh-code patch?`,
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'remove', label: 'Remove server' },
+        { value: 'cancel', label: 'Keep server' },
+      ],
+      onSelect: (choice) => {
+        if (choice === 'remove') {
+          removeMcpServer(process.cwd(), server.serverName)
+          host.showNotice(`removed MCP server ${server.serverName} (restart to unload it)`)
+        } else {
+          showMcpManager()
+        }
+      },
+      onCancel: () => { showMcpManager() },
+    })
+  }
+
+  const showMcpRemovalPicker = (): void => {
+    const servers = listMcpServers(process.cwd())
+    if (servers.length === 0) { host.showNotice('no project MCP servers configured'); return }
+    host.showSelector({
+      hint: 'Select a project MCP server to remove.',
+      borderColor: theme.selectorBorder,
+      items: servers.map(server => ({
+        value: server.serverName,
+        label: server.serverName,
+        description: server.transport === 'stdio'
+          ? `stdio · ${server.command ?? ''} ${(server.args ?? []).join(' ')}`.trim()
+          : `Streamable HTTP · ${server.url ?? ''}`,
+      })),
+      onSelect: (name) => {
+        const server = servers.find(candidate => candidate.serverName === name)
+        if (server !== undefined) confirmMcpRemoval(server)
+      },
+      onCancel: () => { showMcpManager() },
+    })
+  }
+
+  const showMcpManager = (): void => {
+    const projectServers = listMcpServers(process.cwd())
+    const externalServers = discoverExternalMcpServers({ cwd: process.cwd() })
+    const connected = connectedMcpServerNames(ctx.tools.schemas(agent).map(schema => schema.name))
+    const items: SelectorItem[] = []
+    const sourceGroups = new Map<string, DiscoveredMcpServer[]>()
+    for (const server of externalServers) {
+      const key = `${server.product}\u0000${server.sourcePath}`
+      const group = sourceGroups.get(key)
+      if (group === undefined) sourceGroups.set(key, [server])
+      else group.push(server)
+    }
+    const productOrder = { claude: 0, codex: 1, dsh: 2 } as const
+    const sortedGroups = [...sourceGroups.entries()].sort(([, left], [, right]) => {
+      const a = left[0]
+      const b = right[0]
+      if (a === undefined || b === undefined) return 0
+      return productOrder[a.product] - productOrder[b.product] || a.sourcePath.localeCompare(b.sourcePath)
+    })
+    for (const [section, servers] of sortedGroups) {
+      const first = servers[0]
+      if (first === undefined) continue
+      items.push({ value: `heading:${section}`, label: externalMcpSourceLabel(first), selectable: false, section })
+      for (const server of [...servers].sort((a, b) => a.serverName.localeCompare(b.serverName))) {
+        const isConnected = connected.has(server.serverName)
+        items.push({
+          value: `external:${server.id}`,
+          label: `  ${server.serverName} ${isConnected ? theme.success('● connected') : theme.dim('○ not connected')}`,
+          description: externalMcpDescription(server),
+          section,
+        })
+      }
+    }
+    if (projectServers.length > 0) {
+      const section = 'dsh-code-project'
+      items.push({
+        value: `heading:${section}`,
+        label: 'dsh-code (.dsh-code/cordis.patch.yml):',
+        selectable: false,
+        section,
+      })
+      for (const server of projectServers) {
+        const isConnected = connected.has(server.serverName)
+        items.push({
+          value: `project:${server.serverName}`,
+          label: `  ${server.serverName} ${isConnected ? theme.success('● connected') : theme.dim('○ not connected')}`,
+          description: `${server.transport} · ${server.transport === 'stdio' ? `${server.command ?? ''} ${(server.args ?? []).join(' ')}` : server.url ?? ''}`,
+          section,
+        })
+      }
+    }
+    const actionsSection = 'actions'
+    items.push(
+      { value: `heading:${actionsSection}`, label: 'Actions:', selectable: false, section: actionsSection },
+      { value: 'action:add', label: '  Add server', section: actionsSection },
+    )
+    host.showSelector({
+      hint: '↑↓ select · Enter import/remove · ● connected · ○ not connected · Esc close',
+      borderColor: theme.selectorBorder,
+      items,
+      onSelect: (value) => {
+        if (value === 'action:add') { showMcpTransportSelector(); return }
+        if (value.startsWith('external:')) {
+          const id = value.slice('external:'.length)
+          const server = externalServers.find(candidate => candidate.id === id)
+          if (server !== undefined) showExternalMcpNameInput(server)
+          return
+        }
+        if (value.startsWith('project:')) {
+          const name = value.slice('project:'.length)
+          const server = projectServers.find(candidate => candidate.serverName === name)
+          if (server !== undefined) confirmMcpRemoval(server)
+        }
+      },
+      onCancel: () => {},
+    })
   }
 
   ctx.commands.register({
     name: 'mcp',
-    description: 'Configure an MCP server (add / remove)',
+    description: 'Manage project MCP servers with the bundled dsh runtime',
+    input: { hint: '[add|discover|remove [serverName]]' },
     handler: ({ rawInput }) => {
-      const [sub, name] = rawInput.trim().split(/\s+/)
-      if (sub === undefined || sub === 'add') {
-        void runMcpWizard()
-        return { kind: 'success', text: 'starting MCP configuration…' }
+      const input = rawInput.trim()
+      if (input === '') {
+        showMcpManager()
+        return { kind: 'success' }
+      }
+      const [sub, name] = input.split(/\s+/)
+      if (sub === 'add') {
+        showMcpTransportSelector()
+        return { kind: 'success' }
+      }
+      if (sub === 'discover' || sub === 'import') {
+        showMcpManager()
+        return { kind: 'success' }
       }
       if (sub === 'remove') {
-        if (name === undefined) return { kind: 'error', text: 'usage: /mcp remove <serverName>' }
-        removeMcpServer(process.cwd(), name)
-        return { kind: 'success', text: `removed MCP server ${name}` }
+        if (name === undefined) { showMcpRemovalPicker(); return { kind: 'success' } }
+        const server = listMcpServers(process.cwd()).find(candidate => candidate.serverName === name)
+        if (server === undefined) return { kind: 'error', text: `unknown project MCP server "${name}"` }
+        confirmMcpRemoval(server)
+        return { kind: 'success' }
       }
       return { kind: 'error', text: `unknown /mcp subcommand "${sub}"` }
     },
@@ -521,6 +1118,8 @@ async function run(ctx: Context): Promise<void> {
       const assistant = events.filter(event => event.type === 'assistant/message').length
       const toolCalls = events.filter(event => event.type === 'tool/call').length
       const toolResults = events.filter(event => event.type === 'tool/result').length
+      const sessionTitle = ctx.sessionTitle.get(agent.session)?.title
+      const activeModel = modelRef.current ?? selection
       const usage = reducer.tokenUsage
       const input = usage?.inputTokens ?? 0
       const cacheRead = usage?.cacheReadTokens ?? 0
@@ -532,10 +1131,11 @@ async function run(ctx: Context): Promise<void> {
         'Session Info',
         '',
         `ID: ${String(header.id)}`,
+        ...(sessionTitle === undefined ? [] : [`title: ${sessionTitle}`]),
         `cwd: ${header.cwd ?? ''}`,
         `created: ${new Date(header.createdAt).toLocaleString()}`,
         ...(header.parentSession !== undefined ? [`parent: ${String(header.parentSession)}`] : []),
-        `model: ${selection.provider}/${selection.model}`,
+        `model: ${activeModel.provider}/${activeModel.model}`,
         '',
         'Messages',
         `user: ${user}`,
@@ -554,6 +1154,174 @@ async function run(ctx: Context): Promise<void> {
       if (reasoning > 0) lines.push(`  thinking: ${reasoning.toLocaleString()}`)
       lines.push(`total: ${(promptTokens + output).toLocaleString()}`)
       return { kind: 'success', text: lines.join('\n') }
+    },
+  })
+
+  const renameSession = (title: string): void => {
+    try {
+      const renamed = ctx.sessionTitle.rename(agent.session, title)
+      host.showNotice(`session renamed: ${renamed.title}`)
+    } catch (error) {
+      showCommandError('session rename', error)
+    }
+  }
+
+  const showRenameInput = (): void => {
+    host.showInlineInput({
+      prompt: 'Session title:',
+      initialValue: ctx.sessionTitle.get(agent.session)?.title,
+      borderColor: theme.selectorBorder,
+      onSubmit: renameSession,
+      onCancel: () => {},
+    })
+  }
+
+  ctx.commands.register({
+    name: 'rename',
+    description: 'Rename and pin the current session title',
+    input: { hint: '[title]' },
+    handler: ({ rawInput }) => {
+      const title = rawInput.trim()
+      if (title === '') showRenameInput()
+      else renameSession(title)
+      return { kind: 'success' }
+    },
+  })
+
+  const jobSummary = (job: JobSnapshot): string => {
+    const finished = job.finishedAt ?? Date.now()
+    const seconds = Math.max(0, Math.floor((finished - job.startedAt) / 1000))
+    return `${job.kind} · ${job.status} · ${seconds}s${job.detail === undefined ? '' : ` · ${job.detail}`}`
+  }
+
+  const confirmJobKill = (job: JobSnapshot): void => {
+    host.showSelector({
+      hint: `Stop ${job.id} · ${job.label}?`,
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'kill', label: 'Stop job' },
+        { value: 'cancel', label: 'Keep running' },
+      ],
+      onSelect: (choice) => {
+        if (choice === 'kill') {
+          try {
+            const outcome = ctx.jobs.kill(job.id, agent, 'stopped from dsh-code TUI')
+            host.showNotice(`${job.id}: ${outcome}`)
+          } catch (error) {
+            showCommandError('job stop', error)
+          }
+        } else {
+          showJobsPicker()
+        }
+      },
+      onCancel: () => { showJobsPicker() },
+    })
+  }
+
+  const showJobActions = (id: JobId): void => {
+    let job: JobSnapshot
+    try {
+      job = ctx.jobs.get(id, agent)
+    } catch (error) {
+      showCommandError('job lookup', error)
+      return
+    }
+    const live = job.status === 'running' || job.status === 'stopping'
+    host.showSelector({
+      hint: `${job.id} · ${jobSummary(job)} · ${job.label}`,
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'output', label: 'Read latest output' },
+        ...(live ? [{ value: 'kill', label: 'Stop job' }] : []),
+        { value: 'back', label: 'Back to jobs' },
+      ],
+      onSelect: (action) => {
+        if (action === 'back') { showJobsPicker(); return }
+        if (action === 'kill') { confirmJobKill(job); return }
+        try {
+          const read = ctx.jobs.read(job.id, agent)
+          const output = read.text.trim()
+          host.showNotice(`${job.id} · ${jobSummary(read.snapshot)}${output === '' ? ' · no new output' : `\n${output}`}`)
+        } catch (error) {
+          showCommandError('job output', error)
+        }
+      },
+      onCancel: () => { showJobsPicker() },
+    })
+  }
+
+  const showJobsPicker = (): void => {
+    const jobs = ctx.jobs.list(agent)
+    if (jobs.length === 0) { host.showNotice('no background jobs for this session'); return }
+    host.showSelector({
+      hint: 'Background jobs · select one for output or stop actions',
+      borderColor: theme.selectorBorder,
+      items: jobs.map(job => ({
+        value: String(job.id),
+        label: `${job.status === 'running' ? '●' : job.status === 'stopping' ? '◐' : '○'} ${job.id} · ${job.label}`,
+        description: jobSummary(job),
+      })),
+      onSelect: (id) => { showJobActions(id as JobId) },
+      onCancel: () => {},
+    })
+  }
+
+  const disposeJobController = ctx.jobs.attachController('dsh-code-tui')
+
+  ctx.commands.register({
+    name: 'jobs',
+    description: 'Inspect and control this session’s background jobs',
+    handler: () => {
+      showJobsPicker()
+      return { kind: 'success' }
+    },
+  })
+
+  const exportSession = async (path: string, explicitFormat?: SessionExportFormat): Promise<void> => {
+    try {
+      await ctx.sessions.flush(agent.session)
+      const format = explicitFormat ?? exportFormatForPath(path)
+      const title = ctx.sessionTitle.get(agent.session)?.title
+      const absolute = writeSessionExport(process.cwd(), path, agent.session, format, title)
+      host.showNotice(`session exported to ${absolute}`)
+    } catch (error) {
+      showCommandError('session export', error)
+    }
+  }
+
+  const showExportPathInput = (format: SessionExportFormat): void => {
+    host.showInlineInput({
+      prompt: `Export ${format === 'markdown' ? 'Markdown' : 'JSONL'} path:`,
+      hint: 'Session exports may contain project data · existing files are not overwritten · Esc back',
+      initialValue: defaultExportFilename(String(agent.session.id), format),
+      borderColor: theme.selectorBorder,
+      onSubmit: (path) => { void exportSession(path, format) },
+      onCancel: () => { showExportFormatSelector() },
+    })
+  }
+
+  const showExportFormatSelector = (): void => {
+    host.showSelector({
+      hint: 'Export the current public DSH Session log.',
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'markdown', label: 'Markdown', description: 'Human-readable conversation and tool activity' },
+        { value: 'jsonl', label: 'JSONL', description: 'Session header followed by exact public Session events' },
+      ],
+      onSelect: (format) => { showExportPathInput(format as SessionExportFormat) },
+      onCancel: () => {},
+    })
+  }
+
+  ctx.commands.register({
+    name: 'export',
+    description: 'Export the current session as Markdown or JSONL',
+    input: { hint: '[path.md|path.jsonl]' },
+    handler: ({ rawInput }) => {
+      const path = rawInput.trim()
+      if (path === '') showExportFormatSelector()
+      else void exportSession(path)
+      return { kind: 'success' }
     },
   })
 
@@ -650,6 +1418,8 @@ async function run(ctx: Context): Promise<void> {
     disposeApproval()
     disposeQuestions()
     disposeCommandsChange()
+    disposeSkillsChange()
+    disposeJobController()
     try {
       await sessions.flush(agent.session)
     } catch {

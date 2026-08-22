@@ -889,6 +889,7 @@ export class TuiHost {
     const selector = new ListSelectorComponent({
       ...options,
       onSelect: (value) => { this.clearInlineControl(); options.onSelect(value) },
+      ...(options.onToggle === undefined ? {} : { onToggle: options.onToggle }),
       onCancel: () => { this.clearInlineControl(); options.onCancel() },
     })
     this.mountInlineControl(selector)

@@ -182,8 +182,13 @@ dsh-code
 | `/config` | 配置 DeepSeek、OpenAI 或 OpenAI-compatible 服务 |
 | `/model` | 使用内联选择器切换当前模型 |
 | `/permission` | 选择当前权限预设 |
-| `/mcp add` | 为当前项目添加 stdio 或 Streamable HTTP MCP Server |
-| `/mcp remove <name>` | 移除项目 MCP Server |
+| `/goal` | 内联查看和管理上游 DSH 长期目标 |
+| `/skills [搜索词]` | 发现 Skill；Space 仅对 dsh-code 启停，Enter 直接调用选中项 |
+| `/agents` | 查看当前会话持久化的子 Agent 树 |
+| `/mcp` | 按 DSH/Codex/Claude 来源分组查看 MCP 实时状态，并导入或移除 Server |
+| `/rename [标题]` | 重命名并固定当前会话标题 |
+| `/jobs` | 查看输出或停止当前会话的后台任务 |
+| `/export [路径]` | 将当前会话导出为 Markdown 或 JSONL |
 | `/session` | 查看会话、消息、工具、模型与 Token 统计 |
 | `/fork` | 从最近一个已完成轮次创建分支会话 |
 | `/compact` | 通过 DSH 压缩当前上下文 |
@@ -229,10 +234,21 @@ DSH 的 `ask_user_question` 工具与 Plan 模式评审共用同一块底部固�
 ```
 
 通过 `DSH_CODE_HOME` 可以修改根目录。启动时 dsh-code 会把委托进程的 `DSH_HOME`
-指向这个独立目录，并禁用 DSH Telemetry；它不会读取或覆盖 `~/.dsh`，全局安装的
-上游 `dsh` 命令也保持独立。
+指向这个独立目录，并禁用 DSH Telemetry。它不会导入或覆盖独立 DSH 的设置、凭据、
+会话、插件和 MCP 配置，因此全局安装的上游 `dsh` 命令仍保持独立。作为唯一例外，
+内置 DSH Skill Registry 会只读发现兼容目录：项目的 `.dsh/.agents/.codex/.claude`、
+dsh-code 用户目录 `~/.dsh-code/skills`，以及用户目录下
+`~/.dsh/.agents/.codex/.claude` 的 Skills。dsh-code 不安装、删除、复制或更新这些 Skill；
+`/skills` 使用单层列表展示上游 Registry 选出的生效项及其来源；Space 切换启停，Enter
+把已启用且允许用户调用的 Skill 放入输入框。启停状态是
+dsh-code 专属覆盖，保存在 `~/.dsh-code/skill-preferences.json`，不会修改来源 `SKILL.md`，
+也不会改变其他产品中的 Skill 状态；禁用后，该 Skill 在 dsh-code 的模型目录和用户斜杠调用中均不可见。
 
-项目 MCP 配置写入可信项目内的 `.dsh-code/cordis.patch.yml`，下次启动后生效。
+项目 MCP 配置写入可信项目内的 `.dsh-code/cordis.patch.yml`，下次启动后生效。`/mcp`
+按独立 DSH、OpenAI Codex、Claude Code 和 dsh-code 的来源文件分组展示；绿色
+`● connected` 表示当前 Agent 已注册该 Server 的至少一个工具，未连接项使用灰色显示。
+选择外部 Server 后才把副本写入 dsh-code 项目 patch，不改写来源配置。导入的环境变量或 HTTP Header 可能包含凭据；本仓库已
+忽略该 patch，在其他项目导入带凭据的 Server 前也应加入 Git 忽略并保持其私密性。
 
 ## 更新
 

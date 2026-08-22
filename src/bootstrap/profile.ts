@@ -9,7 +9,8 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 
 /** The profile name dsh-code boots. */
 export const DSH_CODE_PROFILE_NAME = 'dsh-code'
@@ -29,12 +30,50 @@ function profileManifest(): string {
   }, null, 2) + '\n'
 }
 
-/** The profile patch layer: DSH ask-user tool plus the terminal-host plugin. */
-function profilePatch(tuiPluginUrl: string): string {
+/**
+ * Read-only compatibility roots served by a second upstream filesystem-skill
+ * provider. The normal dsh-base provider already owns project `.dsh` /
+ * `.agents` and dsh-code's isolated `$DSH_HOME` (`~/.dsh-code`). These roots
+ * add the conventional standalone DSH, Codex, and Claude locations without
+ * importing any of those products' settings or management state.
+ */
+export function compatibleSkillDirs(projectRoot: string, userHome = homedir()): string[] {
+  return [
+    join(projectRoot, '.codex', 'skills'),
+    join(projectRoot, '.claude', 'skills'),
+    join(userHome, '.dsh', 'skills'),
+    join(userHome, '.codex', 'skills'),
+    join(userHome, '.claude', 'skills'),
+  ]
+}
+
+/** Match the upstream filesystem provider's nearest-`.git` project boundary. */
+export function skillProjectRoot(cwd: string): string {
+  const start = resolve(cwd)
+  let current = start
+  while (true) {
+    if (existsSync(join(current, '.git'))) return current
+    const parent = dirname(current)
+    if (parent === current) return start
+    current = parent
+  }
+}
+
+function profilePatch(tuiPluginUrl: string, projectRoot: string): string {
+  const skillDirs = compatibleSkillDirs(skillProjectRoot(projectRoot))
   return `# dsh-code interaction layer over dsh-base.
 # The TUI plugin is referenced by absolute module URL so it always loads from
 # the installed dsh-code package, never from the upstream installation.
 - insert:
+    # Discovery only: a second upstream provider reads compatible skill roots.
+    # dsh-code never installs, deletes, or copies skills from these products.
+    - id: dsh-code-compatible-skills
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: dsh-code-compatible-filesystem
+        includeDefaultRoots: false
+        customSkillDirs: ${JSON.stringify(skillDirs)}
+
     - id: dsh-code-tool-ask-user
       name: '@deepseek-ai/dsh-tool-ask-user'
 
@@ -59,12 +98,12 @@ autoInstallPeers: false
  * @param home - the dsh-code home.
  * @param tuiPluginUrl - absolute `file://` module URL of the built TUI plugin.
  */
-export function initDshCodeProfile(home: string, tuiPluginUrl: string): string {
+export function initDshCodeProfile(home: string, tuiPluginUrl: string, projectRoot = process.cwd()): string {
   const dir = profileDir(home)
   mkdirSync(dir, { recursive: true })
   const manifestPath = join(dir, 'package.json')
   if (!existsSync(manifestPath)) writeFileSync(manifestPath, profileManifest())
-  writeFileSync(join(dir, 'cordis.patch.yml'), profilePatch(tuiPluginUrl))
+  writeFileSync(join(dir, 'cordis.patch.yml'), profilePatch(tuiPluginUrl, projectRoot))
   const workspacePath = join(dir, 'pnpm-workspace.yaml')
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
   return dir

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { InlineTextInputComponent } from '../../src/tui/selector.ts'
+import { visibleWidth } from '@earendil-works/pi-tui'
+import { InlineTextInputComponent, ListSelectorComponent } from '../../src/tui/selector.ts'
 
 const identity = (text: string): string => text
 
@@ -88,5 +89,82 @@ describe('InlineTextInputComponent', () => {
     input.handleInput('\r')
 
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
+
+describe('ListSelectorComponent', () => {
+  it('applies an initial command search and submits the visible match', () => {
+    const onSelect = vi.fn()
+    const selector = new ListSelectorComponent({
+      hint: 'Skills',
+      items: [
+        { value: 'alpha', label: 'alpha' },
+        { value: 'beta', label: 'beta' },
+      ],
+      initialQuery: 'bet',
+      borderColor: identity,
+      onSelect,
+      onCancel: vi.fn(),
+    })
+
+    expect(selector.render(80).join('\n')).toContain('beta')
+    expect(selector.render(80).join('\n')).not.toContain('alpha')
+    selector.handleInput('\r')
+    expect(onSelect).toHaveBeenCalledWith('beta')
+  })
+
+  it('keeps long source descriptions to one fitted row', () => {
+    const selector = new ListSelectorComponent({
+      hint: 'A deliberately long selector hint '.repeat(5),
+      items: [{ value: 'skill', label: 'skill', description: `第一行\n${'很长的技能描述'.repeat(30)}` }],
+      borderColor: identity,
+      onSelect: vi.fn(),
+      onCancel: vi.fn(),
+    })
+    const lines = selector.render(40)
+
+    expect(lines).toHaveLength(6)
+    expect(lines.every(line => visibleWidth(line) <= 40)).toBe(true)
+    expect(lines.join('\n')).toContain('第一行 ')
+  })
+
+  it('uses Space for an in-place toggle without submitting', () => {
+    const onSelect = vi.fn()
+    const onToggle = vi.fn()
+    const selector = new ListSelectorComponent({
+      hint: 'Space toggle · Enter use',
+      items: [{ value: 'skill', label: 'skill', current: true }],
+      borderColor: identity,
+      onSelect,
+      onToggle,
+      onCancel: vi.fn(),
+    })
+
+    selector.handleInput(' ')
+
+    expect(onToggle).toHaveBeenCalledWith('skill')
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('renders grouped headings and skips them during navigation', () => {
+    const onSelect = vi.fn()
+    const selector = new ListSelectorComponent({
+      hint: 'MCP servers',
+      items: [
+        { value: 'heading:a', label: 'Claude Code (~/.claude.json):', selectable: false, section: 'a' },
+        { value: 'a', label: '  fullsdk ○ not connected', section: 'a' },
+        { value: 'heading:b', label: 'OpenAI Codex (~/.codex/config.toml):', selectable: false, section: 'b' },
+        { value: 'b', label: '  gitlab ● connected', section: 'b' },
+      ],
+      borderColor: identity,
+      onSelect,
+      onCancel: vi.fn(),
+    })
+
+    selector.handleInput('\r')
+    expect(onSelect).toHaveBeenLastCalledWith('a')
+    selector.handleInput('\x1b[B')
+    selector.handleInput('\r')
+    expect(onSelect).toHaveBeenLastCalledWith('b')
   })
 })

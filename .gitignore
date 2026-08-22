@@ -4,5 +4,6 @@ lib/
 coverage/
 dist/
 .env
+.dsh-code/cordis.patch.yml
 .DS_Store
 dev_doc
