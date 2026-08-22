@@ -251,11 +251,37 @@ export function renderDiffRows(diffs: readonly ToolDiff[]): RenderedDiffRow[] {
   return rows
 }
 
-/** Collapse output lines to the last N with an expand hint. */
-function collapseLines(lines: readonly string[], expanded: boolean): string[] {
-  if (expanded || lines.length <= MAX_TOOL_OUTPUT_LINES) return [...lines]
-  const hidden = lines.length - MAX_TOOL_OUTPUT_LINES
-  return [theme.dim(`  … (${hidden} earlier lines, ctrl+o to expand)`), ...lines.slice(-MAX_TOOL_OUTPUT_LINES)]
+/** Render a tool result without allocating every hidden line while collapsed. */
+export function renderToolOutputLines(text: string, expanded: boolean): string[] {
+  if (expanded) return text.split('\n').map(line => theme.dim(`  ${line}`))
+
+  const starts = new Array<number>(MAX_TOOL_OUTPUT_LINES)
+  const ends = new Array<number>(MAX_TOOL_OUTPUT_LINES)
+  let lineStart = 0
+  let lineCount = 0
+  const retain = (start: number, end: number): void => {
+    const slot = lineCount % MAX_TOOL_OUTPUT_LINES
+    starts[slot] = start
+    ends[slot] = end
+    lineCount += 1
+  }
+  for (let index = 0; index < text.length; index++) {
+    if (text.charCodeAt(index) !== 0x0A) continue
+    retain(lineStart, index)
+    lineStart = index + 1
+  }
+  retain(lineStart, text.length)
+
+  const retained = Math.min(lineCount, MAX_TOOL_OUTPUT_LINES)
+  const lines: string[] = []
+  if (lineCount > MAX_TOOL_OUTPUT_LINES) {
+    lines.push(theme.dim(`  … (${lineCount - MAX_TOOL_OUTPUT_LINES} earlier lines, ctrl+o to expand)`))
+  }
+  for (let offset = 0; offset < retained; offset++) {
+    const slot = (lineCount - retained + offset) % MAX_TOOL_OUTPUT_LINES
+    lines.push(theme.dim(`  ${text.slice(starts[slot], ends[slot])}`))
+  }
+  return lines
 }
 
 /** Collapse structured diff rows while retaining their per-row backgrounds. */
@@ -358,7 +384,7 @@ function renderItemBlocks(item: TranscriptItem, expanded: boolean): Component[] 
       if (item.diffs !== undefined && item.diffs.length > 0) {
         rows.push(...collapseDiffRows(renderDiffRows(item.diffs), expanded))
       } else if (item.resultText !== undefined && item.resultText !== '') {
-        rows.push(...collapseLines(item.resultText.split('\n').map(line => theme.dim(`  ${line}`)), expanded)
+        rows.push(...renderToolOutputLines(item.resultText, expanded)
           .map(text => ({ text, kind: 'normal' as const })))
       }
       if (item.elapsedMs !== undefined) rows.push({ text: theme.dim(`  Took ${formatDuration(item.elapsedMs)}`), kind: 'normal' })
@@ -379,7 +405,7 @@ function renderDraftComponents(draft: AssistantDraft | undefined, expanded: bool
 }
 
 /** A shell-command result, shown in a bordered block. */
-interface ShellResult {
+export interface ShellResult {
   command: string
   output: string
   status: string
@@ -414,6 +440,200 @@ class ShellResultBlock implements Component {
 /** Build the bordered shell-result blocks (one per executed command). */
 function renderShellResultBlocks(results: readonly ShellResult[]): Component[] {
   return results.map(result => new ShellResultBlock(result.command, result.output, result.status))
+}
+
+/** One component whose rendered lines remain valid until width or content invalidation. */
+class WidthCachedComponent implements Component {
+  private cachedWidth: number | undefined
+  private cachedLines: string[] | undefined
+
+  constructor(private readonly component: Component) {}
+
+  invalidate(): void {
+    this.cachedWidth = undefined
+    this.cachedLines = undefined
+    this.component.invalidate?.()
+  }
+
+  render(width: number): string[] {
+    if (this.cachedLines !== undefined && this.cachedWidth === width) return this.cachedLines
+    this.cachedWidth = width
+    this.cachedLines = this.component.render(width)
+    return this.cachedLines
+  }
+}
+
+interface TranscriptBlockEntry {
+  item: TranscriptItem
+  blocks: WidthCachedComponent[]
+}
+
+export interface TranscriptSurfaceOptions {
+  /** Test seam for asserting that unchanged semantic items retain their blocks. */
+  renderItem?: (item: TranscriptItem, expanded: boolean) => Component[]
+  /** Test seam for isolating committed-history work from the mutable draft. */
+  renderDraft?: (draft: AssistantDraft, expanded: boolean) => Component[]
+}
+
+export interface TranscriptSurfaceState {
+  transcript: readonly TranscriptItem[]
+  draft: AssistantDraft | undefined
+  expanded: boolean
+  version: string
+  shellResults: readonly ShellResult[]
+  notices: readonly string[]
+}
+
+/**
+ * Incremental transcript projection with one active-width line snapshot.
+ *
+ * pi-tui asks ScrollView's child for its complete line list on every frame.
+ * Returning a stable snapshot here makes editor-only frames O(viewport + input)
+ * and keeps assistant drafts from invalidating committed Markdown/reasoning.
+ */
+export class TranscriptSurface implements Component {
+  private readonly itemRenderer: (item: TranscriptItem, expanded: boolean) => Component[]
+  private readonly draftRenderer: (draft: AssistantDraft, expanded: boolean) => Component[]
+  private transcript: readonly TranscriptItem[] = []
+  private transcriptRef: readonly TranscriptItem[] | undefined
+  private entries: TranscriptBlockEntry[] = []
+  private draft: AssistantDraft | undefined
+  private draftBlocks: WidthCachedComponent[] = []
+  private expanded = false
+  private version = ''
+  private welcomeBlock: WidthCachedComponent | undefined
+  private shellResults: readonly ShellResult[] = []
+  private shellBlocks: WidthCachedComponent[] = []
+  private notices: readonly string[] = []
+  private noticeBlock: WidthCachedComponent | undefined
+  private dirty = true
+  private cachedWidth: number | undefined
+  private cachedLines: string[] | undefined
+
+  constructor(options: TranscriptSurfaceOptions = {}) {
+    this.itemRenderer = options.renderItem ?? renderItemBlocks
+    this.draftRenderer = options.renderDraft ?? ((draft, expanded) => renderDraftComponents(draft, expanded))
+  }
+
+  /** Synchronize semantic state, rebuilding only the changed suffix/tail. */
+  sync(state: TranscriptSurfaceState): void {
+    const expandedChanged = state.expanded !== this.expanded
+    const transcriptChanged = state.transcript !== this.transcriptRef
+    if (expandedChanged || transcriptChanged) {
+      const reusablePrefix = expandedChanged ? 0 : this.stablePrefixLength(state.transcript)
+      const entries = this.entries.slice(0, reusablePrefix)
+      for (let index = reusablePrefix; index < state.transcript.length; index++) {
+        const item = state.transcript[index]
+        if (item !== undefined) entries.push({ item, blocks: this.cache(this.itemRenderer(item, state.expanded)) })
+      }
+      this.entries = entries
+      this.transcript = state.transcript
+      this.transcriptRef = state.transcript
+      this.markDirty()
+    }
+
+    const draftChanged = expandedChanged
+      || state.draft?.text !== this.draft?.text
+      || state.draft?.reasoning !== this.draft?.reasoning
+      || (state.draft === undefined) !== (this.draft === undefined)
+    if (draftChanged) {
+      this.draft = state.draft
+      this.draftBlocks = state.draft === undefined ? [] : this.cache(this.draftRenderer(state.draft, state.expanded))
+      this.markDirty()
+    }
+
+    if (state.version !== this.version || this.welcomeBlock === undefined) {
+      this.version = state.version
+      this.welcomeBlock = new WidthCachedComponent(new WelcomeBanner(state.version))
+      if (state.transcript.length === 0) this.markDirty()
+    }
+
+    if (!sameShellResults(state.shellResults, this.shellResults)) {
+      this.shellResults = [...state.shellResults]
+      this.shellBlocks = this.cache(renderShellResultBlocks(state.shellResults))
+      this.markDirty()
+    }
+
+    if (!sameStrings(state.notices, this.notices)) {
+      this.notices = [...state.notices]
+      this.noticeBlock = state.notices.length === 0
+        ? undefined
+        : new WidthCachedComponent(new Text(state.notices.map(text => `· ${text}`).join('\n'), 1, 0))
+      this.markDirty()
+    }
+    this.expanded = state.expanded
+  }
+
+  /** Recreate theme-colored components after the adaptive palette changes. */
+  rebuildDerived(): void {
+    this.entries = this.transcript.map(item => ({ item, blocks: this.cache(this.itemRenderer(item, this.expanded)) }))
+    this.draftBlocks = this.draft === undefined ? [] : this.cache(this.draftRenderer(this.draft, this.expanded))
+    this.welcomeBlock = new WidthCachedComponent(new WelcomeBanner(this.version))
+    this.shellBlocks = this.cache(renderShellResultBlocks(this.shellResults))
+    this.noticeBlock = this.notices.length === 0
+      ? undefined
+      : new WidthCachedComponent(new Text(this.notices.map(text => `· ${text}`).join('\n'), 1, 0))
+    this.markDirty()
+  }
+
+  invalidate(): void {
+    for (const block of this.allBlocks()) block.invalidate()
+    this.markDirty()
+  }
+
+  render(width: number): string[] {
+    if (!this.dirty && this.cachedLines !== undefined && this.cachedWidth === width) return this.cachedLines
+    const lines: string[] = []
+    const blocks = this.allBlocks()
+    for (let index = 0; index < blocks.length; index++) {
+      if (index > 0) lines.push('')
+      lines.push(...blocks[index]!.render(width))
+    }
+    this.cachedWidth = width
+    this.cachedLines = lines
+    this.dirty = false
+    return lines
+  }
+
+  private stablePrefixLength(next: readonly TranscriptItem[]): number {
+    const limit = Math.min(next.length, this.entries.length)
+    let index = 0
+    while (index < limit && this.entries[index]?.item === next[index]) index += 1
+    return index
+  }
+
+  private cache(components: readonly Component[]): WidthCachedComponent[] {
+    return components.map(component => new WidthCachedComponent(component))
+  }
+
+  private allBlocks(): WidthCachedComponent[] {
+    const blocks: WidthCachedComponent[] = []
+    if (this.transcript.length === 0 && this.welcomeBlock !== undefined) blocks.push(this.welcomeBlock)
+    for (const entry of this.entries) blocks.push(...entry.blocks)
+    blocks.push(...this.draftBlocks, ...this.shellBlocks)
+    if (this.noticeBlock !== undefined) blocks.push(this.noticeBlock)
+    return blocks
+  }
+
+  private markDirty(): void {
+    this.dirty = true
+    this.cachedWidth = undefined
+    this.cachedLines = undefined
+  }
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function sameShellResults(left: readonly ShellResult[], right: readonly ShellResult[]): boolean {
+  return left.length === right.length && left.every((value, index) => {
+    const other = right[index]
+    return other !== undefined
+      && value.command === other.command
+      && value.output === other.output
+      && value.status === other.status
+  })
 }
 
 /** Assemble the left-hand status line, colorized. */
@@ -696,7 +916,7 @@ class WelcomeBanner implements Component {
  */
 export class TuiHost {
   readonly tui: TUI
-  private readonly transcriptContainer: Container
+  private readonly transcriptSurface: TranscriptSurface
   private readonly todoList: TodoList
   private readonly status: StatusLine
   private readonly editor: Editor
@@ -733,7 +953,7 @@ export class TuiHost {
     const tuiOptions = copySelection === undefined ? {} : { copySelection }
     const tui = new TuiAltScreen(new ProcessTerminal(), undefined, undefined, tuiOptions)
     this.tui = tui
-    this.transcriptContainer = new Container()
+    this.transcriptSurface = new TranscriptSurface()
     this.inlineContainer = new Container()
     this.todoList = new TodoList()
     this.status = new StatusLine()
@@ -759,7 +979,7 @@ export class TuiHost {
     bottom.addChild(this.editorSlot)
     bottom.addChild(this.status)
     bottom.addChild(this.footer)
-    tui.setLayoutRoot(createMainViewportLayout(this.transcriptContainer, bottom))
+    tui.setLayoutRoot(createMainViewportLayout(this.transcriptSurface, bottom))
     this.tui.setFocus(this.editor)
     this.detachInput = this.tui.addInputListener(data => this.handleInput(data))
   }
@@ -789,16 +1009,13 @@ export class TuiHost {
   /** Update the rendered transcript/status from the reduced view model. */
   render(view: TuiViewModel): void {
     this.lastView = view
-    this.transcriptContainer.clear()
-    const blocks: Component[] = []
-    if (view.transcript.length === 0) blocks.push(new WelcomeBanner(this.version))
-    for (const item of view.transcript) blocks.push(...renderItemBlocks(item, this.expanded))
-    blocks.push(...renderDraftComponents(this.draft, this.expanded))
-    blocks.push(...renderShellResultBlocks(this.shellResults))
-    if (this.notices.length > 0) blocks.push(new Text(this.notices.map(text => `· ${text}`).join('\n'), 1, 0))
-    blocks.forEach((block, index) => {
-      if (index > 0) this.transcriptContainer.addChild(new Spacer(1))
-      this.transcriptContainer.addChild(block)
+    this.transcriptSurface.sync({
+      transcript: view.transcript,
+      draft: this.draft,
+      expanded: this.expanded,
+      version: this.version,
+      shellResults: this.shellResults,
+      notices: this.notices,
     })
     this.todoList.set(view.todos)
     this.updateWorkingIndicator(view)
@@ -1121,6 +1338,7 @@ export class TuiHost {
     this.stopped = false
     this.tui.start()
     this.adaptiveTheme = bindAdaptiveTheme(this.tui, () => {
+      this.transcriptSurface.rebuildDerived()
       if (this.lastView !== undefined) this.render(this.lastView)
     })
     void this.adaptiveTheme.detect()

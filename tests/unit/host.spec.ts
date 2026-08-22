@@ -9,12 +9,14 @@ import {
   isTurnInterruptInput,
   layoutStatusLine,
   PlaceholderEditor,
+  TranscriptSurface,
   renderDiffRow,
   renderDiffRows,
   renderReasoningLines,
   renderWorkingMessage,
   renderWelcomeBanner,
   renderStatus,
+  renderToolOutputLines,
   renderTodoLines,
   renderTodoPanel,
   WELCOME_WHALE,
@@ -58,6 +60,64 @@ describe('default prompt editor', () => {
 
     expect(rendered).toContain('Explain this repository')
     expect(rendered).not.toContain(DEFAULT_PROMPT_PLACEHOLDER)
+  })
+})
+
+describe('incremental transcript surface', () => {
+  it('does not rebuild or rerender committed blocks for a draft-only update', () => {
+    let builds = 0
+    let renders = 0
+    const surface = new TranscriptSurface({
+      renderItem: item => {
+        builds += 1
+        return [{
+          invalidate: () => {},
+          render: () => { renders += 1; return [item.kind] },
+        }]
+      },
+      renderDraft: draft => [{
+        invalidate: () => {},
+        render: () => [`draft:${draft?.text ?? ''}`],
+      }],
+    })
+    const transcript = [
+      { kind: 'user' as const, text: 'question' },
+      { kind: 'assistant' as const, text: 'answer' },
+    ]
+
+    surface.sync({ transcript, draft: undefined, expanded: false, version: '1', shellResults: [], notices: [] })
+    expect(surface.render(80)).toContain('assistant')
+    expect({ builds, renders }).toEqual({ builds: 2, renders: 2 })
+
+    surface.sync({ transcript, draft: { text: 'next', reasoning: '' }, expanded: false, version: '1', shellResults: [], notices: [] })
+    expect(surface.render(80)).toContain('draft:next')
+    expect({ builds, renders }).toEqual({ builds: 2, renders: 2 })
+
+    // An input-only frame returns the same line snapshot by reference.
+    const first = surface.render(80)
+    expect(surface.render(80)).toBe(first)
+    expect({ builds, renders }).toEqual({ builds: 2, renders: 2 })
+  })
+
+  it('reuses the stable prefix when one transcript item changes', () => {
+    let builds = 0
+    const surface = new TranscriptSurface({
+      renderItem: item => {
+        builds += 1
+        return [{ invalidate: () => {}, render: () => [item.kind] }]
+      },
+    })
+    const user = { kind: 'user' as const, text: 'question' }
+    const running = { kind: 'tool' as const, callId: '1', name: 'read', arguments: '{}', status: 'running' as const }
+
+    surface.sync({ transcript: [user, running], draft: undefined, expanded: false, version: '1', shellResults: [], notices: [] })
+    surface.render(80)
+    expect(builds).toBe(2)
+
+    const done = { ...running, status: 'done' as const, resultText: 'ok' }
+    surface.sync({ transcript: [user, done], draft: undefined, expanded: false, version: '1', shellResults: [], notices: [] })
+    surface.render(80)
+    expect(builds).toBe(3)
   })
 })
 
@@ -164,6 +224,25 @@ describe('tool diff rendering', () => {
       expect(added).toContain('\x1b[48;2;29;63;42m')
       expect(removed).toContain('\x1b[48;2;74;35;35m')
     }
+  })
+})
+
+describe('tool output rendering', () => {
+  it('retains only the latest five lines plus an exact hidden-line count', () => {
+    const text = Array.from({ length: 8 }, (_, index) => `line-${index + 1}`).join('\n')
+    const collapsed = renderToolOutputLines(text, false).map(stripTerminalSequences)
+
+    expect(collapsed).toEqual([
+      '  … (3 earlier lines, ctrl+o to expand)',
+      '  line-4', '  line-5', '  line-6', '  line-7', '  line-8',
+    ])
+    expect(renderToolOutputLines(text, true).map(stripTerminalSequences)).toHaveLength(8)
+  })
+
+  it('preserves a trailing empty logical line', () => {
+    expect(renderToolOutputLines('one\ntwo\n', false).map(stripTerminalSequences)).toEqual([
+      '  one', '  two', '  ',
+    ])
   })
 })
 

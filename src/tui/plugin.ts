@@ -87,8 +87,13 @@ export const name = 'dsh-code-tui'
 /** Core services required before a turn can be driven. */
 export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'tools']
 
-/** Render coalescing window (ms): stream chunks merge, UI refreshes at most ~60fps. */
-const RENDER_INTERVAL_MS = 16
+/** Stream coalescing window: assistant chunks render at most about 30fps. */
+export const STREAM_RENDER_INTERVAL_MS = 33
+
+/** Draft deltas do not change TokenMeter's durable, model-visible surface. */
+export function shouldMeasureContextTokens(eventType: string): boolean {
+  return eventType !== 'assistant/chunk'
+}
 
 /** Parse a leading `--resume <id>` from the invocation's inner args. */
 function parseResumeArg(args: readonly string[]): string | undefined {
@@ -176,6 +181,7 @@ async function run(ctx: Context): Promise<void> {
   let reducer: ReducerState = replayEvents(String(agent.session.id), agent.session.events)
   let shuttingDown = false
   let renderTimer: ReturnType<typeof setTimeout> | undefined
+  let contextTokensDirty = false
 
   const submitUserText = (text: string): void => {
     agent.followup(createUserMessage({
@@ -1466,13 +1472,17 @@ async function run(ctx: Context): Promise<void> {
     },
   })
 
-  const scheduleRender = (): void => {
+  const scheduleRender = (measureContextTokens = false): void => {
+    if (measureContextTokens) contextTokensDirty = true
     if (renderTimer !== undefined) return
     renderTimer = setTimeout(() => {
       renderTimer = undefined
-      host.setContextTokens(ctx.tokenMeter.measure(agent.session).totalTokens)
+      if (contextTokensDirty) {
+        host.setContextTokens(ctx.tokenMeter.measure(agent.session).totalTokens)
+        contextTokensDirty = false
+      }
       host.render(reducer)
-    }, RENDER_INTERVAL_MS)
+    }, STREAM_RENDER_INTERVAL_MS)
   }
 
   const syncDraft = (): void => {
@@ -1492,7 +1502,10 @@ async function run(ctx: Context): Promise<void> {
       return
     }
     syncDraft()
-    scheduleRender()
+    // assistant/chunk changes only the ephemeral draft. TokenMeter's durable
+    // surface changes on committed messages/tool events, so cloning it for
+    // every streamed delta adds latency without changing the status value.
+    scheduleRender(shouldMeasureContextTokens(event.type))
   })
 
   const disposeStatus = ctx.on('agent/status', (payload: { agent: Agent; status: 'idle' | 'running' }) => {
