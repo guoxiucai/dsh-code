@@ -47,14 +47,22 @@ import { TuiHost } from './host.ts'
 import type { SelectorItem } from './selector.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 import { theme } from './theme.ts'
-import { addMcpServer, listMcpServers, parseMcpArguments, removeMcpServer, type McpServerConfig } from './project-config.ts'
+import { parseMcpArguments, type McpServerConfig } from './project-config.ts'
 import {
-  connectedMcpServerNames,
   discoverExternalMcpServers,
   externalMcpLocation,
   externalMcpSourceLabel,
   type DiscoveredMcpServer,
 } from './external-mcp.ts'
+import {
+  removeMcpServer,
+  setMcpServerEnabled,
+  upsertMcpServer,
+  type ImportedMcpOrigin,
+  type McpConfigScope,
+  type StoredMcpServer,
+} from './mcp-config.ts'
+import { cordisMcpMount, McpRuntimeManager, type McpRuntimeSnapshot } from './mcp-runtime.ts'
 import {
   installDisabledSkillProvider,
   readDisabledSkills,
@@ -224,11 +232,22 @@ async function run(ctx: Context): Promise<void> {
     host.showNotice(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 
+  const mcpRuntime = new McpRuntimeManager({
+    home: dshCodeHome,
+    cwd: process.cwd(),
+    mount: cordisMcpMount(ctx, { stderrLogDir: join(dshCodeHome, 'logs', 'mcp') }),
+    toolNames: () => ctx.tools.schemas(agent).map(schema => schema.name),
+  })
+  ctx.effect(() => async () => { await mcpRuntime.dispose() }, 'dsh-code MCP runtime')
+
   /** Commands win their closed namespace; unknown names may be DSH user-invocable skills. */
   const runSlashOrSkill = async (input: string): Promise<void> => {
     const controller = new AbortController()
     try {
-      const execution = await ctx.commands.execute(agent, input, controller.signal)
+      // The TUI composer currently submits text only. Upstream 0.1.1 makes the
+      // attachment batch explicit so command admission cannot silently discard
+      // images when image-capable input is added later.
+      const execution = await ctx.commands.execute(agent, input, [], controller.signal)
       if (execution !== undefined) {
         const result = execution.result
         if (result.kind === 'success') {
@@ -773,9 +792,10 @@ async function run(ctx: Context): Promise<void> {
     },
   })
 
-  // MCP configuration stays a dsh Cordis patch: the TUI edits only this
-  // trusted project's `.dsh-code` layer and the bundled DSH MCP plugin owns
-  // connection, tool registration, and lifecycle after restart.
+  // MCP configuration is owned by dsh-code. External products are scanned
+  // only from the explicit Import flow; copied rows never remain linked to
+  // their source. Live connections are ordinary public upstream MCP plugin
+  // fibers owned by McpRuntimeManager, so no DSH internals are involved.
   interface McpDraft {
     transport?: McpServerConfig['transport']
     serverName?: string
@@ -786,30 +806,64 @@ async function run(ctx: Context): Promise<void> {
     cwd?: string
     url?: string
     headers?: Record<string, string>
+    scope?: McpConfigScope
+    origin?: ImportedMcpOrigin
   }
 
-  const finishMcpAdd = (draft: McpDraft): void => {
-    if (draft.serverName === undefined || draft.transport === undefined) return
+  const storedMcpServer = (draft: McpDraft): StoredMcpServer | undefined => {
+    if (draft.serverName === undefined || draft.transport === undefined) return undefined
     if (draft.transport === 'stdio' && draft.command !== undefined) {
-      addMcpServer(process.cwd(), {
+      return {
         serverName: draft.serverName,
         transport: 'stdio',
         command: draft.command,
         args: draft.args ?? [],
         env: draft.env ?? {},
         ...(draft.cwd === undefined ? {} : { cwd: draft.cwd }),
-      })
-    } else if (draft.transport === 'streamable-http' && draft.url !== undefined) {
-      addMcpServer(process.cwd(), {
+        enabled: true,
+        ...(draft.origin === undefined ? {} : { origin: draft.origin }),
+      }
+    }
+    if (draft.transport === 'streamable-http' && draft.url !== undefined) {
+      return {
         serverName: draft.serverName,
         transport: 'streamable-http',
         url: draft.url,
         headers: draft.headers ?? {},
-      })
-    } else {
-      return
+        enabled: true,
+        ...(draft.origin === undefined ? {} : { origin: draft.origin }),
+      }
     }
-    host.showNotice(`saved MCP server ${draft.serverName} in project .dsh-code (restart to connect)`)
+    return undefined
+  }
+
+  const finishMcpAdd = async (draft: McpDraft): Promise<void> => {
+    const server = storedMcpServer(draft)
+    if (server === undefined || draft.scope === undefined) return
+    upsertMcpServer(dshCodeHome, process.cwd(), draft.scope, server)
+    const reload = mcpRuntime.reload()
+    showMcpManager()
+    await reload
+    const current = mcpRuntime.snapshot().find(entry => entry.scope === draft.scope && entry.serverName === server.serverName)
+    const status = current?.state === 'connected' ? 'connected' : current?.state ?? 'saved'
+    host.showNotice(`saved ${draft.scope} MCP server ${server.serverName} · ${status}`)
+  }
+
+  const showMcpScopeSelector = (draft: McpDraft, onBack: () => void, onChosen?: () => void): void => {
+    host.showSelector({
+      hint: 'Choose where dsh-code independently stores this MCP server.',
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'user', label: 'User', description: '~/.dsh-code/mcp.json · available in every dsh-code project' },
+        { value: 'project', label: 'Project', description: '.dsh-code/mcp.json · only the current trusted project' },
+      ],
+      onSelect: (scope) => {
+        draft.scope = scope as McpConfigScope
+        if (onChosen !== undefined) onChosen()
+        else void finishMcpAdd(draft).catch(error => { showCommandError('MCP save', error) })
+      },
+      onCancel: onBack,
+    })
   }
 
   const showMcpArgsInput = (draft: McpDraft): void => {
@@ -822,7 +876,7 @@ async function run(ctx: Context): Promise<void> {
         try {
           draft.args = parseMcpArguments(value)
           draft.argsText = JSON.stringify(draft.args)
-          finishMcpAdd(draft)
+          showMcpScopeSelector(draft, () => { showMcpArgsInput(draft) })
         } catch (error) {
           showCommandError('MCP arguments', error)
           draft.argsText = value
@@ -853,7 +907,7 @@ async function run(ctx: Context): Promise<void> {
           const parsed = new URL(url)
           if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('URL must use http or https')
           draft.url = parsed.toString()
-          finishMcpAdd(draft)
+          showMcpScopeSelector(draft, () => { showMcpUrlInput(draft) })
         } catch (error) {
           showCommandError('MCP URL', error)
           draft.url = url
@@ -911,30 +965,31 @@ async function run(ctx: Context): Promise<void> {
 
   const showMcpManagerLater = (): void => { showMcpManager() }
 
-  const confirmExternalMcpShare = (server: DiscoveredMcpServer, serverName: string): void => {
+  const confirmExternalMcpImport = (server: DiscoveredMcpServer, draft: McpDraft): void => {
     const privateValues = server.transport === 'stdio'
       ? Object.keys(server.env ?? {}).length
       : Object.keys(server.headers ?? {}).length
     const warnings = [
       ...server.warnings,
-      ...(privateValues > 0 ? ['private environment/header values will be copied into the local project patch; do not commit it'] : []),
+      ...(privateValues > 0 ? ['private environment/header values will be copied into a mode-0600 dsh-code config'] : []),
+      ...(!server.sourceEnabled ? ['the source entry is disabled; the imported dsh-code copy will be enabled independently'] : []),
     ]
     host.showSelector({
-      hint: `Share ${server.product}/${server.serverName} with dsh-code as ${serverName}${warnings.length === 0 ? '' : ` · ${warnings.length} warning(s); keep the project patch private`}`,
+      hint: `Import ${server.product}/${server.serverName} as ${draft.serverName ?? server.serverName} into dsh-code ${draft.scope ?? 'project'} scope.`,
       borderColor: theme.selectorBorder,
       items: [
         {
-          value: 'share',
-          label: 'Share with dsh-code',
+          value: 'import',
+          label: 'Import and connect',
           description: warnings.length === 0
-            ? 'Copy into this trusted project; source configuration stays unchanged'
-            : `Copy without changing the source · ${warnings[0]}`,
+            ? 'Create an independent dsh-code copy; the source stays unchanged'
+            : `Create an independent copy · ${warnings[0]}`,
         },
         { value: 'cancel', label: 'Cancel' },
       ],
       onSelect: (choice) => {
-        if (choice !== 'share') { showMcpManagerLater(); return }
-        finishMcpAdd({ ...server, serverName })
+        if (choice !== 'import') { showMcpManagerLater(); return }
+        void finishMcpAdd(draft).catch(error => { showCommandError('MCP import', error) })
       },
       onCancel: showMcpManagerLater,
     })
@@ -952,15 +1007,77 @@ async function run(ctx: Context): Promise<void> {
           showExternalMcpNameInput({ ...server, serverName })
           return
         }
-        confirmExternalMcpShare(server, serverName)
+        const draft: McpDraft = {
+          transport: server.transport,
+          serverName,
+          ...(server.command === undefined ? {} : { command: server.command }),
+          ...(server.args === undefined ? {} : { args: server.args }),
+          ...(server.env === undefined ? {} : { env: server.env }),
+          ...(server.cwd === undefined ? {} : { cwd: server.cwd }),
+          ...(server.url === undefined ? {} : { url: server.url }),
+          ...(server.headers === undefined ? {} : { headers: server.headers }),
+          origin: { product: server.product, serverName: server.serverName, sourcePath: server.sourcePath },
+        }
+        showMcpScopeSelector(
+          draft,
+          () => { showExternalMcpNameInput(server) },
+          () => { confirmExternalMcpImport(server, draft) },
+        )
+      },
+      onCancel: () => { showExternalMcpImporter() },
+    })
+  }
+
+  const showExternalMcpImporter = (): void => {
+    const externalServers = discoverExternalMcpServers({ cwd: process.cwd() })
+    if (externalServers.length === 0) {
+      host.showNotice('no MCP servers found in Claude Code, OpenAI Codex, or standalone DSH configurations')
+      showMcpManager()
+      return
+    }
+    const items: SelectorItem[] = []
+    const groups = new Map<string, DiscoveredMcpServer[]>()
+    for (const server of externalServers) {
+      const key = `${server.product}\u0000${server.sourcePath}`
+      const group = groups.get(key)
+      if (group === undefined) groups.set(key, [server])
+      else group.push(server)
+    }
+    const productOrder = { claude: 0, codex: 1, dsh: 2 } as const
+    const sorted = [...groups.entries()].sort(([, left], [, right]) => {
+      const a = left[0]
+      const b = right[0]
+      if (a === undefined || b === undefined) return 0
+      return productOrder[a.product] - productOrder[b.product] || a.sourcePath.localeCompare(b.sourcePath)
+    })
+    for (const [section, servers] of sorted) {
+      const first = servers[0]
+      if (first === undefined) continue
+      items.push({ value: `heading:${section}`, label: externalMcpSourceLabel(first), selectable: false, section })
+      for (const server of servers) {
+        items.push({
+          value: `external:${server.id}`,
+          label: `  ${server.serverName}${server.sourceEnabled ? '' : theme.dim(' · disabled at source')}`,
+          description: externalMcpDescription(server),
+          section,
+        })
+      }
+    }
+    host.showSelector({
+      hint: 'External configs are scanned only here · Enter import a private independent copy · Esc back',
+      borderColor: theme.selectorBorder,
+      items,
+      onSelect: (value) => {
+        const server = externalServers.find(candidate => `external:${candidate.id}` === value)
+        if (server !== undefined) showExternalMcpNameInput(server)
       },
       onCancel: showMcpManagerLater,
     })
   }
 
-  const confirmMcpRemoval = (server: McpServerConfig): void => {
+  const confirmMcpRemoval = (server: McpRuntimeSnapshot): void => {
     host.showSelector({
-      hint: `Remove MCP server ${server.serverName} from this project's .dsh-code patch?`,
+      hint: `Remove ${server.scope} MCP server ${server.serverName} from dsh-code?`,
       borderColor: theme.selectorBorder,
       items: [
         { value: 'remove', label: 'Remove server' },
@@ -968,8 +1085,12 @@ async function run(ctx: Context): Promise<void> {
       ],
       onSelect: (choice) => {
         if (choice === 'remove') {
-          removeMcpServer(process.cwd(), server.serverName)
-          host.showNotice(`removed MCP server ${server.serverName} (restart to unload it)`)
+          removeMcpServer(dshCodeHome, process.cwd(), server.scope, server.serverName)
+          const reload = mcpRuntime.reload()
+          showMcpManager()
+          void reload.then(() => {
+            host.showNotice(`removed ${server.scope} MCP server ${server.serverName} · disconnected`)
+          }).catch(error => { showCommandError('MCP removal', error) })
         } else {
           showMcpManager()
         }
@@ -979,108 +1100,107 @@ async function run(ctx: Context): Promise<void> {
   }
 
   const showMcpRemovalPicker = (): void => {
-    const servers = listMcpServers(process.cwd())
-    if (servers.length === 0) { host.showNotice('no project MCP servers configured'); return }
+    const servers = mcpRuntime.snapshot()
+    if (servers.length === 0) { host.showNotice('no dsh-code MCP servers configured'); return }
     host.showSelector({
-      hint: 'Select a project MCP server to remove.',
+      hint: 'Select a dsh-code MCP server to remove.',
       borderColor: theme.selectorBorder,
       items: servers.map(server => ({
-        value: server.serverName,
-        label: server.serverName,
-        description: server.transport === 'stdio'
-          ? `stdio · ${server.command ?? ''} ${(server.args ?? []).join(' ')}`.trim()
-          : `Streamable HTTP · ${server.url ?? ''}`,
+        value: `${server.scope}:${server.serverName}`,
+        label: `${server.serverName} · ${server.scope}`,
+        description: server.config.transport === 'stdio'
+          ? `stdio · ${server.config.command ?? ''} ${(server.config.args ?? []).join(' ')}`.trim()
+          : `Streamable HTTP · ${server.config.url ?? ''}`,
       })),
-      onSelect: (name) => {
-        const server = servers.find(candidate => candidate.serverName === name)
+      onSelect: (value) => {
+        const server = servers.find(candidate => `${candidate.scope}:${candidate.serverName}` === value)
         if (server !== undefined) confirmMcpRemoval(server)
       },
       onCancel: () => { showMcpManager() },
     })
   }
 
-  const showMcpManager = (): void => {
-    const projectServers = listMcpServers(process.cwd())
-    const externalServers = discoverExternalMcpServers({ cwd: process.cwd() })
-    const connected = connectedMcpServerNames(ctx.tools.schemas(agent).map(schema => schema.name))
+  const mcpStateLabel = (server: McpRuntimeSnapshot): string => {
+    if (server.state === 'connected') return theme.success(`● connected${server.toolCount > 0 ? ` · ${server.toolCount} tools` : ''}`)
+    if (server.state === 'connecting') return theme.warning('◐ connecting')
+    if (server.state === 'error') return theme.error('× error')
+    if (server.state === 'disabled') return theme.dim('○ disabled')
+    if (server.state === 'overridden') return theme.dim('○ overridden by project')
+    return theme.dim('○ not connected')
+  }
+
+  const mcpManagerItems = (snapshot: readonly McpRuntimeSnapshot[]): SelectorItem[] => {
     const items: SelectorItem[] = []
-    const sourceGroups = new Map<string, DiscoveredMcpServer[]>()
-    for (const server of externalServers) {
-      const key = `${server.product}\u0000${server.sourcePath}`
-      const group = sourceGroups.get(key)
-      if (group === undefined) sourceGroups.set(key, [server])
-      else group.push(server)
-    }
-    const productOrder = { claude: 0, codex: 1, dsh: 2 } as const
-    const sortedGroups = [...sourceGroups.entries()].sort(([, left], [, right]) => {
-      const a = left[0]
-      const b = right[0]
-      if (a === undefined || b === undefined) return 0
-      return productOrder[a.product] - productOrder[b.product] || a.sourcePath.localeCompare(b.sourcePath)
-    })
-    for (const [section, servers] of sortedGroups) {
-      const first = servers[0]
-      if (first === undefined) continue
-      items.push({ value: `heading:${section}`, label: externalMcpSourceLabel(first), selectable: false, section })
-      for (const server of [...servers].sort((a, b) => a.serverName.localeCompare(b.serverName))) {
-        const isConnected = connected.has(server.serverName)
-        items.push({
-          value: `external:${server.id}`,
-          label: `  ${server.serverName} ${isConnected ? theme.success('● connected') : theme.dim('○ not connected')}`,
-          description: externalMcpDescription(server),
-          section,
-        })
-      }
-    }
-    if (projectServers.length > 0) {
-      const section = 'dsh-code-project'
+    for (const scope of ['user', 'project'] as const) {
+      const servers = snapshot.filter(server => server.scope === scope)
+      if (servers.length === 0) continue
+      const section = `dsh-code-${scope}`
       items.push({
         value: `heading:${section}`,
-        label: 'dsh-code (.dsh-code/cordis.patch.yml):',
+        label: scope === 'user' ? 'dsh-code User (~/.dsh-code/mcp.json):' : 'dsh-code Project (.dsh-code/mcp.json):',
         selectable: false,
         section,
       })
-      for (const server of projectServers) {
-        const isConnected = connected.has(server.serverName)
+      for (const server of servers) {
+        const origin = server.config.origin === undefined ? '' : ` · imported from ${server.config.origin.product}`
+        const endpoint = server.config.transport === 'stdio'
+          ? `${server.config.command ?? ''} ${(server.config.args ?? []).join(' ')}`.trim()
+          : server.config.url ?? ''
         items.push({
-          value: `project:${server.serverName}`,
-          label: `  ${server.serverName} ${isConnected ? theme.success('● connected') : theme.dim('○ not connected')}`,
-          description: `${server.transport} · ${server.transport === 'stdio' ? `${server.command ?? ''} ${(server.args ?? []).join(' ')}` : server.url ?? ''}`,
+          value: `managed:${server.scope}:${server.serverName}`,
+          label: `  ${server.serverName} ${mcpStateLabel(server)}`,
+          description: `${server.config.transport} · ${endpoint}${origin}${server.error === undefined ? '' : ` · ${server.error}`}`,
           section,
+          current: server.config.enabled && server.state !== 'overridden',
         })
       }
     }
-    const actionsSection = 'actions'
+    const section = 'actions'
     items.push(
-      { value: `heading:${actionsSection}`, label: 'Actions:', selectable: false, section: actionsSection },
-      { value: 'action:add', label: '  Add server', section: actionsSection },
+      { value: `heading:${section}`, label: 'Actions:', selectable: false, section },
+      { value: 'action:import', label: '  Import from other agents…', description: 'Scan Claude Code, OpenAI Codex, and standalone DSH only when selected', section },
+      { value: 'action:add', label: '  Add MCP server…', section },
     )
-    host.showSelector({
-      hint: '↑↓ select · Enter import/remove · ● connected · ○ not connected · Esc close',
+    return items
+  }
+
+  let stopMcpStatusUpdates: (() => void) | undefined
+  const stopMcpStatus = (): void => {
+    stopMcpStatusUpdates?.()
+    stopMcpStatusUpdates = undefined
+  }
+
+  const showMcpManager = (): void => {
+    stopMcpStatus()
+    const handle = host.showSelector({
+      hint: '↑↓ select · Space enable/disable · Enter remove/action · status updates live · Esc close',
       borderColor: theme.selectorBorder,
-      items,
+      items: mcpManagerItems(mcpRuntime.snapshot()),
       onSelect: (value) => {
+        stopMcpStatus()
+        if (value === 'action:import') { showExternalMcpImporter(); return }
         if (value === 'action:add') { showMcpTransportSelector(); return }
-        if (value.startsWith('external:')) {
-          const id = value.slice('external:'.length)
-          const server = externalServers.find(candidate => candidate.id === id)
-          if (server !== undefined) showExternalMcpNameInput(server)
-          return
-        }
-        if (value.startsWith('project:')) {
-          const name = value.slice('project:'.length)
-          const server = projectServers.find(candidate => candidate.serverName === name)
+        if (value.startsWith('managed:')) {
+          const server = mcpRuntime.snapshot().find(candidate => `managed:${candidate.scope}:${candidate.serverName}` === value)
           if (server !== undefined) confirmMcpRemoval(server)
         }
       },
-      onCancel: () => {},
+      onToggle: (value) => {
+        if (!value.startsWith('managed:')) return
+        const server = mcpRuntime.snapshot().find(candidate => `managed:${candidate.scope}:${candidate.serverName}` === value)
+        if (server === undefined || server.state === 'overridden') return
+        setMcpServerEnabled(dshCodeHome, process.cwd(), server.scope, server.serverName, !server.config.enabled)
+        void mcpRuntime.reload().catch(error => { showCommandError('MCP toggle', error) })
+      },
+      onCancel: () => { stopMcpStatus() },
     })
+    stopMcpStatusUpdates = mcpRuntime.subscribe(snapshot => { handle.updateItems(mcpManagerItems(snapshot)) })
   }
 
   ctx.commands.register({
     name: 'mcp',
-    description: 'Manage project MCP servers with the bundled dsh runtime',
-    input: { hint: '[add|discover|remove [serverName]]' },
+    description: 'Manage dsh-code MCP servers and import external agent configs',
+    input: { hint: '[add|import|remove [serverName]]' },
     handler: ({ rawInput }) => {
       const input = rawInput.trim()
       if (input === '') {
@@ -1093,13 +1213,14 @@ async function run(ctx: Context): Promise<void> {
         return { kind: 'success' }
       }
       if (sub === 'discover' || sub === 'import') {
-        showMcpManager()
+        showExternalMcpImporter()
         return { kind: 'success' }
       }
       if (sub === 'remove') {
         if (name === undefined) { showMcpRemovalPicker(); return { kind: 'success' } }
-        const server = listMcpServers(process.cwd()).find(candidate => candidate.serverName === name)
-        if (server === undefined) return { kind: 'error', text: `unknown project MCP server "${name}"` }
+        const matches = mcpRuntime.snapshot().filter(candidate => candidate.serverName === name)
+        const server = matches.find(candidate => candidate.scope === 'project') ?? matches[0]
+        if (server === undefined) return { kind: 'error', text: `unknown dsh-code MCP server "${name}"` }
         confirmMcpRemoval(server)
         return { kind: 'success' }
       }
@@ -1420,6 +1541,12 @@ async function run(ctx: Context): Promise<void> {
     disposeCommandsChange()
     disposeSkillsChange()
     disposeJobController()
+    stopMcpStatus()
+    try {
+      await mcpRuntime.dispose()
+    } catch {
+      // Context disposal still owns any remaining child MCP fibers.
+    }
     try {
       await sessions.flush(agent.session)
     } catch {
@@ -1454,6 +1581,7 @@ async function run(ctx: Context): Promise<void> {
   host.setContextTokens(ctx.tokenMeter.measure(agent.session).totalTokens)
   host.render(reducer)
   host.start()
+  void mcpRuntime.start().catch(error => { showCommandError('MCP startup', error) })
   if (process.env[FIRST_MODEL_CONFIG_ENV] === '1') showProviderSelector(true)
 }
 

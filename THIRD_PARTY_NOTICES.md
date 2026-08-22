@@ -5,7 +5,7 @@ remains subject to its own license; this notice does not alter those terms.
 
 | Package | Version | License |
 | --- | --- | --- |
-| `@deepseek-ai/dsh` and related runtime packages | `0.1.0-rc.7` | MIT |
+| `@deepseek-ai/dsh` and related runtime packages | `0.1.1-rc.2` | MIT |
 | `@earendil-works/pi-tui` | `0.84.2` | MIT |
 | `diff` | `9.0.0` | BSD-3-Clause |
 | `js-yaml` | `4.3.1` | MIT |

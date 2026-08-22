@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.1 — 2026-08-22
+
+- Updated the pinned DeepSeek Harness runtime from `0.1.0-rc.7`
+  (`99f6f02fec`) to `0.1.1-rc.2` (`b150a551b8`).
+- Adapted slash-command dispatch to the upstream explicit attachment-admission
+  contract while preserving dsh-code's current text-only TUI submission path.
+- Fixed first-run detection after DSH migrates saved credentials into its
+  versioned `refs`/`records` document, preventing onboarding from reopening on resume.
+- Kept replay compatible with the new upstream Agent Team audit events.
+- Added inline `/goal`, `/skills`, `/agents`, `/mcp`, `/rename`, `/jobs`, and
+  `/export` workflows, including dsh-code-only Skill preferences and grouped
+  external MCP discovery.
+- Changed `/mcp` to show only dsh-code-owned user/project servers by default;
+  external Claude Code, Codex, and standalone DSH configs are scanned only by
+  the explicit import action. Imported copies are independent, can be enabled
+  or disabled in place, and hot-connect through the public upstream MCP plugin
+  without restarting dsh-code.
+- Isolated noisy stdio MCP server stderr from the alternate-screen TUI through
+  a transparent cross-platform proxy; diagnostics now rotate under
+  `~/.dsh-code/logs/mcp/` instead of corrupting the bottom-pinned layout.
+
 ## 0.1.0 — 2026-08-20
 
 Thin-terminal-host implementation over the pinned upstream DSH baseline

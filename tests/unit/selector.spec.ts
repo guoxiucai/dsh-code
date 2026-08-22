@@ -167,4 +167,28 @@ describe('ListSelectorComponent', () => {
     selector.handleInput('\r')
     expect(onSelect).toHaveBeenLastCalledWith('b')
   })
+
+  it('refreshes live items while preserving the selected value', () => {
+    const onSelect = vi.fn()
+    const selector = new ListSelectorComponent({
+      hint: 'Live MCP status',
+      items: [
+        { value: 'a', label: 'a ○ connecting' },
+        { value: 'b', label: 'b ○ connecting' },
+      ],
+      borderColor: identity,
+      onSelect,
+      onCancel: vi.fn(),
+    })
+    selector.handleInput('\x1b[B')
+
+    selector.updateItems([
+      { value: 'a', label: 'a ● connected' },
+      { value: 'b', label: 'b ● connected' },
+    ])
+    selector.handleInput('\r')
+
+    expect(selector.render(80).join('\n')).toContain('b ● connected')
+    expect(onSelect).toHaveBeenCalledWith('b')
+  })
 })

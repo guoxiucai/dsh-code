@@ -185,7 +185,7 @@ dsh-code
 | `/goal` | 内联查看和管理上游 DSH 长期目标 |
 | `/skills [搜索词]` | 发现 Skill；Space 仅对 dsh-code 启停，Enter 直接调用选中项 |
 | `/agents` | 查看当前会话持久化的子 Agent 树 |
-| `/mcp` | 按 DSH/Codex/Claude 来源分组查看 MCP 实时状态，并导入或移除 Server |
+| `/mcp` | 管理 dsh-code 用户级/项目级 MCP 及实时状态；按需从 DSH/Codex/Claude 导入独立副本 |
 | `/rename [标题]` | 重命名并固定当前会话标题 |
 | `/jobs` | 查看输出或停止当前会话的后台任务 |
 | `/export [路径]` | 将当前会话导出为 Markdown 或 JSONL |
@@ -244,11 +244,17 @@ dsh-code 用户目录 `~/.dsh-code/skills`，以及用户目录下
 dsh-code 专属覆盖，保存在 `~/.dsh-code/skill-preferences.json`，不会修改来源 `SKILL.md`，
 也不会改变其他产品中的 Skill 状态；禁用后，该 Skill 在 dsh-code 的模型目录和用户斜杠调用中均不可见。
 
-项目 MCP 配置写入可信项目内的 `.dsh-code/cordis.patch.yml`，下次启动后生效。`/mcp`
-按独立 DSH、OpenAI Codex、Claude Code 和 dsh-code 的来源文件分组展示；绿色
-`● connected` 表示当前 Agent 已注册该 Server 的至少一个工具，未连接项使用灰色显示。
-选择外部 Server 后才把副本写入 dsh-code 项目 patch，不改写来源配置。导入的环境变量或 HTTP Header 可能包含凭据；本仓库已
-忽略该 patch，在其他项目导入带凭据的 Server 前也应加入 Git 忽略并保持其私密性。
+dsh-code 的 MCP 配置分别保存在 `~/.dsh-code/mcp.json`（用户级）和可信项目的
+`.dsh-code/mcp.json`（项目级）。`/mcp` 默认只展示这些归 dsh-code 所有的配置；只有选择
+**Import from other agents…** 时才只读扫描独立 DSH、OpenAI Codex 和 Claude Code。
+导入的是独立快照，之后不会跟随或修改来源。Space 就地启停，项目级同名配置覆盖用户级；
+新增、导入、启停和删除都会在当前进程内通过上游公开 MCP Client 热更新，无需退出 dsh-code。
+绿色 `● connected` 表示至少注册了一个工具，并分别显示 connecting、disabled、overridden、
+error 和 not-connected 状态。导入的环境变量或 HTTP Header 可能包含凭据，因此配置在支持的
+平台使用 `0600`，项目文件也已加入 Git 忽略。旧版 `.dsh-code/cordis.patch.yml` 中的 MCP row
+会一次性迁移，其他项目插件 row 保持不变。
+stdio Server 的 stderr 不会再直接写入备用屏幕；诊断输出保存在私有轮转日志
+`~/.dsh-code/logs/mcp/<server>.stderr.log`。
 
 ## 更新
 
@@ -258,7 +264,7 @@ dsh-code 只执行用户明确发起的更新，不会静默升级：
 dsh-code update --check
 dsh-code update
 dsh-code update --channel next
-dsh-code update --version 0.1.0-rc.1
+dsh-code update --version 0.1.1
 ```
 
 更新命令仅适用于 npm 全局安装。源码检出版本应继续通过 Git 和原构建工具升级。

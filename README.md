@@ -193,7 +193,7 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | `/goal` | View and manage the upstream DSH long-running goal inline |
 | `/skills [search]` | Discover skills; Space toggles dsh-code-only enablement and Enter invokes the selected skill |
 | `/agents` | Inspect the current session's persisted subagent tree |
-| `/mcp` | View MCP servers grouped by DSH/Codex/Claude source with live status, then import or remove them |
+| `/mcp` | Manage dsh-code user/project MCP servers with live status; explicitly import independent copies from DSH/Codex/Claude |
 | `/rename [title]` | Rename and pin the current session title |
 | `/jobs` | Inspect output or stop background jobs owned by this session |
 | `/export [path]` | Export the current session as Markdown or JSONL |
@@ -261,15 +261,21 @@ Its enable/disable switch is a dsh-code-only overlay stored at
 changes another product's skill state. A disabled skill is hidden from both the
 model catalog and user slash invocation in dsh-code.
 
-Project MCP configuration is written to `.dsh-code/cordis.patch.yml` inside the
-trusted project and takes effect on the next launch. The `/mcp` view groups
-servers by their standalone DSH, OpenAI Codex, Claude Code, or dsh-code source
-file. A green `● connected` means the current Agent has registered at least one
-tool from that server; an unconnected server is shown in gray. Selecting an
-external entry copies it into dsh-code's project patch without changing its
-source. Imported environment or header values can contain credentials;
-this repository gitignores that patch, and other projects should do the same
-before importing credential-bearing servers.
+dsh-code owns separate MCP configuration at `~/.dsh-code/mcp.json` (user scope)
+and `.dsh-code/mcp.json` (trusted-project scope). `/mcp` shows only those owned
+rows by default; **Import from other agents…** performs an on-demand, read-only
+scan of standalone DSH, OpenAI Codex, and Claude Code. The imported snapshot is
+then managed independently and never follows or modifies its source. Space
+enables or disables a row, project scope overrides a same-named user row, and
+add/import/edit/remove operations hot-reconcile the public upstream MCP client
+inside the current process. A green `● connected` means at least one tool is
+registered; connecting, disabled, overridden, error, and not-connected states
+have distinct indicators. Imported environment/header values may contain
+credentials, so both files are private (`0600` where supported) and the project
+file is gitignored. Legacy project MCP rows in `.dsh-code/cordis.patch.yml` are
+migrated once while unrelated project plugin rows remain intact. Stdio server
+stderr is isolated from the alternate-screen UI and written to rotating private
+logs under `~/.dsh-code/logs/mcp/<server>.stderr.log`.
 
 ## Updating
 
@@ -279,7 +285,7 @@ Updates are explicit; dsh-code does not silently update itself:
 dsh-code update --check
 dsh-code update
 dsh-code update --channel next
-dsh-code update --version 0.1.0-rc.1
+dsh-code update --version 0.1.1
 ```
 
 The update command is supported for npm-global installations. Source checkouts

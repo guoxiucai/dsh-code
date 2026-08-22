@@ -9,6 +9,7 @@
 import {
   CombinedAutocompleteProvider,
   Container,
+  CURSOR_MARKER,
   Editor,
   Key,
   Loader,
@@ -26,6 +27,7 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
   type Component,
+  type EditorOptions,
   type EditorTheme,
   type MarkdownTheme,
   type OverlayHandle,
@@ -40,6 +42,7 @@ import {
   InlineTextInputComponent,
   ListSelectorComponent,
   type InlineTextInputOptions,
+  type SelectorHandle,
   type SelectorOptions,
 } from './selector.ts'
 import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
@@ -55,6 +58,40 @@ const EDITOR_THEME: EditorTheme = {
     scrollInfo: theme.dim,
     noMatch: theme.warning,
   },
+}
+
+/** Hint shown only while the default prompt editor contains no user input. */
+export const DEFAULT_PROMPT_PLACEHOLDER = 'Ask dsh-code to do something'
+
+/**
+ * pi-tui's multiline Editor has no placeholder option. Keep its editing,
+ * history, autocomplete, and cursor behavior intact and only replace the
+ * otherwise-empty content row at render time.
+ */
+export class PlaceholderEditor extends Editor {
+  constructor(
+    tui: TUI,
+    editorTheme: EditorTheme,
+    private readonly placeholder: string,
+    options?: EditorOptions,
+  ) {
+    super(tui, editorTheme, options)
+  }
+
+  override render(width: number): string[] {
+    const lines = super.render(width)
+    if (this.getText() !== '' || lines.length < 3 || width <= 0) return lines
+
+    const paddingX = Math.min(this.getPaddingX(), Math.max(0, Math.floor((width - 1) / 2)))
+    const placeholderWidth = Math.max(0, width - paddingX * 2 - 1)
+    const hint = truncateToWidth(theme.dim(this.placeholder), placeholderWidth, '…')
+    const hintPadding = ' '.repeat(Math.max(0, placeholderWidth - visibleWidth(hint)))
+    const sidePadding = ' '.repeat(paddingX)
+    const marker = this.focused ? CURSOR_MARKER : ''
+    const cursor = '\x1b[7m \x1b[0m'
+    lines[1] = `${sidePadding}${marker}${cursor}${hint}${hintPadding}${sidePadding}`
+    return lines
+  }
 }
 
 /** Markdown rendering theme for assistant output. */
@@ -703,7 +740,12 @@ export class TuiHost {
     this.workingContainer = new Container()
     this.workingLoader = new Loader(this.tui, theme.accent, theme.dim, 'Working...')
     this.footer = new Text(theme.dim('Enter send · Esc back · Ctrl+O expand · Ctrl+D exit · / commands'), 1, 0)
-    this.editor = new Editor(this.tui, EDITOR_THEME, { paddingX: 1 })
+    this.editor = new PlaceholderEditor(
+      this.tui,
+      EDITOR_THEME,
+      DEFAULT_PROMPT_PLACEHOLDER,
+      { paddingX: 1 },
+    )
     this.editor.onSubmit = (text) => { this.callbacks.onSubmit(text) }
     this.editor.onChange = (text) => { this.callbacks.onEditorChange?.(text) }
     this.editorSlot = new Container()
@@ -885,7 +927,7 @@ export class TuiHost {
   }
 
   /** Mount an inline list selector, hide the editor, focus it, and route input to it. */
-  showSelector(options: SelectorOptions): void {
+  showSelector(options: SelectorOptions): SelectorHandle {
     const selector = new ListSelectorComponent({
       ...options,
       onSelect: (value) => { this.clearInlineControl(); options.onSelect(value) },
@@ -893,6 +935,12 @@ export class TuiHost {
       onCancel: () => { this.clearInlineControl(); options.onCancel() },
     })
     this.mountInlineControl(selector)
+    return {
+      updateItems: (items) => {
+        selector.updateItems(items)
+        this.tui.requestRender()
+      },
+    }
   }
 
   /** Mount an inline single-line field; Esc invokes the caller's back step. */

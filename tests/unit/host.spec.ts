@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { stripTerminalSequences, visibleWidth, type Component } from '@earendil-works/pi-tui'
+import { stripTerminalSequences, visibleWidth, type Component, type TUI } from '@earendil-works/pi-tui'
 import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import {
   createMainViewportLayout,
+  DEFAULT_PROMPT_PLACEHOLDER,
   formatActivityDuration,
   halveBlockArt,
   isTurnInterruptInput,
   layoutStatusLine,
+  PlaceholderEditor,
   renderDiffRow,
   renderDiffRows,
   renderReasoningLines,
@@ -20,6 +22,44 @@ import {
 } from '../../src/tui/host.ts'
 import { theme } from '../../src/tui/theme.ts'
 import { emptyViewModel } from '../../src/tui/view-model.ts'
+
+describe('default prompt editor', () => {
+  const editorTheme = {
+    borderColor: (text: string) => text,
+    selectList: {
+      selectedPrefix: (text: string) => text,
+      selectedText: (text: string) => text,
+      description: (text: string) => text,
+      scrollInfo: (text: string) => text,
+      noMatch: (text: string) => text,
+    },
+  }
+  const fakeTui = {
+    terminal: { rows: 24 },
+    requestRender: () => {},
+  } as unknown as TUI
+
+  it('renders a visual placeholder without adding it to the submitted value', () => {
+    const editor = new PlaceholderEditor(fakeTui, editorTheme, DEFAULT_PROMPT_PLACEHOLDER, { paddingX: 1 })
+    editor.focused = true
+
+    const lines = editor.render(50)
+
+    expect(lines.map(stripTerminalSequences)).toContain(`  ${DEFAULT_PROMPT_PLACEHOLDER}${' '.repeat(20)}`)
+    expect(editor.getText()).toBe('')
+    expect(lines.every(line => visibleWidth(line) === 50)).toBe(true)
+  })
+
+  it('hides the placeholder as soon as the editor has content', () => {
+    const editor = new PlaceholderEditor(fakeTui, editorTheme, DEFAULT_PROMPT_PLACEHOLDER, { paddingX: 1 })
+    editor.setText('Explain this repository')
+
+    const rendered = editor.render(50).map(stripTerminalSequences).join('\n')
+
+    expect(rendered).toContain('Explain this repository')
+    expect(rendered).not.toContain(DEFAULT_PROMPT_PLACEHOLDER)
+  })
+})
 
 describe('working activity', () => {
   it('formats elapsed time as seconds, minutes, and hours', () => {

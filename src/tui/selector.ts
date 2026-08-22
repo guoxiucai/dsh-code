@@ -53,6 +53,11 @@ export interface SelectorOptions {
   onCancel: () => void
 }
 
+/** Live selector handle used by status-driven panels such as /mcp. */
+export interface SelectorHandle {
+  updateItems(items: SelectorItem[]): void
+}
+
 /** Inline single-line input options, used by multi-step terminal wizards. */
 export interface InlineTextInputOptions {
   prompt: string
@@ -101,7 +106,7 @@ export class InlineTextInputComponent extends Container implements Focusable {
 export class ListSelectorComponent extends Container implements Focusable {
   private readonly searchInput: Input
   private readonly listContainer: Container
-  private readonly items: SelectorItem[]
+  private items: SelectorItem[]
   private filtered: SelectorItem[]
   private selectedIndex = 0
   private readonly options: SelectorOptions
@@ -201,6 +206,18 @@ export class ListSelectorComponent extends Container implements Focusable {
     if (selected?.description !== undefined) {
       this.listContainer.addChild(new FittedText(theme.dim(`  ${selected.description}`)))
     }
+  }
+
+  /** Replace labels/statuses without losing the current query or selected value. */
+  updateItems(items: SelectorItem[]): void {
+    const selectedValue = this.filtered[this.selectedIndex]?.value
+    this.items = [...items]
+    this.filter(this.searchInput.getValue())
+    if (selectedValue !== undefined) {
+      const index = this.filtered.findIndex(item => item.value === selectedValue && item.selectable !== false)
+      if (index >= 0) this.selectedIndex = index
+    }
+    this.updateList()
   }
 
   handleInput(data: string): void {

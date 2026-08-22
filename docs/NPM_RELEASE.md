@@ -7,7 +7,7 @@
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
 本文档是 npm 发行工作的实施基线，以当前仓库和固定的
-DeepSeek Harness `0.1.0-rc.7` 为准。`docs/technical-implementation-plan.md`
+DeepSeek Harness `0.1.1-rc.2` 为准。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
@@ -39,8 +39,8 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 
 ### 2.1 已验证可行的部分
 
-- npm 上已存在 `@deepseek-ai/dsh@0.1.0-rc.7` 和
-  `@deepseek-ai/dsh-base@0.1.0-rc.7`，上游 workspace 包有对应的公开发布版。
+- npm 上已存在 `@deepseek-ai/dsh@0.1.1-rc.2` 和
+  `@deepseek-ai/dsh-base@0.1.1-rc.2`，上游 workspace 包有对应的公开发布版。
 - 当前源码已将 dsh-code home 固定为
   `DSH_CODE_HOME ?? ~/.dsh-code`，并在委托上游前设置 `DSH_HOME`；不会读写
   上游默认的 `~/.dsh`。
@@ -203,13 +203,13 @@ anything else → 友好错误 + 支持矩阵 URL + exit 1
     "npm-shrinkwrap.json"
   ],
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.0-rc.7",
-    "@deepseek-ai/dsh-base": "0.1.0-rc.7",
-    "@deepseek-ai/dsh-agent": "0.1.0-rc.7",
-    "@deepseek-ai/dsh-session": "0.1.0-rc.7",
-    "@deepseek-ai/dsh-llm": "0.1.0-rc.7",
-    "@deepseek-ai/dsh-credentials": "0.1.0-rc.7",
-    "@deepseek-ai/dsh-settings": "0.1.0-rc.7",
+    "@deepseek-ai/dsh": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-base": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-settings": "0.1.1-rc.2",
     "@earendil-works/pi-tui": "0.84.2",
     "diff": "9.0.0",
     "js-yaml": "4.3.1"
@@ -288,9 +288,15 @@ scripts/
 目标用法：
 
 ```bash
-pnpm release -- 0.1.0-rc.1 --tag next
-pnpm release -- 0.1.0 --tag latest
+# 开发树本地预演：生成并验证 candidate，不创建 tag、不推送、不发布
+pnpm release -- 0.1.1 --tag latest --prepare-only --allow-dirty
+
+# 代码提交并复核后：创建并推送 tag，由 GitHub Actions 通过 OIDC 发布
+pnpm release -- 0.1.1 --tag latest
 ```
+
+`0.1.1` 的本地 candidate 位于 `dist/npm/tsingwill-dsh-code-0.1.1.tgz`；`dist/` 被忽略，
+不会进入产品提交。`--allow-dirty` 只允许用于 `--prepare-only` 的开发树验证，正式发布仍应使用干净的 `main`。
 
 `release.mjs` 不在开发机保存 npm token，也不默认在开发机运行
 `npm publish`。它完成：

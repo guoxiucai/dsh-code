@@ -17,6 +17,7 @@ import { resolveDshCodeHome } from './bootstrap/home.ts'
 import { FIRST_MODEL_CONFIG_ENV, hasStoredCredential } from './bootstrap/credentials.ts'
 import { initDshCodeProfile } from './bootstrap/profile.ts'
 import { listProjectSessions } from './bootstrap/sessions.ts'
+import { createEphemeralMcpPatch, migrateLegacyProjectMcpConfig } from './tui/mcp-config.ts'
 import {
   canonicalizeProjectPath,
   isProjectTrusted,
@@ -89,6 +90,7 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   const canonical = canonicalizeProjectPath()
   const rejected = await ensureTrusted(home, canonical, false)
   if (rejected !== undefined) return rejected
+  migrateLegacyProjectMcpConfig(home, canonical)
   initDshCodeProfile(home, tuiPluginUrl(), canonical)
   let appArgs: string[]
   if (invocation.resume !== undefined) {
@@ -121,9 +123,20 @@ async function runPrompt(invocation: PromptInvocation): Promise<number> {
   const canonical = canonicalizeProjectPath()
   const rejected = await ensureTrusted(home, canonical, invocation.approve)
   if (rejected !== undefined) return rejected
+  migrateLegacyProjectMcpConfig(home, canonical)
   // The upstream headless profile prints only the final assistant text on
   // stdout and reports a non-zero exit for a failed/cancelled/errored task.
-  return delegateDsh(['--profile', 'headless', ...projectPatchArgs(), invocation.prompt], delegatedEnv(home))
+  const mcpPatch = createEphemeralMcpPatch(home, canonical)
+  try {
+    return await delegateDsh([
+      '--profile', 'headless',
+      ...projectPatchArgs(),
+      ...(mcpPatch === undefined ? [] : ['--patch', mcpPatch.path]),
+      invocation.prompt,
+    ], delegatedEnv(home))
+  } finally {
+    mcpPatch?.dispose()
+  }
 }
 
 /** Forward plugin management to the upstream `dsh plugin` subcommand (pnpm). */

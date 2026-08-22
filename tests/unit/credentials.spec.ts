@@ -38,6 +38,23 @@ describe('first-run credential detection', () => {
     expect(hasStoredCredential(home)).toBe(true)
   })
 
+  it('skips onboarding after upstream migrates a saved ref to the versioned document', () => {
+    const home = makeHome()
+    writeFileSync(join(home, '.credentials.yaml'), 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: sk-saved\n')
+
+    expect(hasStoredCredential(home)).toBe(true)
+  })
+
+  it('recognizes a provider credential record and rejects an empty versioned store', () => {
+    const home = makeHome()
+    const path = join(home, '.credentials.yaml')
+
+    writeFileSync(path, 'version: 1\nrefs: {}\nrecords: {}\n')
+    expect(hasStoredCredential(home)).toBe(false)
+    writeFileSync(path, 'version: 1\nrecords:\n  llm-pi-ai/openai-codex:\n    kind: grant\n    payload: {}\n')
+    expect(hasStoredCredential(home)).toBe(true)
+  })
+
   it('does not treat malformed or non-string values as usable credentials', () => {
     const home = makeHome()
     const path = join(home, '.credentials.yaml')

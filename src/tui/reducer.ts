@@ -53,7 +53,8 @@ const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'compaction/summary', 'feedback/record', 'goal/change',
   'hook/invoked', 'hook/result',
   'sandbox/mode', 'schedule/change', 'session/title', 'session/title-llm-request',
-  'subagent/descriptor', 'tool-workflow/agent-end', 'tool-workflow/agent-start',
+  'subagent/descriptor', 'team/member', 'team/message/delivered',
+  'team/message/queued', 'team/task', 'tool-workflow/agent-end', 'tool-workflow/agent-start',
   'tool-workflow/run-end', 'tool-workflow/run-start', 'tool/code-dispatch',
   'tool/code-dispatch-start', 'web/deepseek-search-llm-request',
 ])

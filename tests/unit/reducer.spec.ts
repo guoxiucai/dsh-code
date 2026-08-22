@@ -116,6 +116,15 @@ describe('session event reducer', () => {
     expect(() => reduceSessionEvent(createReducerState('s1'), ev('future/required', 0, {}))).toThrow(UnknownRequiredEventError)
   })
 
+  it.each(['team/member', 'team/message/delivered', 'team/message/queued', 'team/task'])(
+    'accepts the upstream 0.1.1 audit event %s without changing the transcript',
+    (type) => {
+      const state = reduceSessionEvent(createReducerState('s1'), ev(type, 0, {}))
+      expect(state.transcript).toEqual([])
+      expect(state.lastSeq).toBe(0)
+    },
+  )
+
   it('reports a failing turn end as a notice, not a success', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))

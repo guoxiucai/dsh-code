@@ -2,7 +2,7 @@
 
 > 本文档面向接手 `dsh-code` 继续开发的工程师。目标读者需要了解：这是什么项目、代码怎么组织的、怎么构建运行、哪些是硬性边界、哪些还没做。
 >
-> 上游基线：`deepseek-ai/deepseek-harness` @ `99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`（`0.1.0-rc.7`），以 submodule `deepseek-harness/` 形式引入。
+> 上游基线：`deepseek-ai/deepseek-harness` @ `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`（`0.1.1-rc.2`），以 submodule `deepseek-harness/` 形式引入。
 
 ---
 
@@ -68,7 +68,7 @@ pnpm.cmd --version
 - 平台为 `win32-x64`；
 - Node 为 `v22.19.x` 或 `v24.x`；
 - pnpm 为 `11.7.0`；
-- `deepseek-harness` 位于 `99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`，行首没有 `-`、`+` 或 `U`；
+- `deepseek-harness` 位于 `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`，行首没有 `-`、`+` 或 `U`；
 - 当前分支跟踪 `origin/main`，工作区干净。
 
 如果 SSH 尚未配置，可先用公开 HTTPS 地址拉取；需要推送时，再配置协作者权限和个人认证：
@@ -203,8 +203,11 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       selector.ts              # 内联列表选择器和文本输入（向导控件）
       interaction.ts           # 一次性审批条、结构化问题与 Plan Review 面板
       config-wizard.ts         # /config 纯辅助函数（如 credential env 自动生成）
-      project-config.ts        # 读写项目 .dsh-code/cordis.patch.yml（MCP 配置）
-      external-mcp.ts          # 只读发现 DSH/Codex/Claude MCP 配置并标准化
+      project-config.ts        # 旧版项目 Cordis MCP row 解析/迁移辅助
+      mcp-config.ts            # dsh-code 用户级/项目级 MCP JSON、覆盖与 headless 临时 patch
+      mcp-runtime.ts           # 基于公开 ctx.plugin + dsh-mcp-client 的当前进程热挂载
+      mcp-stdio-proxy.ts       # MCP 协议透明转发；隔离 Server stderr，保护备用屏幕布局
+      external-mcp.ts          # 仅在 Import 流程只读发现 DSH/Codex/Claude MCP
       skill-preferences.ts     # ~/.dsh-code Skill 禁用偏好与 agent-scope shadow provider
   tests/
     unit/                      # reducer / args / trust / sessions / project-config / selector
@@ -243,12 +246,19 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
   `dsh-tool-skill` 注入 Skill 内容。启停偏好写在
   `$DSH_HOME/skill-preferences.json`；agent setup 注册最近作用域的 shadow provider，使禁用项同时
   对 model/user invocation 关闭，但不修改来源文件或独立 DSH/Codex/Claude 状态。
-- `/mcp` 编辑受信项目 `.dsh-code/cordis.patch.yml` 的标准 `dsh-mcp-client` rows，连接、工具注册与
-  生命周期仍由内置 DSH 在下次启动管理。`external-mcp.ts` 只读发现独立 `~/.dsh/profiles/*`、
-  Codex `config.toml` 与 Claude `.mcp.json`/用户配置；只有用户二次确认“共享”才标准化并复制到项目
-  patch，来源文件不被改写。主选择器按产品与来源文件分组；通过当前 Agent Tool Registry 中的
-  `mcp__<server>__*` schema 推导连接状态，connected 使用语义绿，其他状态使用灰色。选择器只显示私密字段数量、不显示值；本仓库忽略项目 patch，其他项目
-  导入带凭据 Server 时 UI 会明确提示不得提交该文件。
+- `/mcp` 默认只读写 dsh-code 自有的 `$DSH_HOME/mcp.json`（用户级）和项目
+  `.dsh-code/mcp.json`。外部独立 DSH/Codex/Claude 配置只在用户选择 Import 时扫描；确认后复制
+  为带来源元数据的独立快照，不再同步也不修改来源。`mcp-runtime.ts` 仅通过上游公开
+  `ctx.plugin(@deepseek-ai/dsh-mcp-client, config)` 创建/释放 Cordis fiber，按配置差异保留未变化连接，
+  并轮询公开 Tool Registry 更新 `connecting/connected/not-connected/error` 指示；Space 启停和
+  导入/删除均在当前进程生效。上游未暴露重连生命周期事件，因此连接丢失但旧工具尚未被上游注销的
+  短暂窗口仍显示 connected，不读取或修改任何上游内部状态。项目同名配置覆盖用户配置；旧
+  `.dsh-code/cordis.patch.yml` MCP rows 在 trust gate 后一次性迁移，其他 row 保留。`-p` 使用权限
+  `0600` 的临时标准 Cordis patch，并在上游 headless 子进程退出后删除。由于当前上游公开
+  `dsh-mcp-client` 配置未暴露 SDK 的 stderr 策略，交互模式会把 stdio Server 包装为 dsh-code
+  自有透明 Node 代理：stdin/stdout 原样承载 MCP 协议，stderr 写入
+  `$DSH_HOME/logs/mcp/<server>.stderr.log`（`0600`、1 MiB 轮转），避免第三方 banner/logger 绕过
+  pi-tui 破坏备用屏幕；实际进程仍由上游 MCP Client 的公开生命周期创建和释放。
 - 首次运行收到 `DSH_CODE_FIRST_MODEL_CONFIG=1` 时，在主屏启动和命令注册完成后自动调用同一个
   Provider 配置选择器；Esc 可退出本次引导，未保存 Credential 时下次启动会再次显示。
 - 权限审批：`ctx.on('approval/request')` → `host.askApproval` 内联一次性审批条（Allow once / Reject）；
@@ -558,7 +568,8 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
 - npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工
   bootstrap，npm trusted publisher 已绑定仓库、`release.yml` 和 `release` environment，正式版 `0.1.0` 已通过
-  GitHub Actions OIDC + provenance 发布。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
+  GitHub Actions OIDC + provenance 发布。`0.1.1`（DSH `0.1.1-rc.2`）本地 candidate 已完成
+  typecheck/test/build/pack/audit/coexist smoke，尚未提交、打 tag、推送或发布。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
   不要直接发布当前根包；完整流程见 [`docs/NPM_RELEASE.md`](./NPM_RELEASE.md)。
 - 性能：转写是组件树重建（每次 render 清空重建），长会话未做虚拟化（见设计文档 §23 预算）。
 
