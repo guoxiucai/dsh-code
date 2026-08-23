@@ -93,7 +93,7 @@ try {
 
   const cordisUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/cordis')).href
   const codeRuntimeUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/dsh-code-runtime-worker-thread')).href
-  const warningFilter = join(productRoot, 'lib', 'bootstrap', 'node-warning-filter.js')
+  const warningFilter = pathToFileURL(join(productRoot, 'lib', 'bootstrap', 'node-warning-filter.js')).href
   const ptcSmoke = `
     const { Context } = await import(${JSON.stringify(cordisUrl)})
     const { WorkerThreadCodeRuntime } = await import(${JSON.stringify(codeRuntimeUrl)})
