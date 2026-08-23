@@ -24,6 +24,7 @@ import {
   renderWelcomeBanner,
   renderStatus,
   renderToolOutputLines,
+  renderTranscriptItemLines,
   renderTodoLines,
   renderTodoPanel,
   WELCOME_WHALE,
@@ -318,21 +319,58 @@ describe('tool diff rendering', () => {
 })
 
 describe('tool output rendering', () => {
-  it('retains only the latest five lines plus an exact hidden-line count', () => {
+  it('limits a running subagent card with a long single-line prompt to five body rows', () => {
+    const item = {
+      kind: 'tool',
+      callId: 'subagent-1',
+      name: 'subagent',
+      arguments: JSON.stringify({ description: 'inspect', prompt: 'long prompt '.repeat(80) }),
+      status: 'running',
+    } as const
+    const lines = renderTranscriptItemLines(item, 36, false)
+
+    // Two card borders + one header + at most five collapsed body rows.
+    expect(lines).toHaveLength(8)
+    expect(renderTranscriptItemLines(item, 36, true).length).toBeGreaterThan(lines.length)
+  })
+
+  it('keeps file-edit diffs fully visible in the default collapsed mode', () => {
+    const lines = renderTranscriptItemLines({
+      kind: 'tool',
+      callId: 'edit-1',
+      name: 'edit',
+      arguments: JSON.stringify({ path: 'sample.ts' }),
+      status: 'done',
+      diffs: [{
+        path: 'sample.ts',
+        oldText: Array.from({ length: 8 }, (_, index) => `old-${index + 1}`).join('\n'),
+        newText: Array.from({ length: 8 }, (_, index) => `new-${index + 1}`).join('\n'),
+      }],
+    }, 60, false).map(stripTerminalSequences)
+
+    expect(lines.join('\n')).toContain('old-1')
+    expect(lines.join('\n')).toContain('new-1')
+  })
+
+  it('retains at most five visual rows including an exact hidden-line marker', () => {
     const text = Array.from({ length: 8 }, (_, index) => `line-${index + 1}`).join('\n')
-    const collapsed = renderToolOutputLines(text, false).map(stripTerminalSequences)
+    const collapsed = renderToolOutputLines(text, 80, false).map(stripTerminalSequences)
 
     expect(collapsed).toEqual([
-      '  … (3 earlier lines, ctrl+o to expand)',
-      '  line-4', '  line-5', '  line-6', '  line-7', '  line-8',
+      '  … (4 earlier visual lines, ctrl+o to expand)',
+      '  line-5', '  line-6', '  line-7', '  line-8',
     ])
-    expect(renderToolOutputLines(text, true).map(stripTerminalSequences)).toHaveLength(8)
+    expect(renderToolOutputLines(text, 80, true).map(stripTerminalSequences)).toHaveLength(8)
   })
 
   it('preserves a trailing empty logical line', () => {
-    expect(renderToolOutputLines('one\ntwo\n', false).map(stripTerminalSequences)).toEqual([
+    expect(renderToolOutputLines('one\ntwo\n', 80, false).map(stripTerminalSequences)).toEqual([
       '  one', '  two', '  ',
     ])
+  })
+
+  it('applies the limit after a single long result line wraps visually', () => {
+    expect(renderToolOutputLines('long result '.repeat(80), 24, false)).toHaveLength(5)
   })
 })
 

@@ -31,9 +31,10 @@ The terminal host will use an **incremental cached transcript surface**:
 3. The committed prefix and the in-flight assistant draft have independent
    revisions. A draft chunk may replace only the tail and must not invalidate
    committed history.
-4. Collapsed reasoning, tool output, diffs, and parsed tool arguments are derived
-   once per stable item. Collapsed rendering must not scan hidden full content on
-   every frame.
+4. Collapsed reasoning, tool output, and parsed tool arguments are derived once
+   per stable item. Tool-body limits apply after terminal-width wrapping, while
+   file-edit diffs remain fully visible for review. Collapsed rendering must not
+   rescan hidden full content on every frame.
 5. Rendering is split into interactive, stream, and ambient lanes. Interactive
    input may preempt stream coalescing; token-meter and elapsed-time chrome are
    kept out of the per-chunk hot path.

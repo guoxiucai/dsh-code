@@ -260,47 +260,38 @@ export function renderDiffRows(diffs: readonly ToolDiff[]): RenderedDiffRow[] {
   return rows
 }
 
-/** Render a tool result without allocating every hidden line while collapsed. */
-export function renderToolOutputLines(text: string, expanded: boolean): string[] {
-  if (expanded) return text.split('\n').map(line => theme.dim(`  ${line}`))
+type CollapsibleToolRow = { text: string; format: 'plain' | 'output' }
 
-  const starts = new Array<number>(MAX_TOOL_OUTPUT_LINES)
-  const ends = new Array<number>(MAX_TOOL_OUTPUT_LINES)
-  let lineStart = 0
-  let lineCount = 0
-  const retain = (start: number, end: number): void => {
-    const slot = lineCount % MAX_TOOL_OUTPUT_LINES
-    starts[slot] = start
-    ends[slot] = end
-    lineCount += 1
+/** Wrap tool-card body content before applying its visual-row limit. */
+function wrapToolBodyRows(rows: readonly CollapsibleToolRow[], width: number): string[] {
+  if (width <= 0) return []
+  const wrapped: string[] = []
+  for (const row of rows) {
+    if (row.format === 'plain') {
+      wrapped.push(...wrapTextWithAnsi(row.text, width))
+      continue
+    }
+    for (const line of row.text.split('\n')) {
+      wrapped.push(...wrapTextWithAnsi(theme.dim(`  ${line}`), width))
+    }
   }
-  for (let index = 0; index < text.length; index++) {
-    if (text.charCodeAt(index) !== 0x0A) continue
-    retain(lineStart, index)
-    lineStart = index + 1
-  }
-  retain(lineStart, text.length)
-
-  const retained = Math.min(lineCount, MAX_TOOL_OUTPUT_LINES)
-  const lines: string[] = []
-  if (lineCount > MAX_TOOL_OUTPUT_LINES) {
-    lines.push(theme.dim(`  … (${lineCount - MAX_TOOL_OUTPUT_LINES} earlier lines, ctrl+o to expand)`))
-  }
-  for (let offset = 0; offset < retained; offset++) {
-    const slot = (lineCount - retained + offset) % MAX_TOOL_OUTPUT_LINES
-    lines.push(theme.dim(`  ${text.slice(starts[slot], ends[slot])}`))
-  }
-  return lines
+  return wrapped
 }
 
-/** Collapse structured diff rows while retaining their per-row backgrounds. */
-function collapseDiffRows(rows: readonly RenderedDiffRow[], expanded: boolean): RenderedDiffRow[] {
-  if (expanded || rows.length <= MAX_TOOL_OUTPUT_LINES) return [...rows]
-  const hidden = rows.length - MAX_TOOL_OUTPUT_LINES
+/** Keep at most five visual body rows; the truncation marker occupies one row. */
+function collapseToolBodyRows(lines: readonly string[], expanded: boolean): string[] {
+  if (expanded || lines.length <= MAX_TOOL_OUTPUT_LINES) return [...lines]
+  const retained = MAX_TOOL_OUTPUT_LINES - 1
+  const hidden = lines.length - retained
   return [
-    { text: theme.dim(`  … (${hidden} earlier lines, ctrl+o to expand)`), kind: 'context' },
-    ...rows.slice(-MAX_TOOL_OUTPUT_LINES),
+    theme.dim(`  … (${hidden} earlier visual lines, ctrl+o to expand)`),
+    ...lines.slice(-retained),
   ]
+}
+
+/** Render a width-aware tool result using the same visual-row policy as a tool card. */
+export function renderToolOutputLines(text: string, width: number, expanded: boolean): string[] {
+  return collapseToolBodyRows(wrapToolBodyRows([{ text, format: 'output' }], width), expanded)
 }
 
 /** Apply a semantic background and pad/truncate to exactly one terminal row. */
@@ -317,19 +308,33 @@ export function renderDiffRow(row: RenderedDiffRow, width: number): string {
   return paintFullRow(row.text, width, background)
 }
 
-type ToolCardRow = { text: string; kind: 'normal' } | RenderedDiffRow
+type ToolCardRow =
+  | { text: string; kind: 'normal' }
+  | { text: string; kind: 'body'; format: 'plain' | 'output' }
+  | RenderedDiffRow
 
 /** Tool card that can paint individual diff rows while keeping one compact block. */
 class ToolCard implements Component {
-  constructor(private readonly rows: readonly ToolCardRow[]) {}
+  constructor(private readonly rows: readonly ToolCardRow[], private readonly expanded: boolean) {}
   invalidate(): void {}
   render(width: number): string[] {
     if (width <= 0) return []
     const output: string[] = [theme.toolBg(' '.repeat(width))]
+    const padding = width >= 2 ? 1 : 0
+    const contentWidth = Math.max(1, width - padding * 2)
+    const bodyRows = this.rows.filter((row): row is Extract<ToolCardRow, { kind: 'body' }> => row.kind === 'body')
+    const bodyLines = collapseToolBodyRows(wrapToolBodyRows(bodyRows, contentWidth), this.expanded)
+    let bodyRendered = false
     for (const row of this.rows) {
+      if (row.kind === 'body') {
+        if (bodyRendered) continue
+        bodyRendered = true
+        for (const line of bodyLines) {
+          output.push(paintFullRow(`${' '.repeat(padding)}${line}`, width, theme.toolBg))
+        }
+        continue
+      }
       if (row.kind === 'normal') {
-        const padding = width >= 2 ? 1 : 0
-        const contentWidth = Math.max(1, width - padding * 2)
         for (const wrapped of wrapTextWithAnsi(row.text, contentWidth)) {
           output.push(paintFullRow(`${' '.repeat(padding)}${wrapped}`, width, theme.toolBg))
         }
@@ -384,24 +389,29 @@ function renderItemBlocks(item: TranscriptItem, expanded: boolean): Component[] 
       const head = `${theme.accent('⚙')} ${theme.bold(item.name)}`
       if (item.status === 'running') {
         rows.push({ text: theme.warning(`${head} …`), kind: 'normal' })
-        if (command !== '') rows.push({ text: theme.dim(`  $ ${command}`), kind: 'normal' })
-        return [new ToolCard(rows)]
+        if (command !== '') rows.push({ text: theme.dim(`  $ ${command}`), kind: 'body', format: 'plain' })
+        return [new ToolCard(rows, expanded)]
       }
       const mark = item.status === 'error' ? theme.error(`✗ ${item.errorCode ?? 'error'}`) : theme.success('✓')
       rows.push({ text: `${head} ${mark}`, kind: 'normal' })
-      if (command !== '') rows.push({ text: theme.dim(`  $ ${command}`), kind: 'normal' })
+      if (command !== '') rows.push({ text: theme.dim(`  $ ${command}`), kind: 'body', format: 'plain' })
       if (item.diffs !== undefined && item.diffs.length > 0) {
-        rows.push(...collapseDiffRows(renderDiffRows(item.diffs), expanded))
+        // File changes are review material: never hide diff rows by default.
+        rows.push(...renderDiffRows(item.diffs))
       } else if (item.resultText !== undefined && item.resultText !== '') {
-        rows.push(...renderToolOutputLines(item.resultText, expanded)
-          .map(text => ({ text, kind: 'normal' as const })))
+        rows.push({ text: item.resultText, kind: 'body', format: 'output' })
       }
       if (item.elapsedMs !== undefined) rows.push({ text: theme.dim(`  Took ${formatDuration(item.elapsedMs)}`), kind: 'normal' })
-      return [new ToolCard(rows)]
+      return [new ToolCard(rows, expanded)]
     }
     case 'notice':
       return [new Text(theme.dim(`· ${item.text}`), 1, 0)]
   }
+}
+
+/** Render one committed transcript item at a concrete terminal width. */
+export function renderTranscriptItemLines(item: TranscriptItem, width: number, expanded: boolean): string[] {
+  return renderItemBlocks(item, expanded).flatMap(block => block.render(width))
 }
 
 /** Build the live streaming draft blocks (reasoning text + streaming markdown). */
