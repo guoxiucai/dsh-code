@@ -7,7 +7,6 @@
  */
 
 import {
-  CombinedAutocompleteProvider,
   Container,
   CURSOR_MARKER,
   Editor,
@@ -45,8 +44,10 @@ import {
   type SelectorHandle,
   type SelectorOptions,
 } from './selector.ts'
-import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
+import type { QueuedMessageSummary, TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 import { ApprovalBarComponent, QuestionPanelComponent, type InlineApprovalRequest } from './interaction.ts'
+import { createAutocompleteProvider } from './autocomplete.ts'
+export { createAutocompleteProvider } from './autocomplete.ts'
 
 /** Editor + autocomplete theme: DeepSeek-blue focus, semantic warning states. */
 const EDITOR_THEME: EditorTheme = {
@@ -80,7 +81,14 @@ export class PlaceholderEditor extends Editor {
 
   override render(width: number): string[] {
     const lines = super.render(width)
-    if (this.getText() !== '' || lines.length < 3 || width <= 0) return lines
+    if (this.getText() !== '') {
+      if (this.getExpandedText() === this.getText()) return lines
+      return lines.map(line => line.replace(
+        /\[paste #(\d+)( (?:\+\d+ lines|\d+ chars))?\]/g,
+        marker => theme.accent(marker),
+      ))
+    }
+    if (lines.length < 3 || width <= 0) return lines
 
     const paddingX = Math.min(this.getPaddingX(), Math.max(0, Math.floor((width - 1) / 2)))
     const placeholderWidth = Math.max(0, width - paddingX * 2 - 1)
@@ -695,6 +703,27 @@ class TodoList implements Component {
   render(width: number): string[] { return renderTodoPanel(this.todos, width) }
 }
 
+/** Render ordinary follow-ups that DSH has accepted into its next-turn inbox. */
+export function renderQueuedMessageLines(messages: readonly QueuedMessageSummary[], width: number): string[] {
+  if (width <= 0 || messages.length === 0) return []
+  const visible = messages.slice(0, 3).map((message, index) => {
+    const preview = message.text.replace(/\s+/g, ' ').trim() || '(non-text message)'
+    return truncateToWidth(` ${theme.warning('↳ Queued')} ${index + 1}: ${theme.dim(preview)}`, width, '…')
+  })
+  if (messages.length > visible.length) {
+    visible.push(truncateToWidth(theme.dim(`   … ${messages.length - visible.length} more queued`), width, '…'))
+  }
+  return ['', ...visible]
+}
+
+/** Bottom-pinned projection of DSH's authoritative next-turn inbox. */
+class QueuedMessagesPanel implements Component {
+  private messages: readonly QueuedMessageSummary[] = []
+  set(messages: readonly QueuedMessageSummary[]): void { this.messages = messages }
+  invalidate(): void {}
+  render(width: number): string[] { return renderQueuedMessageLines(this.messages, width) }
+}
+
 /**
  * Build the full-height viewport: only transcript content scrolls, while all
  * interactive/status components retain their intrinsic height at the bottom.
@@ -918,6 +947,7 @@ export class TuiHost {
   readonly tui: TUI
   private readonly transcriptSurface: TranscriptSurface
   private readonly todoList: TodoList
+  private readonly queuedMessages: QueuedMessagesPanel
   private readonly status: StatusLine
   private readonly editor: Editor
   private readonly callbacks: TuiHostCallbacks
@@ -956,6 +986,7 @@ export class TuiHost {
     this.transcriptSurface = new TranscriptSurface()
     this.inlineContainer = new Container()
     this.todoList = new TodoList()
+    this.queuedMessages = new QueuedMessagesPanel()
     this.status = new StatusLine()
     this.workingContainer = new Container()
     this.workingLoader = new Loader(this.tui, theme.accent, theme.dim, 'Working...')
@@ -975,6 +1006,7 @@ export class TuiHost {
     const bottom = new Container()
     bottom.addChild(this.inlineContainer)
     bottom.addChild(this.todoList)
+    bottom.addChild(this.queuedMessages)
     bottom.addChild(this.workingContainer)
     bottom.addChild(this.editorSlot)
     bottom.addChild(this.status)
@@ -1018,6 +1050,7 @@ export class TuiHost {
       notices: this.notices,
     })
     this.todoList.set(view.todos)
+    this.queuedMessages.set(view.queuedMessages)
     this.updateWorkingIndicator(view)
     this.status.set(renderStatus(view, this.model, this.contextTokens), this.projectLabel())
     this.tui.requestRender()
@@ -1132,7 +1165,7 @@ export class TuiHost {
    * changes. `fdPath` enables the fast fuzzy `fd` file search when available.
    */
   setAutocomplete(commands: readonly SlashCommand[], basePath: string, fdPath?: string): void {
-    this.editor.setAutocompleteProvider(new CombinedAutocompleteProvider([...commands], basePath, fdPath ?? null))
+    this.editor.setAutocompleteProvider(createAutocompleteProvider(commands, basePath, fdPath))
   }
 
   /** Toggle the editor's shell-mode border color (deduplicated). */

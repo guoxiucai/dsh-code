@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-plan-mode'
 // Declaration-merges the `llm/retry` and `compaction/*` event types.
 import type {} from '@deepseek-ai/dsh-llm-retry'
 import type {} from '@deepseek-ai/dsh-compaction'
+import type {} from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 
@@ -48,7 +49,7 @@ export class UnknownRequiredEventError extends Error {
  * at the pinned baseline (see UPSTREAM_BASELINE.md).
  */
 const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
-  'agent-preset/selected', 'agent/inbox/spliced', 'approval/policy',
+  'agent-preset/selected', 'approval/policy',
   'command/done', 'command/run', 'compaction/prune',
   'compaction/summary', 'feedback/record', 'goal/change',
   'hook/invoked', 'hook/result',
@@ -81,6 +82,7 @@ export function createReducerState(sessionId: string): ReducerState {
     phase: 'idle',
     turnStartedAt: undefined,
     todos: [],
+    queuedMessages: [],
     tokenUsage: undefined,
     permission: undefined,
     plan: false,
@@ -205,6 +207,22 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       return { ...base, phase: 'running', stepStartTime: event.time }
     case 'step/end':
       return { ...base, phase: 'running' }
+
+    case 'agent/inbox/spliced': {
+      if (event.data.target !== 'next-turn') return base
+      const inserted = event.data.inserted.map(message => ({
+        id: String(message.id),
+        text: textOf(message.content),
+      }))
+      return {
+        ...base,
+        queuedMessages: state.queuedMessages.toSpliced(
+          event.data.start,
+          event.data.removedCount ?? 0,
+          ...inserted,
+        ),
+      }
+    }
 
     case 'user/message': {
       const source = event.data.source

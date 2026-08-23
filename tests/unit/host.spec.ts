@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { stripTerminalSequences, visibleWidth, type Component, type TUI } from '@earendil-works/pi-tui'
 import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import {
   createMainViewportLayout,
+  createAutocompleteProvider,
   DEFAULT_PROMPT_PLACEHOLDER,
   formatActivityDuration,
   halveBlockArt,
@@ -13,6 +17,7 @@ import {
   renderDiffRow,
   renderDiffRows,
   renderReasoningLines,
+  renderQueuedMessageLines,
   renderWorkingMessage,
   renderWelcomeBanner,
   renderStatus,
@@ -60,6 +65,48 @@ describe('default prompt editor', () => {
 
     expect(rendered).toContain('Explain this repository')
     expect(rendered).not.toContain(DEFAULT_PROMPT_PLACEHOLDER)
+  })
+
+  it('renders large-paste markers with the dsh-code accent role', () => {
+    const editor = new PlaceholderEditor(fakeTui, editorTheme, DEFAULT_PROMPT_PLACEHOLDER, { paddingX: 1 })
+    const pasted = Array.from({ length: 11 }, (_, index) => `line ${index + 1}`).join('\n')
+
+    editor.handleInput(`\x1b[200~${pasted}\x1b[201~`)
+
+    const marker = '[paste #1 +11 lines]'
+    expect(editor.render(80).join('\n')).toContain(theme.accent(marker))
+    expect(editor.getExpandedText()).toBe(pasted)
+  })
+})
+
+describe('file reference autocomplete', () => {
+  const tempDirectories: string[] = []
+
+  afterEach(() => {
+    for (const directory of tempDirectories.splice(0)) rmSync(directory, { recursive: true, force: true })
+  })
+
+  it('fuzzy-suggests local files and folders for @ keywords without requiring fd', async () => {
+    const basePath = mkdtempSync(join(tmpdir(), 'dsh-code-autocomplete-'))
+    tempDirectories.push(basePath)
+    mkdirSync(join(basePath, 'src', 'prompt-queue'), { recursive: true })
+    writeFileSync(join(basePath, 'src', 'prompt-queue', 'controller.ts'), '')
+    mkdirSync(join(basePath, 'docs', 'queue-guide'), { recursive: true })
+
+    const provider = createAutocompleteProvider([], basePath)
+    const suggestions = await provider.getSuggestions(
+      ['Please inspect @queue'],
+      0,
+      'Please inspect @queue'.length,
+      { signal: new AbortController().signal },
+    )
+
+    expect(suggestions?.prefix).toBe('@queue')
+    expect(suggestions?.items.map(item => item.description)).toEqual(expect.arrayContaining([
+      'docs/queue-guide',
+      'src/prompt-queue',
+      'src/prompt-queue/controller.ts',
+    ]))
   })
 })
 
@@ -118,6 +165,20 @@ describe('incremental transcript surface', () => {
     surface.sync({ transcript: [user, done], draft: undefined, expanded: false, version: '1', shellResults: [], notices: [] })
     surface.render(80)
     expect(builds).toBe(3)
+  })
+})
+
+describe('queued follow-up panel', () => {
+  it('shows accepted messages as queued and keeps previews width-safe', () => {
+    const lines = renderQueuedMessageLines([
+      { id: 'one', text: 'Run this after the current task finishes' },
+      { id: 'two', text: 'Then inspect the generated report' },
+    ], 32)
+    const plain = lines.map(stripTerminalSequences)
+
+    expect(plain[1]).toContain('↳ Queued 1: Run this after')
+    expect(plain[2]).toContain('↳ Queued 2: Then inspect')
+    expect(lines.every(line => visibleWidth(line) <= 32)).toBe(true)
   })
 })
 

@@ -28,6 +28,12 @@ export interface TodoSummary {
   status: 'pending' | 'in_progress' | 'completed'
 }
 
+/** One ordinary user follow-up waiting in the authoritative next-turn inbox. */
+export interface QueuedMessageSummary {
+  id: string
+  text: string
+}
+
 /** Cumulative token accounting from the latest assistant message. */
 export interface TokenUsageSummary {
   inputTokens: number
@@ -45,6 +51,7 @@ export interface TuiViewModel {
   /** Wall-clock epoch ms of the active turn's `turn/start`, if any. */
   turnStartedAt: number | undefined
   todos: TodoSummary[]
+  queuedMessages: QueuedMessageSummary[]
   tokenUsage: TokenUsageSummary | undefined
   /** The current permission preset name (last `permission/preset`), if any. */
   permission: string | undefined
@@ -80,6 +87,7 @@ export function emptyViewModel(sessionId: string): TuiViewModel {
     phase: 'idle',
     turnStartedAt: undefined,
     todos: [],
+    queuedMessages: [],
     tokenUsage: undefined,
     permission: undefined,
     plan: false,

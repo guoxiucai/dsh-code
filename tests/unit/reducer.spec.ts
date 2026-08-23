@@ -107,6 +107,25 @@ describe('session event reducer', () => {
     expect(live.phase).toBe('idle')
   })
 
+  it('projects queued follow-up messages until the inbox claims them', () => {
+    let s = createReducerState('s1')
+    s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
+    s = reduceSessionEvent(s, ev('agent/inbox/spliced', 1, {
+      target: 'next-turn',
+      start: 0,
+      inserted: [{ id: 'queued-1', role: 'user', content: [{ type: 'text', text: 'run this next' }], source: { kind: 'user' } }],
+    }))
+
+    expect(s.queuedMessages).toEqual([
+      { id: 'queued-1', text: 'run this next' },
+    ])
+
+    s = reduceSessionEvent(s, ev('agent/inbox/spliced', 2, {
+      target: 'next-turn', start: 0, removedCount: 1, inserted: [],
+    }))
+    expect(s.queuedMessages).toEqual([])
+  })
+
   it('EVT-009: an unknown ignorable event is skipped', () => {
     const s = reduceSessionEvent(createReducerState('s1'), ev('future/info', 0, {}, true))
     expect(s.transcript).toHaveLength(0)

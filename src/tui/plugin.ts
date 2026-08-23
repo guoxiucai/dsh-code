@@ -587,8 +587,9 @@ async function run(ctx: Context): Promise<void> {
   })
 
   // Slash-command autocomplete, refreshed whenever the command registry changes.
-  // `fd` (when installed) enables the fast fuzzy file search; `/permission`
-  // completes its preset names from the permission-presets service.
+  // `fd` (when installed) enables pi-tui's fast fuzzy file search; dsh-code has
+  // an in-process fallback for `@` references. `/permission` completes its
+  // preset names from the permission-presets service.
   const findFd = (): string | undefined => {
     for (const dir of (process.env.PATH ?? '').split(':')) {
       const candidate = join(dir, 'fd')
