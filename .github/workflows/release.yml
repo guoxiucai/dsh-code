@@ -127,5 +127,9 @@ jobs:
           if gh release view "v${VERSION}" >/dev/null 2>&1; then
             gh release upload "v${VERSION}" dist/npm/*.tgz dist/npm/*.sha256 dist/npm/sbom.cdx.json --clobber
           else
-            gh release create "v${VERSION}" dist/npm/*.tgz dist/npm/*.sha256 dist/npm/sbom.cdx.json --generate-notes --verify-tag
+            release_flags=()
+            if [[ "${VERSION}" == *-* ]]; then
+              release_flags+=(--prerelease)
+            fi
+            gh release create "v${VERSION}" dist/npm/*.tgz dist/npm/*.sha256 dist/npm/sbom.cdx.json --generate-notes --verify-tag "${release_flags[@]}"
           fi
