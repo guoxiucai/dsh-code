@@ -1,7 +1,7 @@
 {
   "name": "dsh-code",
   "description": "Terminal coding agent powered by DeepSeek Harness — a thin TUI host over @deepseek-ai/dsh-base",
-  "version": "0.1.1",
+  "version": "0.1.1-rc.1",
   "type": "module",
   "license": "MIT",
   "private": true,

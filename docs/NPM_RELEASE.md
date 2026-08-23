@@ -1,8 +1,8 @@
 # dsh-code npm 发行实施方案
 
-> 状态：发布实现与 macOS/Windows CI 候选包验收完成；待 Windows 10 真机验收和首次 RC
+> 状态：`0.1.0` 已发布，trusted publishing 流程已启用；准备发布 `0.1.1-rc.1`
 > 编写日期：2026-08-19
-> 最近验收：2026-08-20
+> 最近审计：2026-08-23
 > 首批目标平台：macOS arm64、Windows x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
@@ -71,10 +71,10 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 - macOS arm64 和 Windows x64 均已从同一个真实 tarball clean global install，并用
   同名不同版本 fixture 验证全局 `dsh` bin 与产品运行时隔离。
 
-首次 RC 前剩余阻断项：
-
-1. 在 Windows 10 x64 真机完成最低系统交互验收；
-2. 首次人工 publish 后配置 trusted publisher 和 `release` environment approval。
+当前发布链路已经完成首次 bootstrap：npm 上存在 `0.1.0-rc.1` 和 `0.1.0`，
+`next`/`latest` 分别指向候选版与稳定版，后续版本通过 GitHub Actions trusted
+publishing 发布。Windows 10 x64 最低系统真机交互验收仍是支持矩阵的待补项目，
+但不影响已通过的 Windows x64 CI 安装与运行门禁。
 
 2026-08-20 的跨平台验收记录为 GitHub Actions run
 [`32272499534`](https://github.com/guoxiucai/dsh-code/actions/runs/32272499534)：candidate
@@ -92,7 +92,7 @@ Windows runner 为 Windows Server 2025，此记录不能替代上表声明的 Wi
 | 本机 npm CLI | `11.15.0`，已满足 trusted publishing CLI 要求 |
 | npm 账号 2FA | 已开启 `auth-and-writes` |
 | 最终 npm 包名 | `@tsingwill/dsh-code` |
-| scoped 包占用情况 | 当前未发布，可用于首次发布 |
+| 已发布版本 | `0.1.0-rc.1`、`0.1.0` |
 | GitHub 仓库 | `guoxiucai/dsh-code` |
 | GitHub 可见性 | Public |
 | GitHub 仓库发布控制权 | 已确认，作为长期发布仓库 |
@@ -115,17 +115,11 @@ Windows runner 为 Windows Server 2025，此记录不能替代上表声明的 Wi
 `dsh-code`，产品使用体验不变。发布脚本仍应从目标 package manifest 动态读取包名，
 避免在多个脚本中重复硬编码。
 
-### 2.4 尚需用户完成的账号事项
+### 2.4 当前发布授权模型
 
-仓库、版权主体、版本节奏、支持范围和 npm 2FA 均已确认。首次 RC 前只剩以下账号本人操作：
-
-1. 确认 npm 2FA 恢复码已妥善保存；
-2. 首次 bootstrap publish 时完成一次 2FA 验证；
-3. 首次 package 存在后复核 trusted publisher 绑定结果；
-4. 在 GitHub 仓库设置中启用 `release` Environment approval 和 private vulnerability reporting。
-
-已采用的产品决策：LICENSE copyright holder 为 `guoxiucai`；首发节奏为
-`0.1.0-rc.1` → `0.1.0`；GitHub `release` environment 保留一次 maintainer approval。
+仓库、版权主体、支持范围、npm 2FA 与 trusted publisher 均已确认。首次 bootstrap
+发布已经完成；后续 RC 和稳定版不在开发机保存 npm write token，而是由
+`.github/workflows/release.yml` 在 `release` Environment 中通过 OIDC 发布。
 
 ## 3. 支持范围
 
@@ -289,13 +283,14 @@ scripts/
 
 ```bash
 # 开发树本地预演：生成并验证 candidate，不创建 tag、不推送、不发布
-pnpm release -- 0.1.1 --tag latest --prepare-only --allow-dirty
+pnpm release -- 0.1.1-rc.1 --tag next --prepare-only --allow-dirty
 
 # 代码提交并复核后：创建并推送 tag，由 GitHub Actions 通过 OIDC 发布
-pnpm release -- 0.1.1 --tag latest
+pnpm release -- 0.1.1-rc.1 --tag next
 ```
 
-`0.1.1` 的本地 candidate 位于 `dist/npm/tsingwill-dsh-code-0.1.1.tgz`；`dist/` 被忽略，
+`0.1.1-rc.1` 的本地 candidate 位于
+`dist/npm/tsingwill-dsh-code-0.1.1-rc.1.tgz`；`dist/` 被忽略，
 不会进入产品提交。`--allow-dirty` 只允许用于 `--prepare-only` 的开发树验证，正式发布仍应使用干净的 `main`。
 
 `release.mjs` 不在开发机保存 npm token，也不默认在开发机运行

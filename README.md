@@ -45,6 +45,55 @@ In short:
 DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
 ```
 
+## Requirements
+
+| Component | Supported in the first release |
+| --- | --- |
+| macOS | 14 or later, Apple Silicon (`arm64`) |
+| Windows | Windows 10 or later, x64 |
+| Node.js | `22.19+` (Node 23 excluded) or `24+` |
+| Package manager | npm for normal installation |
+
+Linux, macOS Intel/Rosetta, Windows ARM, and standalone installations without
+Node.js are not supported in the first release.
+
+## Installation
+
+### npm
+
+```bash
+npm install -g @tsingwill/dsh-code
+```
+
+Install the current release candidate instead of the stable channel:
+
+```bash
+npm install -g @tsingwill/dsh-code@next
+```
+
+Verify the installation:
+
+```bash
+dsh-code --version
+dsh-code --help
+```
+
+The scoped npm package is `@tsingwill/dsh-code`; the installed command remains
+the shorter `dsh-code`.
+
+### Build from source
+
+```bash
+git clone --recurse-submodules https://github.com/guoxiucai/dsh-code.git
+cd dsh-code
+corepack enable
+corepack prepare pnpm@11.7.0 --activate
+pnpm install --frozen-lockfile
+pnpm run build:lib
+pnpm run build
+node lib/bin.js
+```
+
 ## Preview
 
 <p align="center">
@@ -53,9 +102,10 @@ DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
 
 ## Highlights
 
-- **Terminal-native workflow** — streaming Markdown, a five-line live reasoning
-  window, line-numbered file diffs, selectable/copyable results, shell blocks,
-  and a bottom-pinned composer.
+- **Terminal-native workflow** — streaming Markdown, five-line collapsed
+  reasoning and verbose tool bodies, always-visible line-numbered file diffs,
+  selectable/copyable results, themed paste markers, shell blocks, and a
+  bottom-pinned composer.
 - **DeepSeek Harness semantics** — uses DSH's public session/events and services;
   there is no second agent loop, session store, permission engine, or tool registry.
 - **Model setup in the TUI** — configure DeepSeek, OpenAI, or an
@@ -64,11 +114,13 @@ DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
   `workspace-write`, or `danger-full-access` permission presets.
 - **Persistent sessions** — continue the latest session, search/resume/delete
   history, inspect session statistics, fork a completed turn, and compact context.
-- **Agent visibility and decisions** — dedicated Plan/Todo states, tool
-  progress, retry and compaction indicators, one-shot approval bars,
-  structured questions, plan review, and sub-agent activity.
-- **Fast terminal controls** — slash-command completion, `@` file completion,
-  direct `!` shell mode, inline selectors, and keyboard-first navigation.
+- **Agent visibility and decisions** — dedicated Plan/Todo states, queued-user
+  message feedback, tool progress, retry and compaction indicators, one-shot
+  approval bars, structured questions, plan review, and a clickable active
+  sub-agent indicator with cancel/remove controls.
+- **Fast terminal controls** — slash-command completion, fuzzy `@` file and
+  folder completion, direct `!` shell mode, inline selectors, and
+  keyboard-first navigation.
 - **Independent installation** — stores product data under `~/.dsh-code`, keeps
   a separately installed `dsh` command untouched, and supports explicit updates.
 - **Adaptive visuals** — a DeepSeek-blue palette tuned independently for dark
@@ -96,49 +148,6 @@ Preset switching is not exposed yet.
 
 See the accepted architecture decisions in [`docs/adr/`](docs/adr/) and the
 exact upstream revision in [`UPSTREAM_BASELINE.md`](UPSTREAM_BASELINE.md).
-
-## Requirements
-
-| Component | Supported in the first release |
-| --- | --- |
-| macOS | 14 or later, Apple Silicon (`arm64`) |
-| Windows | Windows 10 or later, x64 |
-| Node.js | `22.19+` (Node 23 excluded) or `24+` |
-| Package manager | npm for normal installation |
-
-Linux, macOS Intel/Rosetta, Windows ARM, and standalone installations without
-Node.js are not supported in the first release.
-
-## Installation
-
-### npm
-
-```bash
-npm install -g @tsingwill/dsh-code
-```
-
-Verify the installation:
-
-```bash
-dsh-code --version
-dsh-code --help
-```
-
-The scoped npm package is `@tsingwill/dsh-code`; the installed command remains
-the shorter `dsh-code`.
-
-### Build from source
-
-```bash
-git clone --recurse-submodules https://github.com/guoxiucai/dsh-code.git
-cd dsh-code
-corepack enable
-corepack prepare pnpm@11.7.0 --activate
-pnpm install --frozen-lockfile
-pnpm run build:lib
-pnpm run build
-node lib/bin.js
-```
 
 ## Quick start
 
@@ -194,7 +203,7 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | `/permission` | Select the active permission preset |
 | `/goal` | View and manage the upstream DSH long-running goal inline |
 | `/skills [search]` | Discover skills; Space toggles dsh-code-only enablement and Enter invokes the selected skill |
-| `/agents` | Inspect the current session's persisted subagent tree |
+| `/agents` | Inspect active sub-agents and cancel or remove their tasks inline |
 | `/mcp` | Manage dsh-code user/project MCP servers with live status; explicitly import independent copies from DSH/Codex/Claude |
 | `/rename [title]` | Rename and pin the current session title |
 | `/jobs` | Inspect output or stop background jobs owned by this session |
@@ -215,10 +224,10 @@ through `/` autocomplete.
 | `Enter` | Send input or confirm an inline selection |
 | `Esc` | Go back/cancel an inline step; interrupt the active turn |
 | `Ctrl+C` / `Command+C` | Copy the selected result text; never interrupts the active turn |
-| `Ctrl+O` | Expand or collapse reasoning (latest 5 lines by default) and tool output |
+| `Ctrl+O` | Expand/collapse reasoning and verbose tool bodies (5 visual lines by default); file diffs stay expanded |
 | `Ctrl+D` | Exit when idle |
 | `/` | Open command completion |
-| `@` | Complete project files (`fd` enables faster fuzzy discovery) |
+| `@` | Fuzzy-complete project files and folders (`fd` enables faster discovery) |
 
 ### Approvals and structured questions
 
@@ -287,7 +296,7 @@ Updates are explicit; dsh-code does not silently update itself:
 dsh-code update --check
 dsh-code update
 dsh-code update --channel next
-dsh-code update --version 0.1.1
+dsh-code update --version 0.1.1-rc.1
 ```
 
 The update command is supported for npm-global installations. Source checkouts

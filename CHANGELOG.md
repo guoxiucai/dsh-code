@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 — 2026-08-22
+## 0.1.1-rc.1 — 2026-08-23
 
 - Updated the pinned DeepSeek Harness runtime from `0.1.0-rc.7`
   (`99f6f02fec`) to `0.1.1-rc.2` (`b150a551b8`).
@@ -22,6 +22,18 @@
   `~/.dsh-code/logs/mcp/` instead of corrupting the bottom-pinned layout.
 - Made the upstream `standard` Agent Preset the explicit dsh-code default for
   new and resumed TUI sessions; mode switching remains intentionally absent.
+- Made long-session transcript rendering incremental and cached, reducing the
+  OHBM benchmark's steady-frame P95 from 76.09 ms to 0.13 ms while keeping
+  committed history selectable and searchable.
+- Added themed large-paste markers, fuzzy `@` completion for files and folders,
+  and visible queued-message feedback when users submit during an active turn.
+- Added an independent clickable active-subagent indicator below `Working`, an
+  inline `/agents` list with live status and cancel/remove actions, and automatic
+  reporting/removal when work settles.
+- Hid `origin: subagent` child sessions from launcher resume/continue lists;
+  subagents remain visible and manageable only from their main session.
+- Limited verbose tool arguments/results to five terminal-width-aware visual
+  rows by default while keeping file-edit diffs fully expanded for review.
 
 ## 0.1.0 — 2026-08-20
 

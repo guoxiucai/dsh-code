@@ -42,6 +42,54 @@ Git 和远程开发环境配合使用。
 DeepSeek Harness Agent Runtime + Pi 风格终端交互 + pi-tui 渲染器
 ```
 
+## 环境要求
+
+| 组件 | 首个版本支持范围 |
+| --- | --- |
+| macOS | macOS 14 或更高，Apple Silicon (`arm64`) |
+| Windows | Windows 10 或更高，x64 |
+| Node.js | `22.19+`（不含 Node 23）或 `24+` |
+| 包管理器 | 普通安装只需要 npm |
+
+首个版本暂不支持 Linux、macOS Intel/Rosetta、Windows ARM，以及不安装 Node.js 的
+独立可执行文件分发方式。
+
+## 安装
+
+### npm 安装
+
+```bash
+npm install -g @tsingwill/dsh-code
+```
+
+如需安装当前候选版本而不是稳定通道：
+
+```bash
+npm install -g @tsingwill/dsh-code@next
+```
+
+验证安装结果：
+
+```bash
+dsh-code --version
+dsh-code --help
+```
+
+npm 包名是 `@tsingwill/dsh-code`，安装后的终端命令仍是简短的 `dsh-code`。
+
+### 从源码构建
+
+```bash
+git clone --recurse-submodules https://github.com/guoxiucai/dsh-code.git
+cd dsh-code
+corepack enable
+corepack prepare pnpm@11.7.0 --activate
+pnpm install --frozen-lockfile
+pnpm run build:lib
+pnpm run build
+node lib/bin.js
+```
+
 ## 功能展示
 
 <p align="center">
@@ -50,8 +98,8 @@ DeepSeek Harness Agent Runtime + Pi 风格终端交互 + pi-tui 渲染器
 
 ## 功能亮点
 
-- **终端原生工作流**：流式 Markdown、思考过程、工具卡片、文件 Diff、可折叠输出、
-  Shell 结果块和固定在底部的输入区域。
+- **终端原生工作流**：流式 Markdown、默认五行折叠的思考与长工具正文、始终完整展示的
+  带行号文件 Diff、可选中复制的结果、主题色粘贴标记、Shell 结果块和底部固定输入区。
 - **复用 DeepSeek Harness 语义**：只使用 DSH 的公共 Session/Event 和服务接口，
   不维护第二套 Agent Loop、会话存储、权限引擎或工具注册表。
 - **TUI 内完成模型配置**：通过可回退的内联向导配置 DeepSeek、OpenAI 或
@@ -60,10 +108,11 @@ DeepSeek Harness Agent Runtime + Pi 风格终端交互 + pi-tui 渲染器
   `workspace-write`、`danger-full-access` 三种权限预设。
 - **持久化会话**：继续最近会话，搜索/恢复/删除历史会话，查看会话统计，
   从已完成轮次 Fork，以及压缩上下文。
-- **清晰的 Agent 状态与决策交互**：独立的 Plan/Todo 状态、工具进度、重试与压缩提示、
-  一次性审批条、结构化问题、计划评审以及 Sub-Agent 活动。
-- **高效终端操作**：`/` 命令补全、`@` 文件补全、`!` Shell 模式、内联选择器和
-  键盘导航。
+- **清晰的 Agent 状态与决策交互**：独立的 Plan/Todo 状态、用户消息排队提示、工具进度、
+  重试与压缩提示、一次性审批条、结构化问题、计划评审，以及可点击并支持取消/移除的
+  Sub-Agent 运行状态。
+- **高效终端操作**：`/` 命令补全、`@` 文件与文件夹模糊联想、`!` Shell 模式、
+  内联选择器和键盘导航。
 - **独立安装与数据目录**：数据保存在 `~/.dsh-code`，不会覆盖单独安装的 `dsh`，
   并提供显式更新命令。
 - **自适应视觉主题**：DeepSeek 蓝主题分别针对暗色和亮色终端背景优化。
@@ -88,48 +137,6 @@ TUI 会话会显式挂载上游 `standard` Agent Preset；目前尚未开放其�
 
 架构约束见 [`docs/adr/`](docs/adr/)，固定的上游版本见
 [`UPSTREAM_BASELINE.md`](UPSTREAM_BASELINE.md)。
-
-## 环境要求
-
-| 组件 | 首个版本支持范围 |
-| --- | --- |
-| macOS | macOS 14 或更高，Apple Silicon (`arm64`) |
-| Windows | Windows 10 或更高，x64 |
-| Node.js | `22.19+`（不含 Node 23）或 `24+` |
-| 包管理器 | 普通安装只需要 npm |
-
-首个版本暂不支持 Linux、macOS Intel/Rosetta、Windows ARM，以及不安装 Node.js 的
-独立可执行文件分发方式。
-
-## 安装
-
-### npm 安装
-
-```bash
-npm install -g @tsingwill/dsh-code
-```
-
-验证安装结果：
-
-```bash
-dsh-code --version
-dsh-code --help
-```
-
-npm 包名是 `@tsingwill/dsh-code`，安装后的终端命令仍是简短的 `dsh-code`。
-
-### 从源码构建
-
-```bash
-git clone --recurse-submodules https://github.com/guoxiucai/dsh-code.git
-cd dsh-code
-corepack enable
-corepack prepare pnpm@11.7.0 --activate
-pnpm install --frozen-lockfile
-pnpm run build:lib
-pnpm run build
-node lib/bin.js
-```
 
 ## 快速开始
 
@@ -185,7 +192,7 @@ dsh-code
 | `/permission` | 选择当前权限预设 |
 | `/goal` | 内联查看和管理上游 DSH 长期目标 |
 | `/skills [搜索词]` | 发现 Skill；Space 仅对 dsh-code 启停，Enter 直接调用选中项 |
-| `/agents` | 查看当前会话持久化的子 Agent 树 |
+| `/agents` | 查看当前活跃 Sub-Agent，并在内联列表中取消或移除任务 |
 | `/mcp` | 管理 dsh-code 用户级/项目级 MCP 及实时状态；按需从 DSH/Codex/Claude 导入独立副本 |
 | `/rename [标题]` | 重命名并固定当前会话标题 |
 | `/jobs` | 查看输出或停止当前会话的后台任务 |
@@ -205,10 +212,10 @@ dsh-code
 | `Enter` | 发送内容或确认内联选择 |
 | `Esc` | 返回/取消当前内联步骤；Agent 运行时中断当前轮次 |
 | `Ctrl+C` / `Command+C` | 复制结果区域中选中的文本，不再中断当前轮次 |
-| `Ctrl+O` | 展开或折叠思考过程（默认显示最新 5 行）与工具输出 |
+| `Ctrl+O` | 展开/折叠思考与长工具正文（默认 5 个视觉行）；文件 Diff 始终展开 |
 | `Ctrl+D` | Agent 空闲时退出 |
 | `/` | 打开命令补全 |
-| `@` | 补全项目文件；安装 `fd` 后启用更快的模糊查找 |
+| `@` | 模糊联想项目文件和文件夹；安装 `fd` 后可获得更快查找 |
 
 ### 审批与结构化问题
 
@@ -265,7 +272,7 @@ dsh-code 只执行用户明确发起的更新，不会静默升级：
 dsh-code update --check
 dsh-code update
 dsh-code update --channel next
-dsh-code update --version 0.1.1
+dsh-code update --version 0.1.1-rc.1
 ```
 
 更新命令仅适用于 npm 全局安装。源码检出版本应继续通过 Git 和原构建工具升级。
