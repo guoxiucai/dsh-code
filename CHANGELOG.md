@@ -30,6 +30,9 @@
   `ExperimentalWarning` through the alternate-screen TUI. The compatibility
   preload matches only that warning, preserves all other process warnings, and
   the installed-package smoke now executes a typed PTC program to guard it.
+- Normalized the pinned runtime's PTC worker entry to a `file://` URL on
+  Windows, avoiding Node's `ERR_UNSUPPORTED_ESM_URL_SCHEME` without patching
+  or repackaging upstream DSH sources.
 - Added a searchable, collapsible `/tree` session-lineage picker. Switching is
   handed back to the launcher only after the old TUI flushes and exits, and is
   blocked while turns, queued messages, sub-agents, or background jobs are live.

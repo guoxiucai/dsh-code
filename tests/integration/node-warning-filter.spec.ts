@@ -20,4 +20,13 @@ describe.skipIf(!existsSync(filter))('built Node warning filter', () => {
     expect(stderr).not.toContain('ExperimentalWarning: stripTypeScriptTypes')
     expect(stderr).toContain('CompatibilityWarning: keep this warning')
   })
+
+  it('recognizes only the upstream Windows PTC worker entry', async () => {
+    const { isWindowsPtcWorkerPath } = await import('../../lib/bootstrap/node-warning-filter.js')
+    const upstream = 'C:\\Users\\runner\\node_modules\\@deepseek-ai\\dsh-code-runtime-worker-thread\\lib\\worker.cjs'
+
+    expect(isWindowsPtcWorkerPath(upstream, 'win32')).toBe(true)
+    expect(isWindowsPtcWorkerPath('C:\\tmp\\other\\worker.cjs', 'win32')).toBe(false)
+    expect(isWindowsPtcWorkerPath(upstream, 'darwin')).toBe(false)
+  })
 })
