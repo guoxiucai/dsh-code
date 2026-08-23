@@ -1,7 +1,7 @@
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 export const name = 'dsh-code-standard-preset-smoke'
-export const inject = ['agents', 'agentPresets', 'tools']
+export const inject = ['agents', 'agentPresets', 'sessionQuery', 'tools']
 
 export function apply(ctx) {
   void (async () => {
@@ -11,11 +11,13 @@ export function apply(ctx) {
       setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, 'standard') },
     })
     try {
+      const projectSessions = await ctx.sessionQuery.filterSessions([{ kind: 'cwd', values: [process.cwd()] }])
       process.stdout.write(`${JSON.stringify({
         preset: ctx.agentPresets.composedPreset(handle.agent.ctx),
         headerPreset: handle.agent.session.header.agentPreset,
         agentTools: ctx.tools.schemas(handle.agent).map(tool => tool.name),
         globalTools: ctx.tools.schemas().map(tool => tool.name),
+        querySessionIds: projectSessions.map(record => String(record.header.id)),
       })}\n`)
     } finally {
       await handle.dispose()

@@ -40,9 +40,11 @@ import { clipboardInvocation, writeClipboard } from './clipboard.ts'
 import {
   InlineTextInputComponent,
   ListSelectorComponent,
+  SessionTreeSelectorComponent,
   type InlineTextInputOptions,
   type SelectorHandle,
   type SelectorOptions,
+  type SessionTreeSelectorOptions,
 } from './selector.ts'
 import type { QueuedMessageSummary, TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 import { ApprovalBarComponent, QuestionPanelComponent, type InlineApprovalRequest } from './interaction.ts'
@@ -1275,6 +1277,16 @@ export class TuiHost {
         this.tui.requestRender()
       },
     }
+  }
+
+  /** Mount the project-local session lineage picker. */
+  showSessionTree(options: SessionTreeSelectorOptions): void {
+    const selector = new SessionTreeSelectorComponent({
+      ...options,
+      onSelect: (sessionId) => { this.clearInlineControl(); options.onSelect(sessionId) },
+      onCancel: () => { this.clearInlineControl(); options.onCancel() },
+    })
+    this.mountInlineControl(selector)
   }
 
   /** Mount an inline single-line field; Esc invokes the caller's back step. */

@@ -231,7 +231,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 
 ### 5.2 `plugin.ts` — 核心接线（最重要）
 
-- `inject` 包含 `agents`、`agentPresets`、`agentDefaultModel`、`sessions`、`commands`、`llm`、`credentials`、`settings`、
+- `inject` 包含 `agents`、`agentPresets`、`agentDefaultModel`、`sessions`、`sessionQuery`、`commands`、`llm`、`credentials`、`settings`、
   `permissionPresets`、`shell`、`tokenMeter`、`userQuestions`。
 - Profile 关闭 `dsh-base` 中改由 Preset 所有的 model-facing 全局行，并注册上游 `agent-presets` roster；上游启动器自动注入随安装包发布的 Preset 根目录。
 - 用 `agents.create` / `agents.resume` 创建/恢复 agent；setup 挂载官方 `standard`（Standard）或 `code`（PTC）Agent Preset，再用 `installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。新会话 Header 持久化启动 Preset；恢复时通过 `resolveSessionPreset` 按日志重建。`/mode` 仅允许在首个 `turn/start` 前重组，避免已有工具历史与新 schema 不一致。
@@ -239,7 +239,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
   上游 Registry 中可由用户调用的 Skill → 普通 `agent.followup`。命令名优先于同名 Skill。
 - 注册 slash 命令：`/model` `/mode` `/config` `/skills` `/agents` `/mcp` `/session` `/rename`
-  `/jobs` `/export` `/fork` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
+  `/jobs` `/export` `/fork` `/tree` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
 - `/skills` 不建立第二套 Skill Store。基础 provider 读取项目 `.dsh/.agents`、独立
   `~/.dsh-code/skills` 与 `~/.agents/skills`；Profile 中的第二个上游 filesystem provider
   只读补充项目 `.codex/.claude` 和用户 `~/.dsh/.codex/.claude`。列表不进入详情二级页：Space
@@ -457,11 +457,11 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | TUI：转写、流式、工具卡片、状态栏、编辑器 | ✅ |
 | 一次性内联审批条（沙箱升级 / Hook ask，Allow once / Reject） | ✅ |
 | 结构化 `ask_user_question` / Plan Review（单选、多选、自定义答案） | ✅ |
-| 内联选择/输入（/model、/permission、/config、/goal、/skills、/agents、/mcp、/rename、/jobs、/export） | ✅ |
+| 内联选择/输入（/model、/permission、/config、/goal、/skills、/agents、/mcp、/rename、/jobs、/export、/tree） | ✅ |
 | 无已存 Credential 时自动进入首次模型/API Token 配置 | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
 | session resume（`resume <id>`、`-c` 最近会话、`-r` 全屏选择器，删除二次确认）、fork | ✅ |
-| 命令面板（/model /mode /config /skills /agents /mcp /session /rename /jobs /export /fork /quit /exit） | ✅ |
+| 命令面板（/model /mode /config /skills /agents /mcp /session /rename /jobs /export /fork /tree /quit /exit） | ✅ |
 | Markdown 渲染、带行号及整行背景的工具 diff | ✅ |
 | 思考最新 5 行/工具结果折叠（Ctrl+O）、结果选择复制、整块背景、块间距、页脚 | ✅ |
 | loading / retry / compaction 状态指示 | ✅ |
@@ -541,6 +541,7 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 | `ctx.settings.update/replace/get`、`ctx.credentials.set` | `@deepseek-ai/dsh-settings` / `-credentials` |
 | `ctx.shell.resolve/run` | `@deepseek-ai/dsh-shell` |
 | `ctx.sessions.fork/flush` | `@deepseek-ai/dsh-session` |
+| `ctx.sessionQuery.filterSessions/readSession/readTitleSnapshots` | `@deepseek-ai/dsh-session-query` |
 | `ctx.llm.listProviders/listModels` | `@deepseek-ai/dsh-llm` |
 | `ctx.goals.get/create/edit/pause/resume/clear` | `@deepseek-ai/dsh-goal` |
 | `ctx.skills.list` | `@deepseek-ai/dsh-skill` |
@@ -564,7 +565,9 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
   TUI 内的 `/config` 已实现模型和凭证配置，不要混淆两者。当前 `--help` 对产品级 `config` 的描述仍是目标行为，
   不代表已经实现。`dsh-code update` 已实现 npm global 安装的 stable/next/精确版本检查与显式升级。
 - `dsh-code -p ... --verbose` 目前只完成参数解析，尚未把详细工具跟踪传递给 headless 路径。
-- 会话切换（`/session` 只是展示信息；不支持对话内切到别的会话——已按产品决定移除 `/sessions`）。
+- `/tree` 通过 `ctx.sessionQuery` 投影同项目、非 subagent 的 Session 分支；选择后先 flush 当前 Session，
+  再通过私有 IPC 让启动器等待旧子进程完整退出后以 `--resume` 启动目标 Session。该切换只改变对话，
+  不回滚工作区文件；有运行中 turn、排队消息、subagent 或后台任务时拒绝切换。
 - `@` 文件联想依赖 `fd` 二进制（未安装时走内置遍历，较慢）。
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
 - npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工

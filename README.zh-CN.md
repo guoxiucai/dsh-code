@@ -204,7 +204,8 @@ dsh-code
 | `/jobs` | 查看输出或停止当前会话的后台任务 |
 | `/export [路径]` | 将当前会话导出为 Markdown 或 JSONL |
 | `/session` | 查看会话、消息、工具、模型与 Token 统计 |
-| `/fork` | 从最近一个已完成轮次创建分支会话 |
+| `/fork` | 从最近一个已完成轮次创建分支会话，但不自动切换 |
+| `/tree` | 浏览当前对话树并切换到所选会话分支 |
 | `/compact` | 通过 DSH 压缩当前上下文 |
 | `/quit`、`/exit` | Agent 空闲时退出 |
 | `!<命令>` | 直接执行 Shell/PowerShell 命令，不发送给模型 |

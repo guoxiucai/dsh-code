@@ -49,6 +49,8 @@ import type {
 } from '@deepseek-ai/dsh-subagent'
 import type { JobId, JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-session-title'
+// Declaration-merges the project/session query service onto Context.
+import type { SessionTitleObservationResult } from '@deepseek-ai/dsh-session-query'
 import { TuiHost } from './host.ts'
 import type { SelectorHandle, SelectorItem } from './selector.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
@@ -94,12 +96,14 @@ import {
   writeSessionExport,
   type SessionExportFormat,
 } from './session-export.ts'
+import { buildSessionTreeRows, sessionSwitchBlocker } from './session-tree.ts'
+import { sendSessionSwitch } from '../session-switch.ts'
 
 /** Stable Cordis plugin name (referenced by id in the profile patch). */
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'tools']
+export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'tools']
 
 /** Stream coalescing window: assistant chunks render at most about 30fps. */
 export const STREAM_RENDER_INTERVAL_MS = 33
@@ -1714,10 +1718,103 @@ async function run(ctx: Context): Promise<void> {
       try {
         const child = ctx.sessions.fork(agent.session, boundary, SessionId(`session-${randomUUID()}`))
         await ctx.sessions.flush(child)
-        return { kind: 'success', text: `forked to ${child.id} (resume: dsh-code resume ${child.id})` }
+        return { kind: 'success', text: `forked session ${child.id} · use /tree to switch` }
       } catch (error) {
         return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
       }
+    },
+  })
+
+  const switchBlocker = (): string | undefined => sessionSwitchBlocker({
+    agentRunning: agent.status === 'running',
+    queuedMessages: reducer.queuedMessages.length,
+    liveJobs: ctx.jobs.list(agent).filter(job => job.status === 'running' || job.status === 'stopping').length,
+    activeSubagents: activeSubagentCount(activeSubagentRuns, dismissedSubagents),
+  })
+
+  const switchToSession = async (targetId: string): Promise<void> => {
+    const currentId = String(agent.session.id)
+    if (targetId === currentId) {
+      host.showNotice('already on the selected session')
+      return
+    }
+    const blocked = switchBlocker()
+    if (blocked !== undefined) {
+      host.showNotice(`session switch blocked: ${blocked}`)
+      return
+    }
+    try {
+      const target = await ctx.sessionQuery.readSession(SessionId(targetId))
+      if (target.session.cwd !== process.cwd() || target.session.origin === 'subagent') {
+        throw new Error('the selected session is outside the current project conversation tree')
+      }
+      await sessions.flush(agent.session)
+      await sendSessionSwitch(targetId)
+      await shutdown(0)
+    } catch (error) {
+      showCommandError('session switch', error)
+    }
+  }
+
+  let sessionTreeLoading = false
+  const showSessionTree = async (): Promise<void> => {
+    if (sessionTreeLoading) {
+      host.showNotice('session tree is already loading')
+      return
+    }
+    const blocked = switchBlocker()
+    if (blocked !== undefined) {
+      host.showNotice(`session switch blocked: ${blocked}`)
+      return
+    }
+    sessionTreeLoading = true
+    try {
+      const records = await ctx.sessionQuery.filterSessions([{ kind: 'cwd', values: [process.cwd()] }])
+      const eligible = records.filter(record => record.header.origin !== 'subagent')
+      const titleResults: SessionTitleObservationResult[] = await ctx.sessionQuery.readTitleSnapshots(
+        eligible.map(record => record.header.id),
+      )
+      const titles = new Map<string, string>()
+      for (const result of titleResults) {
+        if (result.status === 'fulfilled' && result.value.title !== undefined) {
+          titles.set(String(result.sessionId), result.value.title.title)
+        }
+      }
+      const rows = buildSessionTreeRows(eligible, String(agent.session.id), titles)
+      if (rows.length === 0) {
+        host.showNotice('no sessions in the current conversation tree')
+        return
+      }
+      const lateBlocker = switchBlocker()
+      if (lateBlocker !== undefined) {
+        host.showNotice(`session switch blocked: ${lateBlocker}`)
+        return
+      }
+      host.showSessionTree({
+        rows,
+        borderColor: theme.selectorBorder,
+        onSelect: (sessionId) => {
+          if (rows.find(row => row.id === sessionId)?.persisted !== true) {
+            host.showNotice('session switch blocked: the selected session has not been persisted')
+            return
+          }
+          void switchToSession(sessionId)
+        },
+        onCancel: () => {},
+      })
+    } catch (error) {
+      showCommandError('session tree', error)
+    } finally {
+      sessionTreeLoading = false
+    }
+  }
+
+  ctx.commands.register({
+    name: 'tree',
+    description: 'Browse this project’s session tree and switch branches',
+    handler: () => {
+      void showSessionTree()
+      return { kind: 'success' }
     },
   })
 

@@ -30,6 +30,10 @@
   `ExperimentalWarning` through the alternate-screen TUI. The compatibility
   preload matches only that warning, preserves all other process warnings, and
   the installed-package smoke now executes a typed PTC program to guard it.
+- Added a searchable, collapsible `/tree` session-lineage picker. Switching is
+  handed back to the launcher only after the old TUI flushes and exits, and is
+  blocked while turns, queued messages, sub-agents, or background jobs are live.
+  `/fork` keeps its existing create-only behavior and now points users to `/tree`.
 - Made long-session transcript rendering incremental and cached, reducing the
   OHBM benchmark's steady-frame P95 from 76.09 ms to 0.13 ms while keeping
   committed history selectable and searchable.

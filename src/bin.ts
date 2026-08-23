@@ -10,7 +10,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { HELP_TEXT, parseArgs, type PromptInvocation, type TuiInvocation } from './cli/args.ts'
-import { delegateDsh } from './cli/delegate.ts'
+import { delegateDsh, delegateDshInteractive } from './cli/delegate.ts'
 import { unsupportedPlatformMessage } from './cli/platform.ts'
 import { runUpdate } from './cli/update.ts'
 import { resolveDshCodeHome } from './bootstrap/home.ts'
@@ -126,11 +126,20 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   } else {
     appArgs = []
   }
-  const firstModelConfig = !hasStoredCredential(home)
-  return delegateDsh(
-    ['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs],
-    tuiDelegatedEnv(home, firstModelConfig, appArgs.length === 0 ? invocation.agentMode : undefined),
-  )
+  let firstLaunch = true
+  while (true) {
+    const result = await delegateDshInteractive(
+      ['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs],
+      tuiDelegatedEnv(
+        home,
+        !hasStoredCredential(home),
+        firstLaunch && appArgs.length === 0 ? invocation.agentMode : undefined,
+      ),
+    )
+    if (result.switchSessionId === undefined) return result.code
+    appArgs = ['--resume', result.switchSessionId]
+    firstLaunch = false
+  }
 }
 
 /** Run one task through the upstream headless profile. */

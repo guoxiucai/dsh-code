@@ -45,11 +45,13 @@ describe('standard Agent Preset composition', () => {
       headerPreset: string
       agentTools: string[]
       globalTools: string[]
+      querySessionIds: string[]
     }
     expect(report.preset).toBe('standard')
     expect(report.headerPreset).toBe('standard')
     expect(report.agentTools).toEqual(expect.arrayContaining(['bash', 'read', 'write', 'edit', 'todo_write']))
     expect(report.globalTools).not.toEqual(expect.arrayContaining(['bash', 'read', 'write', 'edit', 'todo_write']))
+    expect(report.querySessionIds).toContain('standard-preset-smoke')
   }, 60_000)
 
   it('boots the official PTC preset with the worker runtime and code-only tool presentation', async () => {
