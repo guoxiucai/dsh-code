@@ -272,7 +272,7 @@ dsh-code 只执行用户明确发起的更新，不会静默升级：
 dsh-code update --check
 dsh-code update
 dsh-code update --channel next
-dsh-code update --version 0.1.1-rc.1
+dsh-code update --version 0.1.1-rc.2
 ```
 
 更新命令仅适用于 npm 全局安装。源码检出版本应继续通过 Git 和原构建工具升级。

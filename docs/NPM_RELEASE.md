@@ -1,6 +1,6 @@
 # dsh-code npm 发行实施方案
 
-> 状态：`0.1.0` 已发布，trusted publishing 流程已启用；准备发布 `0.1.1-rc.1`
+> 状态：`0.1.0` 已发布，trusted publishing 流程已启用；准备发布 `0.1.1-rc.2`
 > 编写日期：2026-08-19
 > 最近审计：2026-08-23
 > 首批目标平台：macOS arm64、Windows x64
@@ -283,14 +283,14 @@ scripts/
 
 ```bash
 # 开发树本地预演：生成并验证 candidate，不创建 tag、不推送、不发布
-pnpm release -- 0.1.1-rc.1 --tag next --prepare-only --allow-dirty
+pnpm release -- 0.1.1-rc.2 --tag next --prepare-only --allow-dirty
 
 # 代码提交并复核后：创建并推送 tag，由 GitHub Actions 通过 OIDC 发布
-pnpm release -- 0.1.1-rc.1 --tag next
+pnpm release -- 0.1.1-rc.2 --tag next
 ```
 
-`0.1.1-rc.1` 的本地 candidate 位于
-`dist/npm/tsingwill-dsh-code-0.1.1-rc.1.tgz`；`dist/` 被忽略，
+`0.1.1-rc.2` 的本地 candidate 位于
+`dist/npm/tsingwill-dsh-code-0.1.1-rc.2.tgz`；`dist/` 被忽略，
 不会进入产品提交。`--allow-dirty` 只允许用于 `--prepare-only` 的开发树验证，正式发布仍应使用干净的 `main`。
 
 `release.mjs` 不在开发机保存 npm token，也不默认在开发机运行

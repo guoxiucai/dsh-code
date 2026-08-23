@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1-rc.1 — 2026-08-23
+## 0.1.1-rc.2 — 2026-08-23
 
 - Updated the pinned DeepSeek Harness runtime from `0.1.0-rc.7`
   (`99f6f02fec`) to `0.1.1-rc.2` (`b150a551b8`).
@@ -34,6 +34,8 @@
   subagents remain visible and manageable only from their main session.
 - Limited verbose tool arguments/results to five terminal-width-aware visual
   rows by default while keeping file-edit diffs fully expanded for review.
+- Fixed clean CI builds by bridging the parent workspace's installed type
+  definitions into the upstream client's explicit type-root location.
 
 ## 0.1.0 — 2026-08-20
 

@@ -296,7 +296,7 @@ Updates are explicit; dsh-code does not silently update itself:
 dsh-code update --check
 dsh-code update
 dsh-code update --channel next
-dsh-code update --version 0.1.1-rc.1
+dsh-code update --version 0.1.1-rc.2
 ```
 
 The update command is supported for npm-global installations. Source checkouts

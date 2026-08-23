@@ -1,7 +1,7 @@
 {
   "name": "dsh-code",
   "description": "Terminal coding agent powered by DeepSeek Harness — a thin TUI host over @deepseek-ai/dsh-base",
-  "version": "0.1.1-rc.1",
+  "version": "0.1.1-rc.2",
   "type": "module",
   "license": "MIT",
   "private": true,
@@ -39,7 +39,7 @@
     "test": "vitest run",
     "build:lib": "pnpm run build:lib:host && pnpm run build:lib:client",
     "build:lib:host": "cd deepseek-harness && tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host",
-    "build:lib:client": "cd deepseek-harness && tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client",
+    "build:lib:client": "node scripts/ensure-dsh-type-roots.mjs && cd deepseek-harness && tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client",
     "release:pack": "node scripts/build-release.mjs",
     "release:verify": "node scripts/verify-tarball.mjs",
     "release:smoke": "node scripts/smoke-install.mjs",
