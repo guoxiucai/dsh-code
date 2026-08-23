@@ -42,11 +42,15 @@ import type {} from '@deepseek-ai/dsh-tools'
 // Declaration-merges the host services used by the richer TUI commands.
 import type { GoalView } from '@deepseek-ai/dsh-goal'
 import type { SkillProviderControl, SkillSummary } from '@deepseek-ai/dsh-skill'
-import type { SubagentDescendantListEntry } from '@deepseek-ai/dsh-subagent'
+import type {
+  SubagentDescendantListEntry,
+  SubagentRunEndInfo,
+  SubagentRunInfo,
+} from '@deepseek-ai/dsh-subagent'
 import type { JobId, JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-session-title'
 import { TuiHost } from './host.ts'
-import type { SelectorItem } from './selector.ts'
+import type { SelectorHandle, SelectorItem } from './selector.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 import { theme } from './theme.ts'
 import { parseMcpArguments, type McpServerConfig } from './project-config.ts'
@@ -93,6 +97,25 @@ export const STREAM_RENDER_INTERVAL_MS = 33
 /** Draft deltas do not change TokenMeter's durable, model-visible surface. */
 export function shouldMeasureContextTokens(eventType: string): boolean {
   return eventType !== 'assistant/chunk'
+}
+
+/** Current subagent-list projection seam (refined by live lifecycle state). */
+export function subagentEntriesForList(
+  entries: readonly SubagentDescendantListEntry[],
+  activeIds: ReadonlySet<string>,
+  dismissedIds: ReadonlySet<string> = new Set(),
+): readonly SubagentDescendantListEntry[] {
+  return entries.filter(entry => entry.kind === 'child'
+    && activeIds.has(String(entry.id))
+    && !dismissedIds.has(String(entry.id)))
+}
+
+/** Count unique active child sessions directly from lifecycle edges. */
+export function activeSubagentCount(
+  activeRuns: ReadonlyMap<string, string>,
+  dismissedIds: ReadonlySet<string> = new Set(),
+): number {
+  return new Set([...activeRuns.values()].filter(id => !dismissedIds.has(id))).size
 }
 
 /** Parse a leading `--resume <id>` from the invocation's inner args. */
@@ -182,6 +205,9 @@ async function run(ctx: Context): Promise<void> {
   let shuttingDown = false
   let renderTimer: ReturnType<typeof setTimeout> | undefined
   let contextTokensDirty = false
+  const activeSubagentRuns = new Map<string, string>()
+  const dismissedSubagents = new Set<string>()
+  let openAgentsPanel: () => void = () => {}
 
   const submitUserText = (text: string): void => {
     agent.followup(createUserMessage({
@@ -233,6 +259,7 @@ async function run(ctx: Context): Promise<void> {
       host.tui.invalidate()
       host.tui.requestRender(true)
     },
+    onOpenAgents: () => { openAgentsPanel() },
   })
   host.setModel({ provider: selection.provider, model: selection.model })
   host.setProject(basename(process.cwd()), detectGitBranch(process.cwd()))
@@ -551,26 +578,149 @@ async function run(ctx: Context): Promise<void> {
     return `${entry.id} · ${entry.mode} · ${activity}${label}`
   }
 
+  const subagentItem = (entry: SubagentDescendantListEntry): SelectorItem => ({
+    value: String(entry.id),
+    label: `${'  '.repeat(Math.max(0, entry.depth - 1))}● ${entry.kind === 'child' ? entry.label ?? entry.id : entry.id}`,
+    description: subagentDescription(entry),
+  })
+
+  let activeSubagentEntries: SubagentDescendantListEntry[] = []
+  let agentsSelector: SelectorHandle | undefined
+  let agentsSelectorOpen = false
+  let subagentActionId: string | undefined
+  let subagentRefreshRevision = 0
+  let subagentDescriptorRetryTimer: ReturnType<typeof setTimeout> | undefined
+  let subagentDescriptorRetryAttempt = 0
+
+  const activeSubagentIds = (): string[] => [...new Set(
+    [...activeSubagentRuns.values()].filter(id => !dismissedSubagents.has(id)),
+  )]
+
+  const syncActiveSubagentCount = (): number => {
+    const count = activeSubagentCount(activeSubagentRuns, dismissedSubagents)
+    host.setSubagentCount(count)
+    if (count === 0) {
+      if (subagentDescriptorRetryTimer !== undefined) clearTimeout(subagentDescriptorRetryTimer)
+      subagentDescriptorRetryTimer = undefined
+      subagentDescriptorRetryAttempt = 0
+    }
+    return count
+  }
+
+  const visibleSubagentItems = (): SelectorItem[] => {
+    const entriesById = new Map(activeSubagentEntries.map(entry => [String(entry.id), entry]))
+    return activeSubagentIds().map((id) => {
+      const entry = entriesById.get(id)
+      return entry === undefined
+        ? { value: id, label: `● ${id}`, description: `${id} · starting · details loading` }
+        : subagentItem(entry)
+    })
+  }
+
+  const scheduleSubagentDescriptorRetry = (): void => {
+    if (subagentDescriptorRetryTimer !== undefined || subagentDescriptorRetryAttempt >= 5) return
+    const delay = Math.min(400, 50 * 2 ** subagentDescriptorRetryAttempt++)
+    subagentDescriptorRetryTimer = setTimeout(() => {
+      subagentDescriptorRetryTimer = undefined
+      void refreshActiveSubagents().catch(error => { showCommandError('subagent refresh', error) })
+    }, delay)
+  }
+
+  const refreshActiveSubagents = async (): Promise<SubagentDescendantListEntry[]> => {
+    const revision = ++subagentRefreshRevision
+    const all = await ctx.subagents.listDescendants(agent.session.id)
+    if (revision !== subagentRefreshRevision) return activeSubagentEntries
+    const activeIds = new Set(activeSubagentRuns.values())
+    activeSubagentEntries = [...subagentEntriesForList(all, activeIds, dismissedSubagents)]
+    const activeCount = syncActiveSubagentCount()
+    if (activeSubagentEntries.length < activeCount) scheduleSubagentDescriptorRetry()
+    else {
+      if (subagentDescriptorRetryTimer !== undefined) clearTimeout(subagentDescriptorRetryTimer)
+      subagentDescriptorRetryTimer = undefined
+      subagentDescriptorRetryAttempt = 0
+    }
+    if (subagentActionId !== undefined
+      && !activeSubagentEntries.some(entry => String(entry.id) === subagentActionId)) {
+      subagentActionId = undefined
+      host.clearInlineControl()
+    }
+    if (agentsSelectorOpen) {
+      if (activeCount === 0) {
+        agentsSelectorOpen = false
+        agentsSelector = undefined
+        host.clearInlineControl()
+      } else {
+        agentsSelector?.updateItems(visibleSubagentItems())
+      }
+    }
+    return activeSubagentEntries
+  }
+
+  const cancelSubagent = (entry: SubagentDescendantListEntry): boolean => {
+    if (entry.kind !== 'child') return false
+    const live = ctx.agents.get(entry.id)
+    if (entry.mode === 'continuable') {
+      ctx.subagents.interrupt(entry.id, { kind: 'ancestor', agent })
+      return true
+    }
+    if (live === undefined) return false
+    live.cancel({ kind: 'user' })
+    return true
+  }
+
+  const showSubagentActions = (entry: SubagentDescendantListEntry): void => {
+    if (entry.kind !== 'child') return
+    agentsSelectorOpen = false
+    agentsSelector = undefined
+    subagentActionId = String(entry.id)
+    host.showSelector({
+      hint: subagentDescription(entry),
+      borderColor: theme.selectorBorder,
+      items: [
+        { value: 'cancel', label: 'Cancel task', description: 'Request cancellation and keep it visible until DSH settles the run' },
+        { value: 'delete', label: 'Delete task', description: 'Request cancellation and remove it from the active task list now' },
+        { value: 'back', label: 'Back to active agents' },
+      ],
+      onSelect: (action) => {
+        subagentActionId = undefined
+        if (action === 'back') { void runAgentsPicker(); return }
+        try {
+          if (!cancelSubagent(entry)) {
+            host.showNotice(`cannot cancel ${entry.id}: no live local one-shot agent`)
+            return
+          }
+          if (action === 'delete') {
+            dismissedSubagents.add(String(entry.id))
+            syncActiveSubagentCount()
+          }
+          host.showNotice(`${action === 'delete' ? 'removed' : 'cancellation requested for'} subagent ${entry.id}`)
+          void refreshActiveSubagents().catch(error => { showCommandError('subagent refresh', error) })
+        } catch (error) {
+          showCommandError('subagent cancellation', error)
+        }
+      },
+      onCancel: () => { subagentActionId = undefined; void runAgentsPicker() },
+    })
+  }
+
   const runAgentsPicker = async (): Promise<void> => {
     try {
-      const entries = await ctx.subagents.listDescendants(agent.session.id)
-      if (entries.length === 0) {
+      await refreshActiveSubagents()
+      if (activeSubagentCount(activeSubagentRuns, dismissedSubagents) === 0) {
         host.showNotice('no subagents for this session')
         return
       }
-      host.showSelector({
-        hint: 'Session-backed subagents · read-only view',
+      agentsSelectorOpen = true
+      subagentActionId = undefined
+      agentsSelector = host.showSelector({
+        hint: 'Active subagents · Enter actions · Esc close · list updates live',
         borderColor: theme.selectorBorder,
-        items: entries.map(entry => ({
-          value: String(entry.id),
-          label: `${'  '.repeat(Math.max(0, entry.depth - 1))}${entry.kind === 'diagnostic' ? '!' : entry.activity === 'running' ? '●' : '○'} ${entry.kind === 'child' ? entry.label ?? entry.id : entry.id}`,
-          description: subagentDescription(entry),
-        })),
+        items: visibleSubagentItems(),
         onSelect: (id) => {
-          const entry = entries.find(candidate => String(candidate.id) === id)
-          if (entry !== undefined) host.showNotice(subagentDescription(entry))
+          const entry = activeSubagentEntries.find(candidate => String(candidate.id) === id)
+          if (entry !== undefined) showSubagentActions(entry)
         },
-        onCancel: () => {},
+        onCancel: () => { agentsSelectorOpen = false; agentsSelector = undefined },
       })
     } catch (error) {
       showCommandError('subagent listing', error)
@@ -585,6 +735,7 @@ async function run(ctx: Context): Promise<void> {
       return { kind: 'success' }
     },
   })
+  openAgentsPanel = () => { void runAgentsPicker() }
 
   // Slash-command autocomplete, refreshed whenever the command registry changes.
   // `fd` (when installed) enables pi-tui's fast fuzzy file search; dsh-code has
@@ -1514,6 +1665,21 @@ async function run(ctx: Context): Promise<void> {
     scheduleRender()
   })
 
+  const disposeSubagentStart = agent.ctx.on('subagent/start', (info: SubagentRunInfo) => {
+    activeSubagentRuns.set(String(info.runId), String(info.id))
+    dismissedSubagents.delete(String(info.id))
+    subagentDescriptorRetryAttempt = 0
+    syncActiveSubagentCount()
+    void refreshActiveSubagents().catch(error => { showCommandError('subagent refresh', error) })
+  })
+
+  const disposeSubagentEnd = agent.ctx.on('subagent/end', (info: SubagentRunEndInfo) => {
+    activeSubagentRuns.delete(String(info.runId))
+    if (![...activeSubagentRuns.values()].includes(String(info.id))) dismissedSubagents.delete(String(info.id))
+    syncActiveSubagentCount()
+    void refreshActiveSubagents().catch(error => { showCommandError('subagent refresh', error) })
+  })
+
   // Permission answerer: a one-shot Allow/Reject bar for this agent's tool
   // calls. Never infers a durable grant; Esc/abort settles as `cancelled`.
   const disposeApproval = ctx.on('approval/request', (request, next) => {
@@ -1551,9 +1717,15 @@ async function run(ctx: Context): Promise<void> {
       clearTimeout(renderTimer)
       renderTimer = undefined
     }
+    if (subagentDescriptorRetryTimer !== undefined) {
+      clearTimeout(subagentDescriptorRetryTimer)
+      subagentDescriptorRetryTimer = undefined
+    }
     host.stop()
     disposeEvents()
     disposeStatus()
+    disposeSubagentStart()
+    disposeSubagentEnd()
     disposeApproval()
     disposeQuestions()
     disposeCommandsChange()

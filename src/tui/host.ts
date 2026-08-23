@@ -126,6 +126,7 @@ export interface TuiHostCallbacks {
   onInterrupt(): void
   onExit(): void
   onRedraw(): void
+  onOpenAgents?(): void
   onEditorChange?(text: string): void
 }
 
@@ -476,6 +477,13 @@ interface TranscriptBlockEntry {
   blocks: WidthCachedComponent[]
 }
 
+interface AnchoredNotice {
+  text: string
+  /** Number of committed transcript items that preceded this notice. */
+  afterItems: number
+  block: WidthCachedComponent
+}
+
 export interface TranscriptSurfaceOptions {
   /** Test seam for asserting that unchanged semantic items retain their blocks. */
   renderItem?: (item: TranscriptItem, expanded: boolean) => Component[]
@@ -513,7 +521,7 @@ export class TranscriptSurface implements Component {
   private shellResults: readonly ShellResult[] = []
   private shellBlocks: WidthCachedComponent[] = []
   private notices: readonly string[] = []
-  private noticeBlock: WidthCachedComponent | undefined
+  private noticeEntries: AnchoredNotice[] = []
   private dirty = true
   private cachedWidth: number | undefined
   private cachedLines: string[] | undefined
@@ -563,10 +571,17 @@ export class TranscriptSurface implements Component {
     }
 
     if (!sameStrings(state.notices, this.notices)) {
+      let prefix = 0
+      while (prefix < state.notices.length && state.notices[prefix] === this.notices[prefix]) prefix += 1
       this.notices = [...state.notices]
-      this.noticeBlock = state.notices.length === 0
-        ? undefined
-        : new WidthCachedComponent(new Text(state.notices.map(text => `· ${text}`).join('\n'), 1, 0))
+      this.noticeEntries = [
+        ...this.noticeEntries.slice(0, prefix),
+        ...state.notices.slice(prefix).map(text => ({
+          text,
+          afterItems: state.transcript.length,
+          block: new WidthCachedComponent(new Text(`· ${text}`, 1, 0)),
+        })),
+      ]
       this.markDirty()
     }
     this.expanded = state.expanded
@@ -578,9 +593,10 @@ export class TranscriptSurface implements Component {
     this.draftBlocks = this.draft === undefined ? [] : this.cache(this.draftRenderer(this.draft, this.expanded))
     this.welcomeBlock = new WidthCachedComponent(new WelcomeBanner(this.version))
     this.shellBlocks = this.cache(renderShellResultBlocks(this.shellResults))
-    this.noticeBlock = this.notices.length === 0
-      ? undefined
-      : new WidthCachedComponent(new Text(this.notices.map(text => `· ${text}`).join('\n'), 1, 0))
+    this.noticeEntries = this.noticeEntries.map(notice => ({
+      ...notice,
+      block: new WidthCachedComponent(new Text(`· ${notice.text}`, 1, 0)),
+    }))
     this.markDirty()
   }
 
@@ -617,9 +633,20 @@ export class TranscriptSurface implements Component {
   private allBlocks(): WidthCachedComponent[] {
     const blocks: WidthCachedComponent[] = []
     if (this.transcript.length === 0 && this.welcomeBlock !== undefined) blocks.push(this.welcomeBlock)
-    for (const entry of this.entries) blocks.push(...entry.blocks)
+    const appendNotices = (afterItems: number): void => {
+      for (const notice of this.noticeEntries) {
+        if (notice.afterItems === afterItems) blocks.push(notice.block)
+      }
+    }
+    appendNotices(0)
+    this.entries.forEach((entry, index) => {
+      blocks.push(...entry.blocks)
+      appendNotices(index + 1)
+    })
+    for (const notice of this.noticeEntries) {
+      if (notice.afterItems > this.entries.length) blocks.push(notice.block)
+    }
     blocks.push(...this.draftBlocks, ...this.shellBlocks)
-    if (this.noticeBlock !== undefined) blocks.push(this.noticeBlock)
     return blocks
   }
 
@@ -644,8 +671,19 @@ function sameShellResults(left: readonly ShellResult[], right: readonly ShellRes
   })
 }
 
+/** Internal OSC 8 target used by the clickable subagent status indicator. */
+export const AGENTS_PANEL_URL = 'dsh-code://agents'
+
+function terminalLink(label: string, url: string): string {
+  return `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`
+}
+
 /** Assemble the left-hand status line, colorized. */
-export function renderStatus(view: TuiViewModel, model?: { provider: string; model: string }, contextTokens?: number): string {
+export function renderStatus(
+  view: TuiViewModel,
+  model?: { provider: string; model: string },
+  contextTokens?: number,
+): string {
   const parts: string[] = []
   if (model !== undefined) {
     const effort = view.reasoningEffort !== undefined ? theme.dim(`(${view.reasoningEffort})`) : ''
@@ -664,10 +702,22 @@ export function renderStatus(view: TuiViewModel, model?: { provider: string; mod
       parts.push(theme.dim(`cached ${((cacheReadTokens / totalInput) * 100).toFixed(1)}%`))
     }
   }
-  const runningSubagents = view.transcript.filter(item =>
-    item.kind === 'tool' && (item.name === 'subagent' || item.name === 'subagent_fork') && item.status === 'running').length
-  if (runningSubagents > 0) parts.push(theme.warning(`⚡ ${runningSubagents} subagent`))
   return parts.join(' · ')
+}
+
+/** Independent clickable row mounted directly below the Working indicator. */
+export function renderSubagentIndicator(count: number, width: number): string[] {
+  if (count <= 0 || width <= 0) return []
+  const normalized = Math.max(1, Math.trunc(count))
+  const label = `⚡ ${normalized} subagent${normalized === 1 ? '' : 's'} running · click to inspect`
+  return [truncateToWidth(` ${terminalLink(theme.warning(label), AGENTS_PANEL_URL)}`, width, '…')]
+}
+
+class SubagentIndicator implements Component {
+  private count = 0
+  set(count: number): void { this.count = Math.max(0, Math.trunc(count)) }
+  invalidate(): void {}
+  render(width: number): string[] { return renderSubagentIndicator(this.count, width) }
 }
 
 /** Render the persistent Todo panel, one width-safe row per model-owned task. */
@@ -965,6 +1015,7 @@ export class TuiHost {
   private expanded = false
   private readonly workingContainer: Container
   private readonly workingLoader: Loader
+  private readonly subagentIndicator: SubagentIndicator
   private readonly footer: Text
   private readonly editorSlot: Container
   private workingTimer: ReturnType<typeof setInterval> | undefined
@@ -980,7 +1031,10 @@ export class TuiHost {
     this.callbacks = callbacks
     // Keep pi-tui's OSC 52 fallback on platforms without a native bridge.
     const copySelection = clipboardInvocation('', process.platform) === undefined ? undefined : writeClipboard
-    const tuiOptions = copySelection === undefined ? {} : { copySelection }
+    const openUrl = (url: string): void => {
+      if (url === AGENTS_PANEL_URL) this.callbacks.onOpenAgents?.()
+    }
+    const tuiOptions = { openUrl, ...(copySelection === undefined ? {} : { copySelection }) }
     const tui = new TuiAltScreen(new ProcessTerminal(), undefined, undefined, tuiOptions)
     this.tui = tui
     this.transcriptSurface = new TranscriptSurface()
@@ -990,6 +1044,7 @@ export class TuiHost {
     this.status = new StatusLine()
     this.workingContainer = new Container()
     this.workingLoader = new Loader(this.tui, theme.accent, theme.dim, 'Working...')
+    this.subagentIndicator = new SubagentIndicator()
     this.footer = new Text(theme.dim('Enter send · Esc back · Ctrl+O expand · Ctrl+D exit · / commands'), 1, 0)
     this.editor = new PlaceholderEditor(
       this.tui,
@@ -1008,6 +1063,7 @@ export class TuiHost {
     bottom.addChild(this.todoList)
     bottom.addChild(this.queuedMessages)
     bottom.addChild(this.workingContainer)
+    bottom.addChild(this.subagentIndicator)
     bottom.addChild(this.editorSlot)
     bottom.addChild(this.status)
     bottom.addChild(this.footer)
@@ -1138,6 +1194,13 @@ export class TuiHost {
   /** Set the current request context size (tokens) for the status line. */
   setContextTokens(tokens: number): void {
     this.contextTokens = tokens
+  }
+
+  /** Update the clickable active-subagent status indicator. */
+  setSubagentCount(count: number): void {
+    const normalized = Math.max(0, Math.trunc(count))
+    this.subagentIndicator.set(normalized)
+    this.tui.requestRender()
   }
 
   /** Set the project directory name and (optional) git branch for the status line. */

@@ -9,9 +9,20 @@ const dirs: string[] = []
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 /** Write a session log with a header and an optional first human user message. */
-function writeSessionLog(sessionDir: string, id: string, createdAt: number, title?: string, cwd?: string): void {
+function writeSessionLog(
+  sessionDir: string,
+  id: string,
+  createdAt: number,
+  title?: string,
+  cwd?: string,
+  origin?: 'subagent',
+): void {
   mkdirSync(sessionDir, { recursive: true })
-  const header = JSON.stringify({ type: 'session', id, createdAt, ...(cwd === undefined ? {} : { cwd }) })
+  const header = JSON.stringify({
+    type: 'session', id, createdAt,
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(origin === undefined ? {} : { origin }),
+  })
   if (title === undefined) {
     writeFileSync(join(sessionDir, 'session.jsonl'), header + '\n')
     return
@@ -102,6 +113,15 @@ describe('listProjectSessions', () => {
     expect(sessions.map(session => session.id)).toEqual(['newer', 'older'])
     expect(sessions[1]?.title).toBe('')
   })
+
+  it('excludes subagent-owned sessions from project resume and continue flows', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-code-home-'))
+    dirs.push(home)
+    const base = join(home, 'sessions', projectKey('/proj'))
+    writeSessionLog(join(base, 'main'), 'main', 1000, 'main session')
+    writeSessionLog(join(base, 'child'), 'child', 2000, 'delegated task', '/proj', 'subagent')
+    expect(listProjectSessions(home, '/proj').map(session => session.id)).toEqual(['main'])
+  })
 })
 
 describe('listAllSessions', () => {
@@ -112,6 +132,14 @@ describe('listAllSessions', () => {
     writeSessionLog(join(home, 'sessions', projectKey('/b'), 'b-session'), 'b-session', 3000, 'beta')
     const sessions = listAllSessions(home)
     expect(sessions.map(session => session.id)).toEqual(['b-session', 'a-session'])
+  })
+
+  it('excludes subagent-owned sessions from the all-folder resume scope', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-code-home-'))
+    dirs.push(home)
+    writeSessionLog(join(home, 'sessions', projectKey('/a'), 'main'), 'main', 1000, 'main')
+    writeSessionLog(join(home, 'sessions', projectKey('/b'), 'child'), 'child', 2000, 'child', '/b', 'subagent')
+    expect(listAllSessions(home).map(session => session.id)).toEqual(['main'])
   })
 })
 

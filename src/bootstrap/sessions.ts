@@ -112,6 +112,8 @@ export interface ProjectSession {
   dir: string
   /** The session's project path from the log header, `undefined` when absent. */
   cwd: string | undefined
+  /** Durable owner marker; `subagent` sessions are hidden from launcher resume flows. */
+  origin?: 'subagent'
 }
 
 /** Join the text blocks of a message into one normalized, single-line string. */
@@ -142,11 +144,18 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
     let id = fallbackId
     let createdAt: number | undefined
     let cwd: string | undefined
+    let origin: 'subagent' | undefined
     try {
-      const header = JSON.parse(lines[0] ?? '{}') as { id?: unknown; createdAt?: unknown; cwd?: unknown }
+      const header = JSON.parse(lines[0] ?? '{}') as {
+        id?: unknown
+        createdAt?: unknown
+        cwd?: unknown
+        origin?: unknown
+      }
       if (typeof header.id === 'string') id = header.id
       if (typeof header.createdAt === 'number') createdAt = header.createdAt
       if (typeof header.cwd === 'string') cwd = header.cwd
+      if (header.origin === 'subagent') origin = header.origin
     } catch {
       // Malformed header — keep the directory-name id and no timestamp.
     }
@@ -165,7 +174,7 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
       title = firstUserText(event.data.content)
       break
     }
-    return { id, title, createdAt, dir: sessionDir, cwd }
+    return { id, title, createdAt, dir: sessionDir, cwd, ...(origin === undefined ? {} : { origin }) }
   }
   return empty
 }
@@ -187,7 +196,9 @@ function dirNames(base: string): string[] {
  */
 export function listProjectSessions(home: string, cwd: string): ProjectSession[] {
   const projectDir = join(home, 'sessions', projectKey(cwd))
-  const sessions = dirNames(projectDir).map(name => readSessionEntry(join(projectDir, name), name))
+  const sessions = dirNames(projectDir)
+    .map(name => readSessionEntry(join(projectDir, name), name))
+    .filter(session => session.origin !== 'subagent')
   return sessions.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
 }
 
@@ -200,7 +211,10 @@ export function listAllSessions(home: string): ProjectSession[] {
   const sessions: ProjectSession[] = []
   for (const projectDir of dirNames(sessionsRoot)) {
     const base = join(sessionsRoot, projectDir)
-    for (const name of dirNames(base)) sessions.push(readSessionEntry(join(base, name), name))
+    for (const name of dirNames(base)) {
+      const session = readSessionEntry(join(base, name), name)
+      if (session.origin !== 'subagent') sessions.push(session)
+    }
   }
   return sessions.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
 }

@@ -7,6 +7,7 @@ import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import {
   createMainViewportLayout,
   createAutocompleteProvider,
+  AGENTS_PANEL_URL,
   DEFAULT_PROMPT_PLACEHOLDER,
   formatActivityDuration,
   halveBlockArt,
@@ -18,6 +19,7 @@ import {
   renderDiffRows,
   renderReasoningLines,
   renderQueuedMessageLines,
+  renderSubagentIndicator,
   renderWorkingMessage,
   renderWelcomeBanner,
   renderStatus,
@@ -166,6 +168,21 @@ describe('incremental transcript surface', () => {
     surface.render(80)
     expect(builds).toBe(3)
   })
+
+  it('lets later transcript output flow after a one-time UI notice', () => {
+    const surface = new TranscriptSurface({
+      renderItem: item => [{ invalidate: () => {}, render: () => [item.kind === 'assistant' ? item.text : item.kind] }],
+    })
+    const user = { kind: 'user' as const, text: 'question' }
+    const assistant = { kind: 'assistant' as const, text: 'new output' }
+
+    surface.sync({ transcript: [user], draft: undefined, expanded: false, version: '1', shellResults: [], notices: ['agent detail'] })
+    expect(surface.render(80).map(stripTerminalSequences).join('\n')).toContain('agent detail')
+
+    surface.sync({ transcript: [user, assistant], draft: undefined, expanded: false, version: '1', shellResults: [], notices: ['agent detail'] })
+    const lines = surface.render(80).map(stripTerminalSequences)
+    expect(lines.findIndex(line => line.includes('agent detail'))).toBeLessThan(lines.indexOf('new output'))
+  })
 })
 
 describe('queued follow-up panel', () => {
@@ -215,6 +232,18 @@ describe('working activity', () => {
     }
 
     expect(renderWorkingMessage(view, now)).toBe('Retrying (2/5) in 6s (1m 2s • esc to interrupt)')
+  })
+})
+
+describe('subagent status', () => {
+  it('renders only as an independent clickable row while subagents are active', () => {
+    const view = emptyViewModel('session')
+
+    expect(renderStatus(view)).not.toContain('subagent')
+    expect(renderSubagentIndicator(0, 80)).toEqual([])
+    const active = renderSubagentIndicator(2, 80).join('\n')
+    expect(active).toContain('⚡ 2 subagents running')
+    expect(active).toContain(AGENTS_PANEL_URL)
   })
 })
 
