@@ -199,9 +199,10 @@ function formatTokens(count: number): string {
 }
 
 /** Extract a readable command/path from a tool call's raw JSON arguments. */
-function toolArgumentSummary(rawArguments: string): string {
+function toolArgumentSummary(rawArguments: string, toolName: string): string {
   try {
     const parsed = JSON.parse(rawArguments) as Record<string, unknown>
+    if (toolName === 'run_code' && typeof parsed.description === 'string') return parsed.description
     if (typeof parsed.command === 'string') return parsed.command
     if (typeof parsed.path === 'string') return parsed.path
   } catch {
@@ -385,8 +386,9 @@ function renderItemBlocks(item: TranscriptItem, expanded: boolean): Component[] 
     }
     case 'tool': {
       const rows: ToolCardRow[] = []
-      const command = toolArgumentSummary(item.arguments)
-      const head = `${theme.accent('⚙')} ${theme.bold(item.name)}`
+      const command = toolArgumentSummary(item.arguments, item.name)
+      const nested = item.parentCallId === undefined ? '' : `${theme.dim('↳')} `
+      const head = `${nested}${theme.accent('⚙')} ${theme.bold(item.name)}`
       if (item.status === 'running') {
         rows.push({ text: theme.warning(`${head} …`), kind: 'normal' })
         if (command !== '') rows.push({ text: theme.dim(`  $ ${command}`), kind: 'body', format: 'plain' })
@@ -693,6 +695,7 @@ export function renderStatus(
   view: TuiViewModel,
   model?: { provider: string; model: string },
   contextTokens?: number,
+  agentMode?: 'standard' | 'ptc',
 ): string {
   const parts: string[] = []
   if (model !== undefined) {
@@ -700,6 +703,7 @@ export function renderStatus(
     parts.push(`${theme.accent(model.model)}${effort}`)
   }
   if (view.permission !== undefined) parts.push(theme.accent(view.permission))
+  if (agentMode !== undefined) parts.push(theme.accent(agentMode === 'ptc' ? 'PTC' : 'Standard'))
   if (view.plan) parts.push(theme.accent('plan'))
   if (contextTokens !== undefined) {
     const window = view.contextWindow
@@ -1014,6 +1018,7 @@ export class TuiHost {
   private readonly detachInput: () => void
   private draft: AssistantDraft | undefined
   private model: { provider: string; model: string } | undefined
+  private agentMode: 'standard' | 'ptc' = 'standard'
   private contextTokens: number | undefined
   private projectName = ''
   private projectBranch: string | undefined
@@ -1118,7 +1123,7 @@ export class TuiHost {
     this.todoList.set(view.todos)
     this.queuedMessages.set(view.queuedMessages)
     this.updateWorkingIndicator(view)
-    this.status.set(renderStatus(view, this.model, this.contextTokens), this.projectLabel())
+    this.status.set(renderStatus(view, this.model, this.contextTokens, this.agentMode), this.projectLabel())
     this.tui.requestRender()
   }
 
@@ -1199,6 +1204,12 @@ export class TuiHost {
   /** Pin the model provenance shown in the status line. */
   setModel(model: { provider: string; model: string }): void {
     this.model = model
+  }
+
+  /** Pin the active session execution mode shown in the status line. */
+  setAgentMode(mode: 'standard' | 'ptc'): void {
+    this.agentMode = mode
+    if (this.lastView !== undefined) this.render(this.lastView)
   }
 
   /** Set the current request context size (tokens) for the status line. */

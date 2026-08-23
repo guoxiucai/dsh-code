@@ -12,7 +12,7 @@ export type Phase = 'idle' | 'running' | 'waiting-approval' | 'waiting-user' | '
 export type TranscriptItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string; reasoning?: string; reasoningDurationMs?: number }
-  | { kind: 'tool'; callId: string; name: string; arguments: string; status: 'running' | 'done' | 'error'; resultText?: string; errorCode?: string; startedAt?: number; elapsedMs?: number; diffs?: ToolDiff[] }
+  | { kind: 'tool'; callId: string; parentCallId?: string; name: string; arguments: string; status: 'running' | 'done' | 'error'; resultText?: string; errorCode?: string; startedAt?: number; elapsedMs?: number; diffs?: ToolDiff[] }
   | { kind: 'notice'; text: string }
 
 /** A file diff carried by a write/edit tool result (from the tool's `meta`). */

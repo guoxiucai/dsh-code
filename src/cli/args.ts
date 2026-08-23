@@ -6,6 +6,9 @@
  * @module dsh-code/cli/args
  */
 
+import type { AgentMode } from '../agent-mode.ts'
+import { parseAgentMode } from '../agent-mode.ts'
+
 /** Interactive terminal invocation, optionally resuming a specific session. */
 export interface TuiInvocation {
   mode: 'tui'
@@ -15,6 +18,8 @@ export interface TuiInvocation {
   resumePicker?: boolean
   /** `dsh-code -c`/`--continue`: resume the latest session, or start fresh. */
   continueLatest?: boolean
+  /** Mode requested for a new session. Resumed sessions always use their log. */
+  agentMode?: AgentMode
 }
 
 /** One-shot prompt invocation (delegates to the upstream `headless` profile). */
@@ -54,6 +59,15 @@ export function parseArgs(argv: readonly string[]): Invocation {
   const first = argv[0] ?? ''
   if (first === '--help' || first === '-h') return { mode: 'help' }
   if (first === '--version' || first === '-V') return { mode: 'version' }
+
+  if (first === '--mode' || first.startsWith('--mode=')) {
+    const raw = first === '--mode' ? argv[1] : first.slice('--mode='.length)
+    const agentMode = raw === undefined ? undefined : parseAgentMode(raw)
+    if (agentMode === undefined) return { mode: 'error', message: '--mode expects standard or ptc' }
+    const consumed = first === '--mode' ? 2 : 1
+    if (argv.length !== consumed) return { mode: 'error', message: '--mode is only valid when starting a new interactive session' }
+    return { mode: 'tui', agentMode }
+  }
 
   if (first === '-r' || first === '--resume') return { mode: 'tui', resumePicker: true }
   if (first === '-c' || first === '--continue') return { mode: 'tui', continueLatest: true }
@@ -130,6 +144,7 @@ export const HELP_TEXT = `dsh-code — terminal coding agent powered by DeepSeek
 
 Usage:
   dsh-code                         start the interactive terminal UI
+  dsh-code --mode <standard|ptc>   start a new session in Standard or PTC mode
   dsh-code resume [session-id]     resume a persisted session (selector when no id)
   dsh-code -r, --resume            open the session picker
   dsh-code -c, --continue          resume the latest session (or start fresh)

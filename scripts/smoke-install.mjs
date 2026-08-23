@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writ
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import {
   DIST,
   candidateMetadata,
@@ -89,6 +90,28 @@ try {
   const productRequire = createRequire(join(productRoot, 'package.json'))
   const dshManifest = JSON.parse(readFileSync(productRequire.resolve('@deepseek-ai/dsh/package.json'), 'utf8'))
   if (typeof dshManifest.version !== 'string') throw new Error('installed product cannot resolve its DSH runtime')
+
+  const cordisUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/cordis')).href
+  const codeRuntimeUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/dsh-code-runtime-worker-thread')).href
+  const warningFilter = join(productRoot, 'lib', 'bootstrap', 'node-warning-filter.js')
+  const ptcSmoke = `
+    const { Context } = await import(${JSON.stringify(cordisUrl)})
+    const { WorkerThreadCodeRuntime } = await import(${JSON.stringify(codeRuntimeUrl)})
+    const ctx = new Context()
+    await ctx.plugin(WorkerThreadCodeRuntime, {})
+    const result = await ctx.codeRuntime.run({ program: 'const value: number = 42; return value', bindings: [] })
+    console.log(JSON.stringify(result))
+  `
+  const ptcResult = run(process.execPath, ['--import', warningFilter, '--input-type=module', '-e', ptcSmoke], {
+    cwd: productRoot,
+    capture: true,
+    timeout: 60_000,
+  })
+  if (ptcResult.stderr.includes('ExperimentalWarning: stripTypeScriptTypes')) {
+    throw new Error('installed PTC runtime leaked Node type-strip warning to stderr')
+  }
+  const ptcValue = JSON.parse(ptcResult.stdout.trim())
+  if (ptcValue.value !== 42 || ptcValue.error !== undefined) throw new Error('installed PTC runtime smoke failed')
 
   if (coexist) {
     const globalDshVersion = runCommandBin(dshBin, ['--version']).stdout.trim()

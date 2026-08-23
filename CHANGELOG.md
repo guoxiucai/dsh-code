@@ -20,8 +20,16 @@
 - Isolated noisy stdio MCP server stderr from the alternate-screen TUI through
   a transparent cross-platform proxy; diagnostics now rotate under
   `~/.dsh-code/logs/mcp/` instead of corrupting the bottom-pinned layout.
-- Made the upstream `standard` Agent Preset the explicit dsh-code default for
-  new and resumed TUI sessions; mode switching remains intentionally absent.
+- Added Standard/PTC session modes while keeping `standard` as the default:
+  `--mode` selects a fresh session, `/mode` can recompose only before the first
+  turn, and resume reconstructs the preset recorded in the session log.
+- Mounted the worker-thread Code Runtime for PTC and rendered its durable child
+  calls as native, five-line-collapsed tool rows while keeping file diffs fully
+  expanded across live output and replay.
+- Prevented the first PTC execution from writing Node's type-strip
+  `ExperimentalWarning` through the alternate-screen TUI. The compatibility
+  preload matches only that warning, preserves all other process warnings, and
+  the installed-package smoke now executes a typed PTC program to guard it.
 - Made long-session transcript rendering incremental and cached, reducing the
   OHBM benchmark's steady-frame P95 from 76.09 ms to 0.13 ms while keeping
   committed history selectable and searchable.

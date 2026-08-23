@@ -10,6 +10,7 @@ import { initDshCodeProfile } from '../../src/bootstrap/profile.ts'
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const dshBin = join(repoRoot, 'deepseek-harness/apps/cli/lib/bin.js')
 const smokePlugin = fileURLToPath(new URL('../fixtures/standard-preset-smoke.mjs', import.meta.url))
+const ptcSmokePlugin = fileURLToPath(new URL('../fixtures/ptc-preset-smoke.mjs', import.meta.url))
 const dirs: string[] = []
 
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
@@ -49,5 +50,25 @@ describe('standard Agent Preset composition', () => {
     expect(report.headerPreset).toBe('standard')
     expect(report.agentTools).toEqual(expect.arrayContaining(['bash', 'read', 'write', 'edit', 'todo_write']))
     expect(report.globalTools).not.toEqual(expect.arrayContaining(['bash', 'read', 'write', 'edit', 'todo_write']))
+  }, 60_000)
+
+  it('boots the official PTC preset with the worker runtime and code-only tool presentation', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-code-ptc-home-'))
+    const project = mkdtempSync(join(tmpdir(), 'dsh-code-ptc-project-'))
+    dirs.push(home, project)
+    initDshCodeProfile(home, pathToFileURL(ptcSmokePlugin).href, project)
+
+    const result = await run(home, project)
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout.trim())).toMatchObject({
+      preset: 'code',
+      headerPreset: 'code',
+      runtimeLanguage: 'typescript',
+      runtimeResult: { logs: [], value: 42 },
+      agentTools: ['run_code'],
+      hasSdk: true,
+    })
   }, 60_000)
 })

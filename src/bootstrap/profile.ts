@@ -11,12 +11,12 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { DEFAULT_AGENT_PRESET } from '../agent-mode.ts'
 
 /** The profile name dsh-code boots. */
 export const DSH_CODE_PROFILE_NAME = 'dsh-code'
 
-/** The single upstream Agent Preset currently supported by dsh-code. */
-export const DEFAULT_AGENT_PRESET = 'standard'
+export { DEFAULT_AGENT_PRESET } from '../agent-mode.ts'
 
 /**
  * Model-facing rows supplied by dsh-base for a process-wide TUI agent. Once
@@ -102,11 +102,18 @@ ${PRESET_OWNED_BASE_ROWS.map(id => `- id: ${id}\n  disabled: true`).join('\n\n')
 
 - insert:
     # The upstream launcher supplies its shipped preset root automatically
-    # whenever this service is present. dsh-code currently mounts only standard.
+    # whenever this service is present. dsh-code exposes Standard and PTC,
+    # while keeping Standard as the product default.
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
       config:
         default: ${DEFAULT_AGENT_PRESET}
+
+    # PTC executes the model-authored TypeScript program in an isolated worker.
+    # Standard does not expose run_code, but sharing the host runtime keeps a
+    # blank-session switch transactional and avoids restarting the process.
+    - id: dsh-code-code-runtime
+      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
     # Discovery only: a second upstream provider reads compatible skill roots.
     # dsh-code never installs, deletes, or copies skills from these products.

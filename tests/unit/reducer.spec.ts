@@ -78,6 +78,33 @@ describe('session event reducer', () => {
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'tool', status: 'error', errorCode: 'E1' })
   })
 
+  it('renders durable PTC child calls and preserves their file diffs on replay', () => {
+    const events = [
+      ev('turn/start', 0, { turn: 1 }),
+      ev('tool/call', 1, { turn: 1, step: 1, callId: 'root', name: 'run_code', arguments: '{"description":"Update config","code":"..."}' }),
+      ev('tool/code-dispatch-start', 2, {
+        rootCallId: 'root', parentCallId: 'root', subCallId: 'root:code:1', name: 'edit', arguments: { path: 'a.ts' },
+      }),
+      ev('tool/code-dispatch', 3, {
+        rootCallId: 'root', parentCallId: 'root', subCallId: 'root:code:1', name: 'edit', arguments: { path: 'a.ts' },
+        isError: false,
+        content: [{ type: 'text', text: 'updated a.ts' }],
+        meta: { diffs: [{ path: 'a.ts', oldText: 'old\n', newText: 'new\n' }] },
+      }),
+    ]
+
+    const state = replayEvents('ptc', events)
+    expect(state.transcript).toHaveLength(2)
+    expect(state.transcript[1]).toMatchObject({
+      kind: 'tool',
+      parentCallId: 'root',
+      callId: 'root:code:1',
+      name: 'edit',
+      status: 'done',
+      diffs: [{ path: 'a.ts', oldText: 'old\n', newText: 'new\n' }],
+    })
+  })
+
   it('EVT-005: a repeated seq is deduplicated', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))

@@ -319,6 +319,29 @@ describe('tool diff rendering', () => {
 })
 
 describe('tool output rendering', () => {
+  it('marks PTC child calls as nested and summarizes run_code by description', () => {
+    const child = renderTranscriptItemLines({
+      kind: 'tool',
+      callId: 'root:code:1',
+      parentCallId: 'root',
+      name: 'read',
+      arguments: JSON.stringify({ path: 'src/index.ts' }),
+      status: 'done',
+      resultText: 'ok',
+    }, 60, false).map(stripTerminalSequences).join('\n')
+    const root = renderTranscriptItemLines({
+      kind: 'tool',
+      callId: 'root',
+      name: 'run_code',
+      arguments: JSON.stringify({ description: 'Inspect project', code: 'very long code' }),
+      status: 'running',
+    }, 60, false).map(stripTerminalSequences).join('\n')
+
+    expect(child).toContain('↳ ⚙ read')
+    expect(root).toContain('$ Inspect project')
+    expect(root).not.toContain('very long code')
+  })
+
   it('limits a running subagent card with a long single-line prompt to five body rows', () => {
     const item = {
       kind: 'tool',
@@ -481,6 +504,11 @@ describe('renderTodoLines', () => {
     const status = renderStatus(view, { provider: 'deepseek', model: 'deepseek-chat' })
     expect(status).toContain('deepseek-chat')
     expect(status).not.toContain('Todo must stay in its own panel')
+  })
+
+  it('shows the selected agent mode as independent status chrome', () => {
+    const status = renderStatus(emptyViewModel('session'), { provider: 'deepseek', model: 'deepseek-chat' }, undefined, 'ptc')
+    expect(stripTerminalSequences(status)).toContain('deepseek-chat · PTC')
   })
 })
 

@@ -106,6 +106,9 @@ node lib/bin.js
   reasoning and verbose tool bodies, always-visible line-numbered file diffs,
   selectable/copyable results, themed paste markers, shell blocks, and a
   bottom-pinned composer.
+- **Standard and PTC modes** — Standard makes direct tool calls; PTC composes
+  multi-step work in one TypeScript program. PTC child calls use native tool
+  rows, with long bodies collapsed and file diffs always visible.
 - **DeepSeek Harness semantics** — uses DSH's public session/events and services;
   there is no second agent loop, session store, permission engine, or tool registry.
 - **Model setup in the TUI** — configure DeepSeek, OpenAI, or an
@@ -135,7 +138,7 @@ flowchart TB
   User["Terminal user"] --> CLI["dsh-code launcher"]
   CLI --> TUI["Terminal host<br/>Pi-inspired UX + pi-tui"]
   TUI --> API["Public DSH services<br/>session/event + AgentHandle"]
-  API --> DSH["@deepseek-ai/dsh-base<br/>standard Agent Preset"]
+  API --> DSH["@deepseek-ai/dsh-base<br/>Standard / PTC Agent Preset"]
   DSH --> Runtime["Agent Loop · Sessions · Models · Tools<br/>Sandbox · Permissions · MCP · Skills<br/>Plan/Todo · Sub-agents"]
 ```
 
@@ -143,8 +146,11 @@ The launcher owns only product concerns: command parsing, `~/.dsh-code` home
 isolation, project trust, session selection, profile initialization, updates,
 and delegation to the upstream DSH executable. The TUI renders structured
 events and sends input back through the public `AgentHandle` API.
-TUI sessions explicitly mount the upstream `standard` Agent Preset; alternate
-Preset switching is not exposed yet.
+The TUI exposes only the upstream `standard` (Standard) and `code` (PTC) Agent
+Presets. New sessions default to Standard and may select PTC at startup or via
+`/mode` before the first turn. The mode locks when that turn starts; resume
+always reconstructs the preset recorded in the event log, so an existing tool
+history never changes schema underneath itself.
 
 See the accepted architecture decisions in [`docs/adr/`](docs/adr/) and the
 exact upstream revision in [`UPSTREAM_BASELINE.md`](UPSTREAM_BASELINE.md).
@@ -184,6 +190,7 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | Command | Description |
 | --- | --- |
 | `dsh-code` | Start a new interactive TUI session |
+| `dsh-code --mode standard\|ptc` | Start a new session in Standard or PTC mode |
 | `dsh-code -c`, `--continue` | Continue the latest session for this project |
 | `dsh-code -r`, `--resume` | Open the searchable session picker |
 | `dsh-code resume [session-id]` | Resume a selected or explicit session |
@@ -200,6 +207,7 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | --- | --- |
 | `/config` | Configure DeepSeek, OpenAI, or an OpenAI-compatible provider |
 | `/model` | Switch the active model using an inline selector |
+| `/mode [standard\|ptc]` | Select a blank session's mode; locked after the first turn |
 | `/permission` | Select the active permission preset |
 | `/goal` | View and manage the upstream DSH long-running goal inline |
 | `/skills [search]` | Discover skills; Space toggles dsh-code-only enablement and Enter invokes the selected skill |

@@ -21,6 +21,8 @@ import type {} from '@deepseek-ai/dsh-plan-mode'
 import type {} from '@deepseek-ai/dsh-llm-retry'
 import type {} from '@deepseek-ai/dsh-compaction'
 import type {} from '@deepseek-ai/dsh-agent'
+// Declaration-merges the nested PTC dispatch lifecycle into SessionEvent.
+import type {} from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 
@@ -56,8 +58,8 @@ const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'sandbox/mode', 'schedule/change', 'session/title', 'session/title-llm-request',
   'subagent/descriptor', 'team/member', 'team/message/delivered',
   'team/message/queued', 'team/task', 'tool-workflow/agent-end', 'tool-workflow/agent-start',
-  'tool-workflow/run-end', 'tool-workflow/run-start', 'tool/code-dispatch',
-  'tool/code-dispatch-start', 'web/deepseek-search-llm-request',
+  'tool-workflow/run-end', 'tool-workflow/run-start',
+  'web/deepseek-search-llm-request',
 ])
 
 /** In-flight assistant stream (not yet committed to the transcript). */
@@ -311,6 +313,37 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
           status: failed ? 'error' : 'done',
           ...(resultText !== '' ? { resultText } : {}),
           ...(event.data.error !== undefined ? { errorCode: event.data.error.code } : {}),
+          ...(item.startedAt !== undefined ? { elapsedMs: event.time - item.startedAt } : {}),
+          ...(diffs !== undefined ? { diffs } : {}),
+        } as const
+        : item)
+      return { ...base, phase: 'running', transcript }
+    }
+
+    case 'tool/code-dispatch-start':
+      return {
+        ...base,
+        phase: 'running',
+        transcript: [...commitDraft(state), {
+          kind: 'tool',
+          callId: String(event.data.subCallId),
+          parentCallId: String(event.data.parentCallId),
+          name: event.data.name,
+          arguments: JSON.stringify(event.data.arguments),
+          status: 'running',
+          startedAt: event.time,
+        }],
+      }
+
+    case 'tool/code-dispatch': {
+      const callId = String(event.data.subCallId)
+      const resultText = toolResultText(textOf(event.data.content))
+      const diffs = diffsFromMeta(event.data.meta)
+      const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId
+        ? {
+          ...item,
+          status: event.data.isError ? 'error' : 'done',
+          ...(resultText !== '' ? { resultText } : {}),
           ...(item.startedAt !== undefined ? { elapsedMs: event.time - item.startedAt } : {}),
           ...(diffs !== undefined ? { diffs } : {}),
         } as const

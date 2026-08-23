@@ -191,7 +191,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       credentials.ts           # 首次启动凭据存在性判断 + launcher→TUI 引导标记
       trust.ts                 # 项目信任（canonical path + sha256 + 三档权限）
       trust-picker.ts          # 全屏 TUI 信任选择器
-      profile.ts               # 初始化 profile（dsh-base + standard Agent Preset + ask-user/TUI patch）
+      profile.ts               # 初始化 profile（dsh-base + Standard/PTC Preset + Code Runtime + ask-user/TUI patch）
       sessions.ts              # 会话列表：projectKey + zstd 多 frame 解码 + 首条用户消息
       resume-picker.ts         # 全屏会话选择器（-r/--resume：搜索/删除二次确认/Tab 切换项目范围）
     tui/
@@ -234,11 +234,11 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - `inject` 包含 `agents`、`agentPresets`、`agentDefaultModel`、`sessions`、`commands`、`llm`、`credentials`、`settings`、
   `permissionPresets`、`shell`、`tokenMeter`、`userQuestions`。
 - Profile 关闭 `dsh-base` 中改由 Preset 所有的 model-facing 全局行，并注册上游 `agent-presets` roster；上游启动器自动注入随安装包发布的 Preset 根目录。
-- 用 `agents.create` / `agents.resume` 创建/恢复 agent；setup 先挂载官方 `standard` Agent Preset，再用 `installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。新会话 Header 持久化 `agentPreset: standard`，旧会话恢复时也按 standard 组装。目前不提供其他模式切换。
+- 用 `agents.create` / `agents.resume` 创建/恢复 agent；setup 挂载官方 `standard`（Standard）或 `code`（PTC）Agent Preset，再用 `installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。新会话 Header 持久化启动 Preset；恢复时通过 `resolveSessionPreset` 按日志重建。`/mode` 仅允许在首个 `turn/start` 前重组，避免已有工具历史与新 schema 不一致。
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
 - `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
   上游 Registry 中可由用户调用的 Skill → 普通 `agent.followup`。命令名优先于同名 Skill。
-- 注册 slash 命令：`/model` `/config` `/skills` `/agents` `/mcp` `/session` `/rename`
+- 注册 slash 命令：`/model` `/mode` `/config` `/skills` `/agents` `/mcp` `/session` `/rename`
   `/jobs` `/export` `/fork` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
 - `/skills` 不建立第二套 Skill Store。基础 provider 读取项目 `.dsh/.agents`、独立
   `~/.dsh-code/skills` 与 `~/.agents/skills`；Profile 中的第二个上游 filesystem provider
@@ -461,7 +461,7 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | 无已存 Credential 时自动进入首次模型/API Token 配置 | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
 | session resume（`resume <id>`、`-c` 最近会话、`-r` 全屏选择器，删除二次确认）、fork | ✅ |
-| 命令面板（/model /config /skills /agents /mcp /session /rename /jobs /export /fork /quit /exit） | ✅ |
+| 命令面板（/model /mode /config /skills /agents /mcp /session /rename /jobs /export /fork /quit /exit） | ✅ |
 | Markdown 渲染、带行号及整行背景的工具 diff | ✅ |
 | 思考最新 5 行/工具结果折叠（Ctrl+O）、结果选择复制、整块背景、块间距、页脚 | ✅ |
 | loading / retry / compaction 状态指示 | ✅ |

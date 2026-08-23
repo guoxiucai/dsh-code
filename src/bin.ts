@@ -17,7 +17,9 @@ import { resolveDshCodeHome } from './bootstrap/home.ts'
 import { FIRST_MODEL_CONFIG_ENV, hasStoredCredential } from './bootstrap/credentials.ts'
 import { initDshCodeProfile } from './bootstrap/profile.ts'
 import { listProjectSessions } from './bootstrap/sessions.ts'
+import { appendNodeImport } from './bootstrap/node-options.ts'
 import { createEphemeralMcpPatch, migrateLegacyProjectMcpConfig } from './tui/mcp-config.ts'
+import { AGENT_MODE_ENV } from './agent-mode.ts'
 import {
   canonicalizeProjectPath,
   isProjectTrusted,
@@ -35,8 +37,13 @@ function tuiPluginUrl(): string {
   return new URL('./tui/plugin.js', import.meta.url).href
 }
 
+/** Node preload used only by the delegated interactive process. */
+function warningFilterUrl(): string {
+  return new URL('./bootstrap/node-warning-filter.js', import.meta.url).href
+}
+
 /** Child-process environment with home isolation and telemetry disabled. */
-function delegatedEnv(home: string, firstModelConfig = false): NodeJS.ProcessEnv {
+function delegatedEnv(home: string, firstModelConfig = false, agentMode?: TuiInvocation['agentMode']): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: home,
@@ -44,7 +51,16 @@ function delegatedEnv(home: string, firstModelConfig = false): NodeJS.ProcessEnv
   }
   // Never inherit a stale/spoofed onboarding signal from the parent shell.
   delete env[FIRST_MODEL_CONFIG_ENV]
+  delete env[AGENT_MODE_ENV]
   if (firstModelConfig) env[FIRST_MODEL_CONFIG_ENV] = '1'
+  if (agentMode !== undefined) env[AGENT_MODE_ENV] = agentMode
+  return env
+}
+
+/** Interactive child environment, including the narrowly scoped PTC warning filter. */
+function tuiDelegatedEnv(home: string, firstModelConfig: boolean, agentMode?: TuiInvocation['agentMode']): NodeJS.ProcessEnv {
+  const env = delegatedEnv(home, firstModelConfig, agentMode)
+  env.NODE_OPTIONS = appendNodeImport(env.NODE_OPTIONS, warningFilterUrl())
   return env
 }
 
@@ -113,7 +129,7 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   const firstModelConfig = !hasStoredCredential(home)
   return delegateDsh(
     ['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs],
-    delegatedEnv(home, firstModelConfig),
+    tuiDelegatedEnv(home, firstModelConfig, appArgs.length === 0 ? invocation.agentMode : undefined),
   )
 }
 

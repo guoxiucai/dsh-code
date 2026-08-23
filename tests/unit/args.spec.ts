@@ -5,6 +5,14 @@ describe('parseArgs', () => {
   it('CLI-001: --help', () => { expect(parseArgs(['--help'])).toEqual({ mode: 'help' }) })
   it('CLI-002: --version', () => { expect(parseArgs(['--version'])).toEqual({ mode: 'version' }) })
   it('defaults to the interactive TUI', () => { expect(parseArgs([])).toEqual({ mode: 'tui' }) })
+  it('starts a fresh PTC or Standard session explicitly', () => {
+    expect(parseArgs(['--mode', 'ptc'])).toEqual({ mode: 'tui', agentMode: 'ptc' })
+    expect(parseArgs(['--mode=standard'])).toEqual({ mode: 'tui', agentMode: 'standard' })
+  })
+  it('rejects unknown modes and mode overrides on resume', () => {
+    expect(parseArgs(['--mode', 'creative']).mode).toBe('error')
+    expect(parseArgs(['--mode', 'ptc', 'resume', 'abc']).mode).toBe('error')
+  })
   it('resume without id opens the selector', () => { expect(parseArgs(['resume'])).toEqual({ mode: 'tui', resumePicker: true }) })
   it('resume with id', () => { expect(parseArgs(['resume', 'abc'])).toEqual({ mode: 'tui', resume: 'abc' }) })
   it('-r opens the session picker', () => { expect(parseArgs(['-r'])).toEqual({ mode: 'tui', resumePicker: true }) })

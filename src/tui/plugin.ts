@@ -13,7 +13,7 @@ import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 // Declaration-merges the upstream Agent Preset roster onto Context.
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 // Empty type imports declaration-merge `agentDefaultModel`, `cmdlineArgs`, and
 // `appExit` onto Context (same contract the upstream headless runner relies on).
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -77,7 +77,17 @@ import {
 } from './skill-preferences.ts'
 import { credentialEnvName } from './config-wizard.ts'
 import { FIRST_MODEL_CONFIG_ENV } from '../bootstrap/credentials.ts'
-import { DEFAULT_AGENT_PRESET } from '../bootstrap/profile.ts'
+import {
+  AGENT_MODE_ENV,
+  AGENT_MODE_OPTIONS,
+  DEFAULT_AGENT_MODE,
+  agentModeForPreset,
+  parseAgentMode,
+  presetForAgentMode,
+  sessionCanSwitchMode,
+  type AgentMode,
+  type SupportedAgentPreset,
+} from '../agent-mode.ts'
 import {
   defaultExportFilename,
   exportFormatForPath,
@@ -173,15 +183,24 @@ async function run(ctx: Context): Promise<void> {
   const sessions = ctx.sessions
   const innerArgs = ctx.cmdlineArgs?.get() ?? []
   const resumeId = parseResumeArg(innerArgs)
+  const requestedMode = parseAgentMode(process.env[AGENT_MODE_ENV] ?? '') ?? DEFAULT_AGENT_MODE
+  const requestedPreset = presetForAgentMode(requestedMode)
   const selection = defaultModel.currentSelection()
   const modelOptions = { provider: selection.provider, model: selection.model }
   const modelRef: ModelSelectionRef = { current: { provider: selection.provider, model: selection.model }, assembled: undefined }
   const dshCodeHome = process.env.DSH_HOME ?? join(homedir(), '.dsh-code')
   const disabledSkills = readDisabledSkills(dshCodeHome)
   let disabledSkillControl: SkillProviderControl | undefined
+  let activePreset: SupportedAgentPreset = requestedPreset
 
   const setup = async (agentCtx: Context): Promise<void> => {
-    await ctx.agentPresets.mount(agentCtx, DEFAULT_AGENT_PRESET)
+    const recorded = agentCtx.agent === undefined ? undefined : resolveSessionPreset(agentCtx.agent.session)
+    const preset = resumeId === undefined ? requestedPreset : (recorded ?? 'standard')
+    if (preset !== 'standard' && preset !== 'code') {
+      throw new Error(`session uses unsupported agent preset ${JSON.stringify(preset)}`)
+    }
+    activePreset = preset
+    await ctx.agentPresets.mount(agentCtx, preset)
     installModelSelection(agentCtx, modelRef)
     await installDisabledSkillProvider(agentCtx, disabledSkills, (control) => { disabledSkillControl = control })
   }
@@ -192,7 +211,7 @@ async function run(ctx: Context): Promise<void> {
     ? await agents.resume({ resumeSessionId: SessionId(resumeId), agentOptions: modelOptions, setup })
     : await agents.create({
       sessionId: SessionId(`session-${randomUUID()}`),
-      meta: { cwd: process.cwd(), agentPreset: DEFAULT_AGENT_PRESET },
+      meta: { cwd: process.cwd(), agentPreset: requestedPreset },
       agentOptions: modelOptions,
       setup,
     })
@@ -208,8 +227,13 @@ async function run(ctx: Context): Promise<void> {
   const activeSubagentRuns = new Map<string, string>()
   const dismissedSubagents = new Set<string>()
   let openAgentsPanel: () => void = () => {}
+  let modeSwitching = false
 
   const submitUserText = (text: string): void => {
+    if (modeSwitching) {
+      host.showNotice('mode switch in progress; send the message after it completes')
+      return
+    }
     agent.followup(createUserMessage({
       content: [{ type: 'text', text }],
       source: { kind: 'user' },
@@ -262,6 +286,7 @@ async function run(ctx: Context): Promise<void> {
     onOpenAgents: () => { openAgentsPanel() },
   })
   host.setModel({ provider: selection.provider, model: selection.model })
+  host.setAgentMode(agentModeForPreset(activePreset))
   host.setProject(basename(process.cwd()), detectGitBranch(process.cwd()))
   host.setVersion(readVersion())
 
@@ -472,6 +497,69 @@ async function run(ctx: Context): Promise<void> {
     input: { hint: '<provider/model>' },
     handler: ({ rawInput }) => {
       void runModelPicker(rawInput.trim())
+      return { kind: 'success' }
+    },
+  })
+
+  const switchAgentMode = async (mode: AgentMode): Promise<void> => {
+    const target = presetForAgentMode(mode)
+    if (target === activePreset) {
+      host.showNotice(`${AGENT_MODE_OPTIONS.find(option => option.mode === mode)?.label ?? mode} mode is already active`)
+      return
+    }
+    if (agent.status !== 'idle' || !sessionCanSwitchMode(agent.session.events)) {
+      host.showNotice(`this session is locked to ${agentModeForPreset(activePreset)} after its first turn; start a new one with dsh-code --mode ${mode}`)
+      return
+    }
+    modeSwitching = true
+    try {
+      await ctx.agentPresets.recompose(agent.ctx, target)
+      agent.session.append('agent-preset/selected', { agentPreset: target })
+      activePreset = target
+      host.setAgentMode(mode)
+      syncCommands()
+      host.showNotice(`switched this blank session to ${mode === 'ptc' ? 'PTC' : 'Standard'} mode`)
+    } catch (error) {
+      showCommandError('mode switch', error)
+    } finally {
+      modeSwitching = false
+    }
+  }
+
+  const runModePicker = (rawInput: string): void => {
+    const requested = rawInput.trim()
+    if (requested !== '') {
+      const mode = parseAgentMode(requested)
+      if (mode === undefined) {
+        host.showNotice('/mode expects standard or ptc')
+        return
+      }
+      void switchAgentMode(mode)
+      return
+    }
+    const current = agentModeForPreset(activePreset)
+    host.showSelector({
+      hint: sessionCanSwitchMode(agent.session.events)
+        ? 'Select the mode for this blank session. The choice locks after the first turn.'
+        : 'This session mode is locked after its first turn.',
+      borderColor: theme.selectorBorder,
+      items: AGENT_MODE_OPTIONS.map(option => ({
+        value: option.mode,
+        label: option.label,
+        description: option.description,
+        current: option.mode === current,
+      })),
+      onSelect: (mode) => { void switchAgentMode(mode as AgentMode) },
+      onCancel: () => {},
+    })
+  }
+
+  ctx.commands.register({
+    name: 'mode',
+    description: 'Select Standard or PTC mode (blank sessions only)',
+    input: { hint: '<standard|ptc>' },
+    handler: ({ rawInput }) => {
+      runModePicker(rawInput)
       return { kind: 'success' }
     },
   })
@@ -758,6 +846,7 @@ async function run(ctx: Context): Promise<void> {
     const revision = ++autocompleteRevision
     const fdPath = findFd()
     const presets = ctx.permissionPresets.names
+    const modes = AGENT_MODE_OPTIONS.map(option => option.mode)
     const commands = ctx.commands.list(agent).map(command => ({
       name: command.name,
       description: command.description,
@@ -767,6 +856,13 @@ async function run(ctx: Context): Promise<void> {
           getArgumentCompletions: (prefix: string) => presets
             .filter(name => name.startsWith(prefix))
             .map(name => ({ value: name, label: name })),
+        }
+        : {}),
+      ...(command.name === 'mode'
+        ? {
+          getArgumentCompletions: (prefix: string) => modes
+            .filter(mode => mode.startsWith(prefix))
+            .map(mode => ({ value: mode, label: mode })),
         }
         : {}),
     }))
@@ -1419,6 +1515,7 @@ async function run(ctx: Context): Promise<void> {
         `created: ${new Date(header.createdAt).toLocaleString()}`,
         ...(header.parentSession !== undefined ? [`parent: ${String(header.parentSession)}`] : []),
         `model: ${activeModel.provider}/${activeModel.model}`,
+        `mode: ${agentModeForPreset(activePreset) === 'ptc' ? 'PTC' : 'Standard'}`,
         '',
         'Messages',
         `user: ${user}`,

@@ -100,6 +100,8 @@ node lib/bin.js
 
 - **终端原生工作流**：流式 Markdown、默认五行折叠的思考与长工具正文、始终完整展示的
   带行号文件 Diff、可选中复制的结果、主题色粘贴标记、Shell 结果块和底部固定输入区。
+- **Standard / PTC 双模式**：默认 Standard 直接调用工具；PTC 用一个 TypeScript 程序
+  编排多步工具操作。PTC 子调用按原生工具行展示，长正文默认折叠，文件 Diff 始终完整。
 - **复用 DeepSeek Harness 语义**：只使用 DSH 的公共 Session/Event 和服务接口，
   不维护第二套 Agent Loop、会话存储、权限引擎或工具注册表。
 - **TUI 内完成模型配置**：通过可回退的内联向导配置 DeepSeek、OpenAI 或
@@ -126,14 +128,16 @@ flowchart TB
   User["终端用户"] --> CLI["dsh-code 启动器"]
   CLI --> TUI["终端宿主<br/>Pi 风格交互 + pi-tui"]
   TUI --> API["DSH 公共服务<br/>session/event + AgentHandle"]
-  API --> DSH["@deepseek-ai/dsh-base<br/>standard Agent Preset"]
+  API --> DSH["@deepseek-ai/dsh-base<br/>Standard / PTC Agent Preset"]
   DSH --> Runtime["Agent Loop · 会话 · 模型 · 工具<br/>沙箱 · 权限 · MCP · Skills<br/>Plan/Todo · Sub-Agent"]
 ```
 
 启动器只负责产品层能力：命令解析、`~/.dsh-code` 数据隔离、项目信任、会话选择、
 Profile 初始化、产品更新，以及委托上游 DSH 启动。TUI 只渲染结构化事件，并通过
 公共 `AgentHandle` API 把用户输入送回 Agent。
-TUI 会话会显式挂载上游 `standard` Agent Preset；目前尚未开放其他 Preset 的切换入口。
+TUI 只开放上游 `standard`（Standard）与 `code`（PTC）两个 Agent Preset。新会话默认
+Standard，可通过启动参数或首轮前的 `/mode` 选择 PTC；首轮开始后模式锁定，恢复会话
+始终按事件日志中记录的模式重建，避免在已有工具历史中途更换 schema。
 
 架构约束见 [`docs/adr/`](docs/adr/)，固定的上游版本见
 [`UPSTREAM_BASELINE.md`](UPSTREAM_BASELINE.md)。
@@ -173,6 +177,7 @@ dsh-code
 | 命令 | 说明 |
 | --- | --- |
 | `dsh-code` | 启动新的交互式 TUI 会话 |
+| `dsh-code --mode standard\|ptc` | 以 Standard 或 PTC 模式启动新会话 |
 | `dsh-code -c`、`--continue` | 继续当前项目最近一次会话 |
 | `dsh-code -r`、`--resume` | 打开可搜索的会话选择器 |
 | `dsh-code resume [session-id]` | 选择或指定会话进行恢复 |
@@ -189,6 +194,7 @@ dsh-code
 | --- | --- |
 | `/config` | 配置 DeepSeek、OpenAI 或 OpenAI-compatible 服务 |
 | `/model` | 使用内联选择器切换当前模型 |
+| `/mode [standard\|ptc]` | 选择当前空白会话的模式；首轮开始后不可切换 |
 | `/permission` | 选择当前权限预设 |
 | `/goal` | 内联查看和管理上游 DSH 长期目标 |
 | `/skills [搜索词]` | 发现 Skill；Space 仅对 dsh-code 启停，Enter 直接调用选中项 |
