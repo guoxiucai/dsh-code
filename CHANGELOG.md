@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1-rc.2 — 2026-08-23
+## 0.1.1 — 2026-08-23
 
 - Updated the pinned DeepSeek Harness runtime from `0.1.0-rc.7`
   (`99f6f02fec`) to `0.1.1-rc.2` (`b150a551b8`).

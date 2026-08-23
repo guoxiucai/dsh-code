@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-Until the first stable release, only the newest npm `next` release receives
-security fixes. After `0.1.0`, the newest `latest` release and any explicitly
-listed security-maintenance release are supported.
+The newest npm `latest` release and any explicitly listed security-maintenance
+release receive security fixes. Release candidates on `next` are supported only
+until their corresponding stable release is published.
 
 ## Reporting a vulnerability
 

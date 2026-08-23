@@ -338,7 +338,9 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     case 'tool/code-dispatch': {
       const callId = String(event.data.subCallId)
       const resultText = toolResultText(textOf(event.data.content))
-      const diffs = diffsFromMeta(event.data.meta)
+      // Official 0.1.1-rc.2 dispatches do not expose presentation meta. Keep
+      // replay forward-compatible when a later upstream version adds it.
+      const diffs = diffsFromMeta((event.data as typeof event.data & { meta?: unknown }).meta)
       const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId
         ? {
           ...item,

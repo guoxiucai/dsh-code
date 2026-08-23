@@ -572,8 +572,8 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
 - npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工
   bootstrap，npm trusted publisher 已绑定仓库、`release.yml` 和 `release` environment，正式版 `0.1.0` 已通过
-  GitHub Actions OIDC + provenance 发布。`0.1.1`（DSH `0.1.1-rc.2`）本地 candidate 已完成
-  typecheck/test/build/pack/audit/coexist smoke，尚未提交、打 tag、推送或发布。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
+  GitHub Actions OIDC + provenance 发布。`0.1.1`（DSH `0.1.1-rc.2`）发布候选已完成
+  typecheck/test/build/pack/audit/coexist smoke，正式发布由 `v0.1.1` tag 触发受保护 workflow。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
   不要直接发布当前根包；完整流程见 [`docs/NPM_RELEASE.md`](./NPM_RELEASE.md)。
 - 性能：转写是组件树重建（每次 render 清空重建），长会话未做虚拟化（见设计文档 §23 预算）。
 

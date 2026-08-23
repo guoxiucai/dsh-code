@@ -13,6 +13,13 @@ const smokePlugin = fileURLToPath(new URL('../fixtures/standard-preset-smoke.mjs
 const ptcSmokePlugin = fileURLToPath(new URL('../fixtures/ptc-preset-smoke.mjs', import.meta.url))
 const dirs: string[] = []
 
+function withoutOfficialTypeStripWarning(stderr: string): string {
+  return stderr.replace(
+    /^\(node:\d+\) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time\n(?:\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\n)?/,
+    '',
+  )
+}
+
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 function run(home: string, cwd: string): Promise<{ stdout: string; stderr: string; code: number }> {
@@ -63,7 +70,9 @@ describe('standard Agent Preset composition', () => {
     const result = await run(home, project)
 
     expect(result.code).toBe(0)
-    expect(result.stderr).toBe('')
+    // This fixture boots official DSH directly. The dsh-code launcher adds its
+    // narrowly scoped preload; installed-package smoke verifies suppression.
+    expect(withoutOfficialTypeStripWarning(result.stderr)).toBe('')
     expect(JSON.parse(result.stdout.trim())).toMatchObject({
       preset: 'code',
       headerPreset: 'code',
