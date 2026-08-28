@@ -97,13 +97,18 @@ import {
   type SessionExportFormat,
 } from './session-export.ts'
 import { buildSessionTreeRows, sessionSwitchBlocker } from './session-tree.ts'
+import {
+  createActiveSubagentProjection,
+  type ActiveSubagentSnapshot,
+} from './active-subagent-projection.ts'
+import { installConcurrentSubagentPolicy } from './subagent-concurrency-policy.ts'
 import { sendSessionSwitch } from '../session-switch.ts'
 
 /** Stable Cordis plugin name (referenced by id in the profile patch). */
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'tools']
+export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'systemPrompt', 'tools']
 
 /** Stream coalescing window: assistant chunks render at most about 30fps. */
 export const STREAM_RENDER_INTERVAL_MS = 33
@@ -113,23 +118,12 @@ export function shouldMeasureContextTokens(eventType: string): boolean {
   return eventType !== 'assistant/chunk'
 }
 
-/** Current subagent-list projection seam (refined by live lifecycle state). */
-export function subagentEntriesForList(
-  entries: readonly SubagentDescendantListEntry[],
-  activeIds: ReadonlySet<string>,
-  dismissedIds: ReadonlySet<string> = new Set(),
-): readonly SubagentDescendantListEntry[] {
-  return entries.filter(entry => entry.kind === 'child'
-    && activeIds.has(String(entry.id))
-    && !dismissedIds.has(String(entry.id)))
-}
-
-/** Count unique active child sessions directly from lifecycle edges. */
-export function activeSubagentCount(
-  activeRuns: ReadonlyMap<string, string>,
-  dismissedIds: ReadonlySet<string> = new Set(),
-): number {
-  return new Set([...activeRuns.values()].filter(id => !dismissedIds.has(id))).size
+/** Choose the public Agent inbox boundary for text entered in the TUI. */
+export function userInputDelivery(
+  status: Agent['status'],
+  activeSubagentCount: number,
+): 'followup' | 'steer' {
+  return status === 'running' && activeSubagentCount > 0 ? 'steer' : 'followup'
 }
 
 /** Parse a leading `--resume <id>` from the invocation's inner args. */
@@ -220,6 +214,7 @@ async function run(ctx: Context): Promise<void> {
       setup,
     })
   const agent = handle.agent
+  const disposeSubagentConcurrencyPolicy = installConcurrentSubagentPolicy(agent.ctx)
 
   // Rebuild the transcript from the session's full log (persisted history for a
   // resume, empty for a fresh session); the live listener continues from the
@@ -228,20 +223,21 @@ async function run(ctx: Context): Promise<void> {
   let shuttingDown = false
   let renderTimer: ReturnType<typeof setTimeout> | undefined
   let contextTokensDirty = false
-  const activeSubagentRuns = new Map<string, string>()
-  const dismissedSubagents = new Set<string>()
   let openAgentsPanel: () => void = () => {}
   let modeSwitching = false
+  let activeSubagentCount = 0
 
   const submitUserText = (text: string): void => {
     if (modeSwitching) {
       host.showNotice('mode switch in progress; send the message after it completes')
       return
     }
-    agent.followup(createUserMessage({
+    const message = createUserMessage({
       content: [{ type: 'text', text }],
       source: { kind: 'user' },
-    }))
+    })
+    if (userInputDelivery(agent.status, activeSubagentCount) === 'steer') agent.steer(message)
+    else agent.followup(message)
   }
 
   const host = new TuiHost({
@@ -676,77 +672,39 @@ async function run(ctx: Context): Promise<void> {
     description: subagentDescription(entry),
   })
 
-  let activeSubagentEntries: SubagentDescendantListEntry[] = []
   let agentsSelector: SelectorHandle | undefined
   let agentsSelectorOpen = false
   let subagentActionId: string | undefined
-  let subagentRefreshRevision = 0
-  let subagentDescriptorRetryTimer: ReturnType<typeof setTimeout> | undefined
-  let subagentDescriptorRetryAttempt = 0
 
-  const activeSubagentIds = (): string[] => [...new Set(
-    [...activeSubagentRuns.values()].filter(id => !dismissedSubagents.has(id)),
-  )]
+  const visibleSubagentItems = (snapshot: ActiveSubagentSnapshot): SelectorItem[] => snapshot.rows.map(row => (
+    row.descriptor === undefined
+      ? { value: row.id, label: `● ${row.id}`, description: `${row.id} · starting · details loading` }
+      : subagentItem(row.descriptor)
+  ))
 
-  const syncActiveSubagentCount = (): number => {
-    const count = activeSubagentCount(activeSubagentRuns, dismissedSubagents)
-    host.setSubagentCount(count)
-    if (count === 0) {
-      if (subagentDescriptorRetryTimer !== undefined) clearTimeout(subagentDescriptorRetryTimer)
-      subagentDescriptorRetryTimer = undefined
-      subagentDescriptorRetryAttempt = 0
-    }
-    return count
-  }
-
-  const visibleSubagentItems = (): SelectorItem[] => {
-    const entriesById = new Map(activeSubagentEntries.map(entry => [String(entry.id), entry]))
-    return activeSubagentIds().map((id) => {
-      const entry = entriesById.get(id)
-      return entry === undefined
-        ? { value: id, label: `● ${id}`, description: `${id} · starting · details loading` }
-        : subagentItem(entry)
-    })
-  }
-
-  const scheduleSubagentDescriptorRetry = (): void => {
-    if (subagentDescriptorRetryTimer !== undefined || subagentDescriptorRetryAttempt >= 5) return
-    const delay = Math.min(400, 50 * 2 ** subagentDescriptorRetryAttempt++)
-    subagentDescriptorRetryTimer = setTimeout(() => {
-      subagentDescriptorRetryTimer = undefined
-      void refreshActiveSubagents().catch(error => { showCommandError('subagent refresh', error) })
-    }, delay)
-  }
-
-  const refreshActiveSubagents = async (): Promise<SubagentDescendantListEntry[]> => {
-    const revision = ++subagentRefreshRevision
-    const all = await ctx.subagents.listDescendants(agent.session.id)
-    if (revision !== subagentRefreshRevision) return activeSubagentEntries
-    const activeIds = new Set(activeSubagentRuns.values())
-    activeSubagentEntries = [...subagentEntriesForList(all, activeIds, dismissedSubagents)]
-    const activeCount = syncActiveSubagentCount()
-    if (activeSubagentEntries.length < activeCount) scheduleSubagentDescriptorRetry()
-    else {
-      if (subagentDescriptorRetryTimer !== undefined) clearTimeout(subagentDescriptorRetryTimer)
-      subagentDescriptorRetryTimer = undefined
-      subagentDescriptorRetryAttempt = 0
-    }
+  const syncSubagentUi = (snapshot: ActiveSubagentSnapshot): void => {
+    activeSubagentCount = snapshot.count
+    host.setSubagentCount(snapshot.count)
     if (subagentActionId !== undefined
-      && !activeSubagentEntries.some(entry => String(entry.id) === subagentActionId)) {
+      && !snapshot.rows.some(row => row.id === subagentActionId && row.descriptor !== undefined)) {
       subagentActionId = undefined
       host.clearInlineControl()
     }
-    if (agentsSelectorOpen) {
-      if (activeCount === 0) {
-        agentsSelectorOpen = false
-        agentsSelector = undefined
-        host.clearInlineControl()
-      } else {
-        agentsSelector?.updateItems(visibleSubagentItems())
-      }
+    if (!agentsSelectorOpen) return
+    if (snapshot.count === 0) {
+      agentsSelectorOpen = false
+      agentsSelector = undefined
+      host.clearInlineControl()
+    } else {
+      agentsSelector?.updateItems(visibleSubagentItems(snapshot))
     }
-    return activeSubagentEntries
   }
+
+  const activeSubagents = createActiveSubagentProjection({
+    loadDescriptors: () => ctx.subagents.listDescendants(agent.session.id),
+    onChange: syncSubagentUi,
+    onBackgroundError: error => { showCommandError('subagent refresh', error) },
+  })
 
   const cancelSubagent = (entry: SubagentDescendantListEntry): boolean => {
     if (entry.kind !== 'child') return false
@@ -782,11 +740,12 @@ async function run(ctx: Context): Promise<void> {
             return
           }
           if (action === 'delete') {
-            dismissedSubagents.add(String(entry.id))
-            syncActiveSubagentCount()
+            activeSubagents.record({ type: 'dismissed', id: String(entry.id) })
           }
           host.showNotice(`${action === 'delete' ? 'removed' : 'cancellation requested for'} subagent ${entry.id}`)
-          void refreshActiveSubagents().catch(error => { showCommandError('subagent refresh', error) })
+          if (action !== 'delete') {
+            void activeSubagents.refresh().catch(error => { showCommandError('subagent refresh', error) })
+          }
         } catch (error) {
           showCommandError('subagent cancellation', error)
         }
@@ -797,8 +756,8 @@ async function run(ctx: Context): Promise<void> {
 
   const runAgentsPicker = async (): Promise<void> => {
     try {
-      await refreshActiveSubagents()
-      if (activeSubagentCount(activeSubagentRuns, dismissedSubagents) === 0) {
+      const snapshot = await activeSubagents.refresh()
+      if (snapshot.count === 0) {
         host.showNotice('no subagents for this session')
         return
       }
@@ -807,9 +766,9 @@ async function run(ctx: Context): Promise<void> {
       agentsSelector = host.showSelector({
         hint: 'Active subagents · Enter actions · Esc close · list updates live',
         borderColor: theme.selectorBorder,
-        items: visibleSubagentItems(),
+        items: visibleSubagentItems(snapshot),
         onSelect: (id) => {
-          const entry = activeSubagentEntries.find(candidate => String(candidate.id) === id)
+          const entry = activeSubagents.current.rows.find(row => row.id === id)?.descriptor
           if (entry !== undefined) showSubagentActions(entry)
         },
         onCancel: () => { agentsSelectorOpen = false; agentsSelector = undefined },
@@ -1729,7 +1688,7 @@ async function run(ctx: Context): Promise<void> {
     agentRunning: agent.status === 'running',
     queuedMessages: reducer.queuedMessages.length,
     liveJobs: ctx.jobs.list(agent).filter(job => job.status === 'running' || job.status === 'stopping').length,
-    activeSubagents: activeSubagentCount(activeSubagentRuns, dismissedSubagents),
+    activeSubagents: activeSubagents.current.count,
   })
 
   const switchToSession = async (targetId: string): Promise<void> => {
@@ -1860,18 +1819,11 @@ async function run(ctx: Context): Promise<void> {
   })
 
   const disposeSubagentStart = agent.ctx.on('subagent/start', (info: SubagentRunInfo) => {
-    activeSubagentRuns.set(String(info.runId), String(info.id))
-    dismissedSubagents.delete(String(info.id))
-    subagentDescriptorRetryAttempt = 0
-    syncActiveSubagentCount()
-    void refreshActiveSubagents().catch(error => { showCommandError('subagent refresh', error) })
+    activeSubagents.record({ type: 'started', runId: String(info.runId), id: String(info.id) })
   })
 
   const disposeSubagentEnd = agent.ctx.on('subagent/end', (info: SubagentRunEndInfo) => {
-    activeSubagentRuns.delete(String(info.runId))
-    if (![...activeSubagentRuns.values()].includes(String(info.id))) dismissedSubagents.delete(String(info.id))
-    syncActiveSubagentCount()
-    void refreshActiveSubagents().catch(error => { showCommandError('subagent refresh', error) })
+    activeSubagents.record({ type: 'ended', runId: String(info.runId), id: String(info.id) })
   })
 
   // Permission answerer: a one-shot Allow/Reject bar for this agent's tool
@@ -1911,10 +1863,8 @@ async function run(ctx: Context): Promise<void> {
       clearTimeout(renderTimer)
       renderTimer = undefined
     }
-    if (subagentDescriptorRetryTimer !== undefined) {
-      clearTimeout(subagentDescriptorRetryTimer)
-      subagentDescriptorRetryTimer = undefined
-    }
+    activeSubagents.dispose()
+    disposeSubagentConcurrencyPolicy()
     host.stop()
     disposeEvents()
     disposeStatus()
