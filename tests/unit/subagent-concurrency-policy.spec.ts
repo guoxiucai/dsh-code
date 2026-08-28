@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import { describe, expect, it } from 'vitest'
@@ -45,7 +45,7 @@ describe('subagent concurrency policy', () => {
 
     const result = await ctx.tools.execute({
       signal,
-      callId: CallId('foreground-child'),
+      callId: ToolCallId('foreground-child'),
       name: 'subagent',
       arguments: { run_in_background: false },
     })

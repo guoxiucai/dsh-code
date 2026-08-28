@@ -74,8 +74,8 @@ describe('standard Agent Preset composition', () => {
     // narrowly scoped preload; installed-package smoke verifies suppression.
     expect(withoutOfficialTypeStripWarning(result.stderr)).toBe('')
     expect(JSON.parse(result.stdout.trim())).toMatchObject({
-      preset: 'code',
-      headerPreset: 'code',
+      preset: 'ptc',
+      headerPreset: 'ptc',
       runtimeLanguage: 'typescript',
       runtimeResult: { logs: [], value: 42 },
       agentTools: ['run_code'],

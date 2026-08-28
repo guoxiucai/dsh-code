@@ -146,7 +146,7 @@ The launcher owns only product concerns: command parsing, `~/.dsh-code` home
 isolation, project trust, session selection, profile initialization, updates,
 and delegation to the upstream DSH executable. The TUI renders structured
 events and sends input back through the public `AgentHandle` API.
-The TUI exposes only the upstream `standard` (Standard) and `code` (PTC) Agent
+The TUI exposes only the upstream `standard` (Standard) and `ptc` (PTC) Agent
 Presets. New sessions default to Standard and may select PTC at startup or via
 `/mode` before the first turn. The mode locks when that turn starts; resume
 always reconstructs the preset recorded in the event log, so an existing tool
@@ -305,7 +305,7 @@ Updates are explicit; dsh-code does not silently update itself:
 dsh-code update --check
 dsh-code update
 dsh-code update --channel next
-dsh-code update --version 0.1.1
+dsh-code update --version 0.1.2
 ```
 
 The update command is supported for npm-global installations. Source checkouts

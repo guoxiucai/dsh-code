@@ -109,6 +109,11 @@ ${PRESET_OWNED_BASE_ROWS.map(id => `- id: ${id}\n  disabled: true`).join('\n\n')
       config:
         default: ${DEFAULT_AGENT_PRESET}
 
+    # DSH 0.1.2 presets expose per-subagent model selection and require this
+    # Host-scoped settings provider before their delegated tools are mounted.
+    - id: subagent-model-selection-settings
+      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
     # PTC executes the model-authored TypeScript program in an isolated worker.
     # Standard does not expose run_code, but sharing the host runtime keeps a
     # blank-session switch transactional and avoids restarting the process.

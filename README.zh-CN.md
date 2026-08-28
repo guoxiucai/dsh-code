@@ -135,7 +135,7 @@ flowchart TB
 启动器只负责产品层能力：命令解析、`~/.dsh-code` 数据隔离、项目信任、会话选择、
 Profile 初始化、产品更新，以及委托上游 DSH 启动。TUI 只渲染结构化事件，并通过
 公共 `AgentHandle` API 把用户输入送回 Agent。
-TUI 只开放上游 `standard`（Standard）与 `code`（PTC）两个 Agent Preset。新会话默认
+TUI 只开放上游 `standard`（Standard）与 `ptc`（PTC）两个 Agent Preset。新会话默认
 Standard，可通过启动参数或首轮前的 `/mode` 选择 PTC；首轮开始后模式锁定，恢复会话
 始终按事件日志中记录的模式重建，避免在已有工具历史中途更换 schema。
 
@@ -279,7 +279,7 @@ dsh-code 只执行用户明确发起的更新，不会静默升级：
 dsh-code update --check
 dsh-code update
 dsh-code update --channel next
-dsh-code update --version 0.1.1
+dsh-code update --version 0.1.2
 ```
 
 更新命令仅适用于 npm 全局安装。源码检出版本应继续通过 Git 和原构建工具升级。

@@ -13,7 +13,7 @@ import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 // Declaration-merges the upstream Agent Preset roster onto Context.
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 // Empty type imports declaration-merge `agentDefaultModel`, `cmdlineArgs`, and
 // `appExit` onto Context (same contract the upstream headless runner relies on).
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -87,6 +87,7 @@ import {
   parseAgentMode,
   presetForAgentMode,
   sessionCanSwitchMode,
+  supportedAgentPreset,
   type AgentMode,
   type SupportedAgentPreset,
 } from '../agent-mode.ts'
@@ -108,7 +109,7 @@ import { sendSessionSwitch } from '../session-switch.ts'
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'systemPrompt', 'tools']
+export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionProjections', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'systemPrompt', 'tools']
 
 /** Stream coalescing window: assistant chunks render at most about 30fps. */
 export const STREAM_RENDER_INTERVAL_MS = 33
@@ -192,11 +193,11 @@ async function run(ctx: Context): Promise<void> {
   let activePreset: SupportedAgentPreset = requestedPreset
 
   const setup = async (agentCtx: Context): Promise<void> => {
-    const recorded = agentCtx.agent === undefined ? undefined : resolveSessionPreset(agentCtx.agent.session)
-    const preset = resumeId === undefined ? requestedPreset : (recorded ?? 'standard')
-    if (preset !== 'standard' && preset !== 'code') {
-      throw new Error(`session uses unsupported agent preset ${JSON.stringify(preset)}`)
-    }
+    const recorded = agentCtx.agent === undefined
+      ? undefined
+      : ctx.sessionProjections.stateOf(agentCtx.agent.session, 'agentPreset') ?? undefined
+    const preset = resumeId === undefined ? requestedPreset : supportedAgentPreset(recorded ?? 'standard')
+    if (preset === undefined) throw new Error(`session uses unsupported agent preset ${JSON.stringify(recorded)}`)
     activePreset = preset
     await ctx.agentPresets.mount(agentCtx, preset)
     installModelSelection(agentCtx, modelRef)
@@ -306,7 +307,7 @@ async function run(ctx: Context): Promise<void> {
   const runSlashOrSkill = async (input: string): Promise<void> => {
     const controller = new AbortController()
     try {
-      // The TUI composer currently submits text only. Upstream 0.1.1 makes the
+      // The TUI composer currently submits text only. Upstream 0.1.1+ makes the
       // attachment batch explicit so command admission cannot silently discard
       // images when image-capable input is added later.
       const execution = await ctx.commands.execute(agent, input, [], controller.signal)
@@ -1840,18 +1841,17 @@ async function run(ctx: Context): Promise<void> {
   // Structured user-question provider shared by ask_user_question and the
   // plan-mode review intent. The host returns one complete, protocol-shaped
   // answer batch; Esc and turn cancellation stay distinct failures.
-  const disposeQuestions = ctx.userQuestions.registerProvider({
-    async ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {
-      if (request.agent !== undefined && request.agent !== agent) {
-        throw new UserQuestionError('dsh-code can only answer questions for its active root agent', 'CALLER_NOT_LIVE')
-      }
-      const answer = await host.askQuestions(request.questions, request.signal)
-      if (answer !== undefined) return answer
-      if (request.signal?.aborted === true) {
-        throw new UserQuestionError('ask_user_question was aborted before the user answered', 'ASK_ABORTED')
-      }
-      throw new UserQuestionError('the user cancelled ask_user_question', 'ASK_CANCELLED')
-    },
+  const disposeQuestions = agent.ctx.on('user-questions/request', async (
+    request: AskUserQuestionRequest,
+    next: () => Promise<AskUserQuestionAnswer>,
+  ): Promise<AskUserQuestionAnswer> => {
+    if (request.agent !== undefined && request.agent !== agent) return next()
+    const answer = await host.askQuestions(request.questions, request.signal)
+    if (answer !== undefined) return answer
+    if (request.signal?.aborted === true) {
+      throw new UserQuestionError('ask_user_question was aborted before the user answered', 'ASK_ABORTED')
+    }
+    throw new UserQuestionError('the user cancelled ask_user_question', 'ASK_CANCELLED')
   })
 
   const shutdown = async (code: number): Promise<void> => {

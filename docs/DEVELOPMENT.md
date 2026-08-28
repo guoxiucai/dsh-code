@@ -2,7 +2,7 @@
 
 > 本文档面向接手 `dsh-code` 继续开发的工程师。目标读者需要了解：这是什么项目、代码怎么组织的、怎么构建运行、哪些是硬性边界、哪些还没做。
 >
-> 上游基线：`deepseek-ai/deepseek-harness` @ `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`（`0.1.1-rc.2`），以 submodule `deepseek-harness/` 形式引入。
+> 上游基线：`deepseek-ai/deepseek-harness` @ `cd5ef8148158c3a752a658978873241fdf8e2bbc`（`0.1.2-alpha.1`），以 submodule `deepseek-harness/` 形式引入。
 
 ---
 
@@ -68,7 +68,7 @@ pnpm.cmd --version
 - 平台为 `win32-x64`；
 - Node 为 `v22.19.x` 或 `v24.x`；
 - pnpm 为 `11.7.0`；
-- `deepseek-harness` 位于 `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`，行首没有 `-`、`+` 或 `U`；
+- `deepseek-harness` 位于 `cd5ef8148158c3a752a658978873241fdf8e2bbc`，行首没有 `-`、`+` 或 `U`；
 - 当前分支跟踪 `origin/main`，工作区干净。
 
 如果 SSH 尚未配置，可先用公开 HTTPS 地址拉取；需要推送时，再配置协作者权限和个人认证：
@@ -231,10 +231,10 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 
 ### 5.2 `plugin.ts` — 核心接线（最重要）
 
-- `inject` 包含 `agents`、`agentPresets`、`agentDefaultModel`、`sessions`、`sessionQuery`、`commands`、`llm`、`credentials`、`settings`、
+- `inject` 包含 `agents`、`agentPresets`、`agentDefaultModel`、`sessions`、`sessionProjections`、`sessionQuery`、`commands`、`llm`、`credentials`、`settings`、
   `permissionPresets`、`shell`、`tokenMeter`、`userQuestions`。
 - Profile 关闭 `dsh-base` 中改由 Preset 所有的 model-facing 全局行，并注册上游 `agent-presets` roster；上游启动器自动注入随安装包发布的 Preset 根目录。
-- 用 `agents.create` / `agents.resume` 创建/恢复 agent；setup 挂载官方 `standard`（Standard）或 `code`（PTC）Agent Preset，再用 `installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。新会话 Header 持久化启动 Preset；恢复时通过 `resolveSessionPreset` 按日志重建。`/mode` 仅允许在首个 `turn/start` 前重组，避免已有工具历史与新 schema 不一致。
+- 用 `agents.create` / `agents.resume` 创建/恢复 agent；setup 挂载官方 `standard`（Standard）或 `ptc`（PTC）Agent Preset，再用 `installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。新会话 Header 持久化启动 Preset；恢复时从 `sessionProjections.stateOf(session, 'agentPreset')` 读取日志投影，并把旧版持久化的 `code` id 兼容映射到 `ptc`。`/mode` 仅允许在首个 `turn/start` 前重组，避免已有工具历史与新 schema 不一致。
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
 - `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
   上游 Registry 中可由用户调用的 Skill → 普通 `agent.followup`。命令名优先于同名 Skill。
@@ -572,8 +572,8 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
 - npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工
   bootstrap，npm trusted publisher 已绑定仓库、`release.yml` 和 `release` environment，正式版 `0.1.0` 已通过
-  GitHub Actions OIDC + provenance 发布。`0.1.1`（DSH `0.1.1-rc.2`）发布候选已完成
-  typecheck/test/build/pack/audit/coexist smoke，正式发布由 `v0.1.1` tag 触发受保护 workflow。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
+  GitHub Actions OIDC + provenance 发布，`0.1.1`（DSH `0.1.1-rc.2`）也已正式发布。当前开发版已升级为
+  `0.1.2`（DSH `0.1.2-alpha.1`），仅执行本地回归，未发布 npm；上游同版本 DSH npm 包发布前，安装型 candidate smoke 无法闭环。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
   不要直接发布当前根包；完整流程见 [`docs/NPM_RELEASE.md`](./NPM_RELEASE.md)。
 - 性能：转写是组件树重建（每次 render 清空重建），长会话未做虚拟化（见设计文档 §23 预算）。
 

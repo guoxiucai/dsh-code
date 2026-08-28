@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createMessage, createToolResultMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import {
   defaultExportFilename,
@@ -31,7 +31,7 @@ function sessionFixture(): Session {
   session.append('tool/result', {
     turn: 1,
     step: 1,
-    message: createToolResultMessage({ callId: CallId('call-1'), content: [{ type: 'text', text: 'done' }], isError: false }),
+    message: createToolResultMessage({ callId: ToolCallId('call-1'), content: [{ type: 'text', text: 'done' }], isError: false }),
   }, { surfaceOp: 'append' })
   return session
 }

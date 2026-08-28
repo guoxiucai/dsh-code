@@ -23,6 +23,8 @@ import type {} from '@deepseek-ai/dsh-compaction'
 import type {} from '@deepseek-ai/dsh-agent'
 // Declaration-merges the nested PTC dispatch lifecycle into SessionEvent.
 import type {} from '@deepseek-ai/dsh-tools'
+// Declaration-merges the todo/write snapshot event now owned by tool-todo.
+import type {} from '@deepseek-ai/dsh-tool-todo'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 
@@ -338,7 +340,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     case 'tool/code-dispatch': {
       const callId = String(event.data.subCallId)
       const resultText = toolResultText(textOf(event.data.content))
-      // Official 0.1.1-rc.2 dispatches do not expose presentation meta. Keep
+      // Official 0.1.2-alpha.1 dispatches do not expose presentation meta. Keep
       // replay forward-compatible when a later upstream version adds it.
       const diffs = diffsFromMeta((event.data as typeof event.data & { meta?: unknown }).meta)
       const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId

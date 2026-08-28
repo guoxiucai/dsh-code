@@ -1,13 +1,13 @@
 # dsh-code npm 发行实施方案
 
-> 状态：`0.1.0` 已发布，trusted publishing 流程已启用；准备发布稳定版 `0.1.1`
+> 状态：`0.1.1` 已发布，trusted publishing 流程已启用；`0.1.2` 仅在本地回归，未发布
 > 编写日期：2026-08-19
-> 最近审计：2026-08-23
+> 最近审计：2026-08-28
 > 首批目标平台：macOS arm64、Windows x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
 本文档是 npm 发行工作的实施基线，以当前仓库和固定的
-DeepSeek Harness `0.1.1-rc.2` 为准。`docs/technical-implementation-plan.md`
+DeepSeek Harness `0.1.2-alpha.1` 为准。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
@@ -39,8 +39,10 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 
 ### 2.1 已验证可行的部分
 
-- npm 上已存在 `@deepseek-ai/dsh@0.1.1-rc.2` 和
-  `@deepseek-ai/dsh-base@0.1.1-rc.2`，上游 workspace 包有对应的公开发布版。
+- Git 子模块已固定到 `dsh-v0.1.2-alpha.1`；但 npm registry 尚无
+  `@deepseek-ai/dsh@0.1.2-alpha.1` 及同版本运行时闭包。因此当前可完成源码
+  typecheck/test/build，不能完成依赖 registry 的 shrinkwrap 和 clean global install smoke，
+  也不应发布 dsh-code `0.1.2`。
 - 当前源码已将 dsh-code home 固定为
   `DSH_CODE_HOME ?? ~/.dsh-code`，并在委托上游前设置 `DSH_HOME`；不会读写
   上游默认的 `~/.dsh`。
@@ -197,13 +199,13 @@ anything else → 友好错误 + 支持矩阵 URL + exit 1
     "npm-shrinkwrap.json"
   ],
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-base": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-credentials": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-settings": "0.1.1-rc.2",
+    "@deepseek-ai/dsh": "0.1.2-alpha.1",
+    "@deepseek-ai/dsh-base": "0.1.2-alpha.1",
+    "@deepseek-ai/dsh-agent": "0.1.2-alpha.1",
+    "@deepseek-ai/dsh-session": "0.1.2-alpha.1",
+    "@deepseek-ai/dsh-llm": "0.1.2-alpha.1",
+    "@deepseek-ai/dsh-credentials": "0.1.2-alpha.1",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.1",
     "@earendil-works/pi-tui": "0.84.2",
     "diff": "9.0.0",
     "js-yaml": "4.3.1"
@@ -283,14 +285,14 @@ scripts/
 
 ```bash
 # 开发树本地预演：生成并验证 candidate，不创建 tag、不推送、不发布
-pnpm release -- 0.1.1 --tag latest --prepare-only --allow-dirty
+pnpm release -- 0.1.2 --tag latest --prepare-only --allow-dirty
 
 # 代码提交并复核后：创建并推送 tag，由 GitHub Actions 通过 OIDC 发布
-pnpm release -- 0.1.1 --tag latest
+pnpm release -- 0.1.2 --tag latest
 ```
 
-`0.1.1` 的本地 candidate 位于
-`dist/npm/tsingwill-dsh-code-0.1.1.tgz`；`dist/` 被忽略，
+`0.1.2` 的本地 candidate 位于
+`dist/npm/tsingwill-dsh-code-0.1.2.tgz`；`dist/` 被忽略，
 不会进入产品提交。`--allow-dirty` 只允许用于 `--prepare-only` 的开发树验证，正式发布仍应使用干净的 `main`。
 
 `release.mjs` 不在开发机保存 npm token，也不默认在开发机运行

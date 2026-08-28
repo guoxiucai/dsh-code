@@ -4,7 +4,7 @@
 export type AgentMode = 'standard' | 'ptc'
 
 /** Preset ids shipped by DSH for the two supported dsh-code modes. */
-export type SupportedAgentPreset = 'standard' | 'code'
+export type SupportedAgentPreset = 'standard' | 'ptc'
 
 export const DEFAULT_AGENT_MODE: AgentMode = 'standard'
 export const DEFAULT_AGENT_PRESET: SupportedAgentPreset = 'standard'
@@ -26,7 +26,7 @@ export const AGENT_MODE_OPTIONS: readonly {
   },
   {
     mode: 'ptc',
-    preset: 'code',
+    preset: 'ptc',
     label: 'PTC',
     description: 'Compose multiple tool operations in one TypeScript program.',
   },
@@ -34,12 +34,19 @@ export const AGENT_MODE_OPTIONS: readonly {
 
 /** Map a product-facing mode to the pinned upstream preset id. */
 export function presetForAgentMode(mode: AgentMode): SupportedAgentPreset {
-  return mode === 'ptc' ? 'code' : 'standard'
+  return mode === 'ptc' ? 'ptc' : 'standard'
 }
 
 /** Map a recorded upstream preset id back to the supported product mode. */
 export function agentModeForPreset(preset: string | undefined): AgentMode {
-  return preset === 'code' ? 'ptc' : 'standard'
+  return preset === 'ptc' || preset === 'code' ? 'ptc' : 'standard'
+}
+
+/** Resolve current and legacy persisted ids to a preset shipped by pinned DSH. */
+export function supportedAgentPreset(preset: string | undefined): SupportedAgentPreset | undefined {
+  if (preset === 'standard') return 'standard'
+  if (preset === 'ptc' || preset === 'code') return 'ptc'
+  return undefined
 }
 
 /** Parse an exact public mode name. */

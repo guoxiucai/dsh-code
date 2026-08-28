@@ -8,7 +8,7 @@
  * `dsh` CLI can import it via an absolute file URL without tsx.
  */
 
-import { CallId, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
 
 const HIGH = ReasoningEffortId('high')
 
@@ -35,8 +35,8 @@ class MockAdapter extends LlmAdapter {
     if (toolResult === undefined) {
       const args = JSON.stringify({ command: TOOL.command, description: 'Prove the tool round trip.' })
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
-      yield { type: 'tool-call-delta', index: 0, id: CallId('dsh-code-call'), name: TOOL.name, argumentsDelta: args }
-      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('dsh-code-call'), name: TOOL.name, arguments: args } }
+      yield { type: 'tool-call-delta', index: 0, id: ToolCallId('dsh-code-call'), name: TOOL.name, argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('dsh-code-call'), name: TOOL.name, arguments: args } }
       yield { type: 'usage', usage: { inputTokens: 11, outputTokens: 3, cacheReadTokens: 2 } }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
       return

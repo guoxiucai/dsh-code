@@ -7,8 +7,8 @@ export function apply(ctx) {
   void (async () => {
     const handle = await ctx.agents.create({
       sessionId: SessionId('ptc-preset-smoke'),
-      meta: { cwd: process.cwd(), agentPreset: 'code' },
-      setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, 'code') },
+      meta: { cwd: process.cwd(), agentPreset: 'ptc' },
+      setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, 'ptc') },
     })
     try {
       const assembly = await ctx.systemPrompt.assemble({ agent: handle.agent, scope: handle.agent })
