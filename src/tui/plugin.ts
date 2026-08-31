@@ -24,7 +24,8 @@ import {
   type AskUserQuestionAnswer,
   type AskUserQuestionRequest,
 } from '@deepseek-ai/dsh-user-questions'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+// Declaration-merges the settings service and its registered namespaces.
+import type {} from '@deepseek-ai/dsh-settings'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Declaration-merges the `shell` service onto Context.
@@ -440,7 +441,7 @@ async function run(ctx: Context): Promise<void> {
   // Permission preset selector (`/permission` with no argument).
   const runPermissionPicker = (): void => {
     const presets = ctx.permissionPresets.names
-    const current = ctx.permissionPresets.current(agent.session.events)
+    const current = ctx.permissionPresets.current(agent.session)
     host.showSelector({
       hint: 'Select a permission preset.',
       borderColor: theme.selectorBorder,
@@ -484,7 +485,7 @@ async function run(ctx: Context): Promise<void> {
         if (provider === undefined || model === undefined) return
         modelRef.current = { provider, model }
         host.setModel({ provider, model })
-        await ctx.settings.update(settingsNamespace('agent-default-model'), { provider, model })
+        await ctx.settings.update('agent-default-model', { provider, model })
         host.showNotice(`switched to ${provider}/${model} (applies to new turns)`)
       },
       onCancel: () => {},
@@ -871,7 +872,7 @@ async function run(ctx: Context): Promise<void> {
     if (draft.key === undefined || draft.model === undefined) return
     if (draft.provider === 'deepseek') {
       await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), draft.key)
-      await ctx.settings.update(settingsNamespace('agent-default-model'), {
+      await ctx.settings.update('agent-default-model', {
         provider: 'deepseek-official',
         model: draft.model,
       })
@@ -880,7 +881,7 @@ async function run(ctx: Context): Promise<void> {
     }
     if (draft.id === undefined || draft.baseURL === undefined || draft.keyEnv === undefined) return
     await ctx.credentials.set(credentialRef(draft.keyEnv), draft.key)
-    const current = ctx.settings.get(settingsNamespace('llm-pi-ai')) as { providers?: Record<string, unknown> } | undefined
+    const current = ctx.settings.get('llm-pi-ai') as { providers?: Record<string, unknown> } | undefined
     const providers = { ...current?.providers }
     providers[draft.id] = {
       apiKeyEnv: draft.keyEnv,
@@ -888,8 +889,8 @@ async function run(ctx: Context): Promise<void> {
       api: 'openai-completions',
       models: [{ id: draft.model }],
     }
-    await ctx.settings.replace(settingsNamespace('llm-pi-ai'), { providers })
-    await ctx.settings.update(settingsNamespace('agent-default-model'), { provider: draft.id, model: draft.model })
+    await ctx.settings.replace('llm-pi-ai', { providers })
+    await ctx.settings.update('agent-default-model', { provider: draft.id, model: draft.model })
     host.showNotice(`configured ${draft.id}; default model ${draft.model} (restart to reload the provider catalog)`)
   }
 

@@ -3,10 +3,12 @@
 ## 0.1.2 — Unreleased
 
 - Updated the pinned DeepSeek Harness runtime from `0.1.1-rc.2`
-  (`b150a551b8`) to `0.1.2-alpha.1` (`cd5ef81481`).
+  (`b150a551b8`) to `0.1.2-alpha.2` (`0a53fb55be`).
 - Adapted the terminal host to the renamed `ptc` preset, session preset
   projections, event-based user-question provider, subagent model settings, and
   the upstream `ToolCallId`/Todo event type declarations.
+- Adopted the `0.1.2-alpha.2` literal settings namespace API and Session-based
+  permission preset projection.
 - Preserved resume compatibility for sessions that recorded the former `code`
   PTC preset id.
 - Kept all downstream adaptations in dsh-code; the upstream submodule source is
