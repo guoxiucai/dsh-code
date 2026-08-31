@@ -115,8 +115,8 @@ node lib/bin.js
   OpenAI-compatible endpoint through an inline, reversible wizard.
 - **Safe project startup** — canonical-path trust records and `read-only`,
   `workspace-write`, or `danger-full-access` permission presets.
-- **Persistent sessions** — continue the latest session, search/resume/delete
-  history, inspect session statistics, fork a completed turn, and compact context.
+- **Persistent sessions** — start, resume, search, delete, fork from a historical
+  request, clone the current snapshot, inspect statistics, and compact context.
 - **Agent visibility and decisions** — dedicated Plan/Todo states, queued-user
   message feedback, tool progress, retry and compaction indicators, one-shot
   approval bars, structured questions, plan review, and a clickable active
@@ -217,8 +217,10 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | `/jobs` | Inspect output or stop background jobs owned by this session |
 | `/export [path]` | Export the current session as Markdown or JSONL |
 | `/session` | Show session, message, tool, model, and token statistics |
-| `/fork` | Fork at the most recent completed turn without switching |
-| `/tree` | Browse the current conversation tree and switch session branches |
+| `/new` | Switch to a new empty Standard session |
+| `/resume` | Open the hierarchical full-screen session picker and switch to the selection |
+| `/fork` | Fork before a selected historical user request and switch to it |
+| `/clone` | Clone the current session snapshot and switch to the clone |
 | `/compact` | Compact the current context through DSH |
 | `/quit`, `/exit` | Exit when the agent is idle |
 | `!<command>` | Run a shell/PowerShell command without sending it to the model |

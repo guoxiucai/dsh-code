@@ -112,8 +112,15 @@ export interface ProjectSession {
   dir: string
   /** The session's project path from the log header, `undefined` when absent. */
   cwd: string | undefined
+  /** Parent Session id recorded by an ordinary fork/clone, when present. */
+  parentSession?: string
   /** Durable owner marker; `subagent` sessions are hidden from launcher resume flows. */
   origin?: 'subagent'
+}
+
+/** One resume-picker row after parent/child lineage ordering. */
+export interface ProjectSessionLineageEntry extends ProjectSession {
+  depth: number
 }
 
 /** Join the text blocks of a message into one normalized, single-line string. */
@@ -144,17 +151,20 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
     let id = fallbackId
     let createdAt: number | undefined
     let cwd: string | undefined
+    let parentSession: string | undefined
     let origin: 'subagent' | undefined
     try {
       const header = JSON.parse(lines[0] ?? '{}') as {
         id?: unknown
         createdAt?: unknown
         cwd?: unknown
+        parentSession?: unknown
         origin?: unknown
       }
       if (typeof header.id === 'string') id = header.id
       if (typeof header.createdAt === 'number') createdAt = header.createdAt
       if (typeof header.cwd === 'string') cwd = header.cwd
+      if (typeof header.parentSession === 'string') parentSession = header.parentSession
       if (header.origin === 'subagent') origin = header.origin
     } catch {
       // Malformed header — keep the directory-name id and no timestamp.
@@ -174,7 +184,15 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
       title = firstUserText(event.data.content)
       break
     }
-    return { id, title, createdAt, dir: sessionDir, cwd, ...(origin === undefined ? {} : { origin }) }
+    return {
+      id,
+      title,
+      createdAt,
+      dir: sessionDir,
+      cwd,
+      ...(parentSession === undefined ? {} : { parentSession }),
+      ...(origin === undefined ? {} : { origin }),
+    }
   }
   return empty
 }
@@ -220,6 +238,65 @@ export function listAllSessions(home: string): ProjectSession[] {
 }
 
 /**
+ * Order sessions as parent-first families and annotate their nesting depth.
+ * Families with the newest activity appear first; missing parents and cycles
+ * degrade to roots so every Session remains resumable.
+ */
+export function sessionLineage(sessions: readonly ProjectSession[]): ProjectSessionLineageEntry[] {
+  const byId = new Map(sessions.map(session => [session.id, session]))
+  const children = new Map<string, ProjectSession[]>()
+  const familyActivity = new Map(sessions.map(session => [session.id, session.createdAt ?? 0]))
+  const roots: ProjectSession[] = []
+
+  for (const session of sessions) {
+    const parentId = session.parentSession
+    if (parentId === undefined || !byId.has(parentId) || parentId === session.id) {
+      roots.push(session)
+      continue
+    }
+    const siblings = children.get(parentId) ?? []
+    siblings.push(session)
+    children.set(parentId, siblings)
+
+    const seen = new Set<string>([session.id])
+    let ancestorId: string | undefined = parentId
+    while (ancestorId !== undefined && !seen.has(ancestorId)) {
+      seen.add(ancestorId)
+      familyActivity.set(ancestorId, Math.max(familyActivity.get(ancestorId) ?? 0, session.createdAt ?? 0))
+      ancestorId = byId.get(ancestorId)?.parentSession
+    }
+  }
+
+  const newestFirst = (left: ProjectSession, right: ProjectSession): number =>
+    (familyActivity.get(right.id) ?? 0) - (familyActivity.get(left.id) ?? 0)
+      || (right.createdAt ?? 0) - (left.createdAt ?? 0)
+      || left.id.localeCompare(right.id)
+  roots.sort(newestFirst)
+  for (const siblings of children.values()) siblings.sort(newestFirst)
+
+  const result: ProjectSessionLineageEntry[] = []
+  const visited = new Set<string>()
+  const appendTree = (root: ProjectSession): void => {
+    const stack: Array<{ session: ProjectSession; depth: number }> = [{ session: root, depth: 0 }]
+    while (stack.length > 0) {
+      const current = stack.pop()
+      if (current === undefined || visited.has(current.session.id)) continue
+      visited.add(current.session.id)
+      result.push({ ...current.session, depth: current.depth })
+      const descendants = children.get(current.session.id) ?? []
+      for (let index = descendants.length - 1; index >= 0; index -= 1) {
+        const child = descendants[index]
+        if (child !== undefined) stack.push({ session: child, depth: current.depth + 1 })
+      }
+    }
+  }
+  for (const root of roots) appendTree(root)
+  // A pure cycle has no root. Emit its members once at root level instead of hiding them.
+  for (const session of sessions) if (!visited.has(session.id)) appendTree(session)
+  return result
+}
+
+/**
  * Best-effort deletion of one persisted session directory. Returns whether the
  * directory was removed (or already absent).
  */
@@ -230,4 +307,10 @@ export function deleteSession(dir: string): boolean {
   } catch {
     return false
   }
+}
+
+/** Delete one ordinary Session id in a known project without constructing a path from untrusted input. */
+export function deleteProjectSession(home: string, cwd: string, sessionId: string): boolean {
+  const session = listProjectSessions(home, cwd).find(candidate => candidate.id === sessionId)
+  return session === undefined || deleteSession(session.dir)
 }

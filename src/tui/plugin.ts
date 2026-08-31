@@ -27,7 +27,7 @@ import {
 // Declaration-merges the settings service and its registered namespaces.
 import type {} from '@deepseek-ai/dsh-settings'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 // Declaration-merges the `shell` service onto Context.
 import type {} from '@deepseek-ai/dsh-shell'
 // Declaration-merges the `approval/request` waterfall onto the Cordis Events.
@@ -50,8 +50,8 @@ import type {
 } from '@deepseek-ai/dsh-subagent'
 import type { JobId, JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-session-title'
-// Declaration-merges the project/session query service onto Context.
-import type { SessionTitleObservationResult } from '@deepseek-ai/dsh-session-query'
+// Declaration-merges the shared Session projection service used during setup.
+import type {} from '@deepseek-ai/dsh-session-projection'
 import { TuiHost } from './host.ts'
 import type { SelectorHandle, SelectorItem } from './selector.ts'
 import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
@@ -98,13 +98,18 @@ import {
   writeSessionExport,
   type SessionExportFormat,
 } from './session-export.ts'
-import { buildSessionTreeRows, sessionSwitchBlocker } from './session-tree.ts'
+import { sessionForkPoints } from './session-fork.ts'
 import {
   createActiveSubagentProjection,
   type ActiveSubagentSnapshot,
 } from './active-subagent-projection.ts'
 import { installConcurrentSubagentPolicy } from './subagent-concurrency-policy.ts'
-import { sendSessionSwitch } from '../session-switch.ts'
+import {
+  sendSessionDiscard,
+  sendSessionSwitch,
+  sessionSwitchBlocker,
+  type SessionSwitchTarget,
+} from '../session-switch.ts'
 
 /** Stable Cordis plugin name (referenced by id in the profile patch). */
 export const name = 'dsh-code-tui'
@@ -126,6 +131,15 @@ export function userInputDelivery(
   activeSubagentCount: number,
 ): 'followup' | 'steer' {
   return status === 'running' && activeSubagentCount > 0 ? 'steer' : 'followup'
+}
+
+/** A launcher-created blank Session is disposable until its first human prompt. */
+export function shouldDiscardEmptyFreshSession(
+  resumeId: string | undefined,
+  events: readonly SessionEvent[],
+): boolean {
+  return resumeId === undefined
+    && !events.some(event => event.type === 'user/message' && event.data.source.kind === 'user')
 }
 
 /** Parse a leading `--resume <id>` from the invocation's inner args. */
@@ -1670,22 +1684,6 @@ async function run(ctx: Context): Promise<void> {
     },
   })
 
-  ctx.commands.register({
-    name: 'fork',
-    description: 'Fork the current session at the last completed turn',
-    handler: async () => {
-      const boundary = agent.session.events.findLast(event => event.type === 'turn/end')?.seq
-      if (boundary === undefined) return { kind: 'error', text: 'no completed turn to fork at' }
-      try {
-        const child = ctx.sessions.fork(agent.session, boundary, SessionId(`session-${randomUUID()}`))
-        await ctx.sessions.flush(child)
-        return { kind: 'success', text: `forked session ${child.id} · use /tree to switch` }
-      } catch (error) {
-        return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
-      }
-    },
-  })
-
   const switchBlocker = (): string | undefined => sessionSwitchBlocker({
     agentRunning: agent.status === 'running',
     queuedMessages: reducer.queuedMessages.length,
@@ -1693,89 +1691,125 @@ async function run(ctx: Context): Promise<void> {
     activeSubagents: activeSubagents.current.count,
   })
 
-  const switchToSession = async (targetId: string): Promise<void> => {
-    const currentId = String(agent.session.id)
-    if (targetId === currentId) {
-      host.showNotice('already on the selected session')
-      return
-    }
+  const handoffSession = async (target: SessionSwitchTarget): Promise<void> => {
     const blocked = switchBlocker()
     if (blocked !== undefined) {
       host.showNotice(`session switch blocked: ${blocked}`)
       return
     }
     try {
-      const target = await ctx.sessionQuery.readSession(SessionId(targetId))
-      if (target.session.cwd !== process.cwd() || target.session.origin === 'subagent') {
-        throw new Error('the selected session is outside the current project conversation tree')
-      }
       await sessions.flush(agent.session)
-      await sendSessionSwitch(targetId)
+      await sendSessionSwitch(target)
       await shutdown(0)
     } catch (error) {
       showCommandError('session switch', error)
     }
   }
 
-  let sessionTreeLoading = false
-  const showSessionTree = async (): Promise<void> => {
-    if (sessionTreeLoading) {
-      host.showNotice('session tree is already loading')
-      return
+  const createChildFromCut = (cut: number) => {
+    const events = agent.session.events
+    if (!Number.isSafeInteger(cut) || cut < 0 || cut > events.length) {
+      throw new Error(`invalid session fork cut ${String(cut)}`)
     }
-    const blocked = switchBlocker()
-    if (blocked !== undefined) {
-      host.showNotice(`session switch blocked: ${blocked}`)
-      return
-    }
-    sessionTreeLoading = true
-    try {
-      const records = await ctx.sessionQuery.filterSessions([{ kind: 'cwd', values: [process.cwd()] }])
-      const eligible = records.filter(record => record.header.origin !== 'subagent')
-      const titleResults: SessionTitleObservationResult[] = await ctx.sessionQuery.readTitleSnapshots(
-        eligible.map(record => record.header.id),
-      )
-      const titles = new Map<string, string>()
-      for (const result of titleResults) {
-        if (result.status === 'fulfilled' && result.value.title !== undefined) {
-          titles.set(String(result.sessionId), result.value.title.title)
-        }
-      }
-      const rows = buildSessionTreeRows(eligible, String(agent.session.id), titles)
-      if (rows.length === 0) {
-        host.showNotice('no sessions in the current conversation tree')
-        return
-      }
-      const lateBlocker = switchBlocker()
-      if (lateBlocker !== undefined) {
-        host.showNotice(`session switch blocked: ${lateBlocker}`)
-        return
-      }
-      host.showSessionTree({
-        rows,
-        borderColor: theme.selectorBorder,
-        onSelect: (sessionId) => {
-          if (rows.find(row => row.id === sessionId)?.persisted !== true) {
-            host.showNotice('session switch blocked: the selected session has not been persisted')
-            return
-          }
-          void switchToSession(sessionId)
-        },
-        onCancel: () => {},
-      })
-    } catch (error) {
-      showCommandError('session tree', error)
-    } finally {
-      sessionTreeLoading = false
-    }
+    return sessions.create(SessionId(`session-${randomUUID()}`), {
+      seed: events.slice(0, cut),
+      meta: {
+        ...(agent.session.header.cwd === undefined ? {} : { cwd: agent.session.header.cwd }),
+        parentSession: agent.session.id,
+        seedLength: cut,
+        agentPreset: activePreset,
+      },
+    })
   }
 
   ctx.commands.register({
-    name: 'tree',
-    description: 'Browse this project’s session tree and switch branches',
+    name: 'new',
+    description: 'Start a new empty Standard session',
     handler: () => {
-      void showSessionTree()
+      const blocked = switchBlocker()
+      if (blocked !== undefined) return { kind: 'error', text: `session switch blocked: ${blocked}` }
+      setTimeout(() => {
+        void handoffSession({ kind: 'new' })
+      }, 0)
+      return { kind: 'success', text: 'starting a new session' }
+    },
+  })
+
+  ctx.commands.register({
+    name: 'fork',
+    description: 'Fork before a selected historical user request and switch to it',
+    handler: () => {
+      const points = sessionForkPoints(agent.session.events)
+      if (points.length === 0) return { kind: 'error', text: 'no user requests to fork from' }
+      host.showSelector({
+        hint: 'Fork before user request · newest first · Enter create and switch · Esc close',
+        borderColor: theme.selectorBorder,
+        items: points.map(point => ({
+          value: String(point.userSeq),
+          label: point.text,
+          description: `before event ${point.userSeq} · ${new Date(point.time).toLocaleString()}`,
+        })),
+        onSelect: (value) => {
+          const point = points.find(candidate => candidate.userSeq === Number(value))
+          if (point === undefined) {
+            host.showNotice('session fork failed: selected request is no longer available')
+            return
+          }
+          try {
+            const child = createChildFromCut(point.cut)
+            void sessions.flush(child).then(
+              () => { void handoffSession({ kind: 'resume', sessionId: String(child.id) }) },
+              error => { showCommandError('session fork', error) },
+            )
+          } catch (error) {
+            showCommandError('session fork', error)
+          }
+        },
+        onCancel: () => {},
+      })
       return { kind: 'success' }
+    },
+  })
+
+  ctx.commands.register({
+    name: 'resume',
+    description: 'Choose and switch to a persisted session',
+    handler: () => {
+      const blocked = switchBlocker()
+      if (blocked !== undefined) return { kind: 'error', text: `session switch blocked: ${blocked}` }
+      setTimeout(() => {
+        void handoffSession({ kind: 'picker', fallbackSessionId: String(agent.session.id) })
+      }, 0)
+      return { kind: 'success', text: 'opening the session picker' }
+    },
+  })
+
+  ctx.commands.register({
+    name: 'clone',
+    description: 'Clone the current session snapshot and switch to it',
+    handler: ({ commandId }) => {
+      const blocked = switchBlocker()
+      if (blocked !== undefined) return { kind: 'error', text: `session switch blocked: ${blocked}` }
+      const events = agent.session.events
+      if (!events.some(event => event.type === 'user/message' && event.data.source.kind === 'user')) {
+        return { kind: 'error', text: 'nothing to clone yet' }
+      }
+      const run = events.findLast(event => event.type === 'command/run' && event.data.commandId === commandId)
+      if (run === undefined) return { kind: 'error', text: 'clone command boundary is unavailable' }
+      try {
+        // The exclusive cut omits this /clone command's own audit lifecycle.
+        const child = createChildFromCut(run.seq)
+        void sessions.flush(child).then(
+          () => {
+            // Let command/done land in the parent before teardown starts.
+            setTimeout(() => { void handoffSession({ kind: 'resume', sessionId: String(child.id) }) }, 0)
+          },
+          error => { showCommandError('session clone', error) },
+        )
+        return { kind: 'success', text: `cloned session ${child.id}; switching` }
+      } catch (error) {
+        return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
+      }
     },
   })
 
@@ -1858,6 +1892,7 @@ async function run(ctx: Context): Promise<void> {
   const shutdown = async (code: number): Promise<void> => {
     if (shuttingDown) return
     shuttingDown = true
+    const discardEmptyFreshSession = shouldDiscardEmptyFreshSession(resumeId, agent.session.events)
     // Drop any pending render tick: it would fire after `appExit` disposes the
     // context and read `ctx.tokenMeter` from an inactive context.
     if (renderTimer !== undefined) {
@@ -1893,6 +1928,14 @@ async function run(ctx: Context): Promise<void> {
       await handle.dispose()
     } catch {
       // appExit still tears down the remaining composition tree.
+    }
+    if (discardEmptyFreshSession) {
+      try {
+        await sendSessionDiscard(String(agent.session.id))
+      } catch {
+        // Direct upstream launches have no launcher IPC; only dsh-code can
+        // perform the post-exit directory cleanup.
+      }
     }
     ctx.appExit?.(code)
   }

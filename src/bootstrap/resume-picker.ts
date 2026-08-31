@@ -1,5 +1,5 @@
 /**
- * Full-screen pi-tui session picker for `dsh-code -r`/`--resume`. Lists the
+ * Full-screen pi-tui session picker for `dsh-code -r`/`--resume` and `/resume`. Lists the
  * project's (or every project's) persisted sessions — each shown by its first
  * user message — with keyword search, keyboard navigation, deletion, and a
  * current-folder / all-folder scope toggle. Resolves to a session id to resume
@@ -20,7 +20,13 @@ import {
 import { homedir } from 'node:os'
 import { sep } from 'node:path'
 import { bindAdaptiveTheme, theme, type AdaptiveThemeBinding } from '../tui/theme.ts'
-import { deleteSession, listAllSessions, listProjectSessions, type ProjectSession } from './sessions.ts'
+import {
+  deleteSession,
+  listAllSessions,
+  listProjectSessions,
+  sessionLineage,
+  type ProjectSessionLineageEntry,
+} from './sessions.ts'
 
 /** The picker's resolution: resume a session id, or leave without resuming. */
 export type ResumePickerResult = { kind: 'resume'; id: string } | { kind: 'exit' }
@@ -59,8 +65,8 @@ class ResumePickerScreen implements Component {
   private readonly cwd: string
   private readonly resolve: (result: ResumePickerResult) => void
   private scope: 'current' | 'all' = 'current'
-  private entries: ProjectSession[] = []
-  private filtered: ProjectSession[] = []
+  private entries: ProjectSessionLineageEntry[] = []
+  private filtered: ProjectSessionLineageEntry[] = []
   private selectedIndex = 0
   /** True while the delete confirmation prompt is armed. */
   private pendingDelete = false
@@ -77,17 +83,29 @@ class ResumePickerScreen implements Component {
   set focused(value: boolean) { this.input.focused = value }
 
   private reload(): void {
-    this.entries = this.scope === 'current'
+    this.entries = sessionLineage(this.scope === 'current'
       ? listProjectSessions(this.home, this.cwd)
-      : listAllSessions(this.home)
+      : listAllSessions(this.home))
     this.applyFilter()
   }
 
   private applyFilter(): void {
     const query = this.input.getValue().trim().toLowerCase()
-    this.filtered = query === ''
-      ? this.entries
-      : this.entries.filter(entry => entry.title.toLowerCase().includes(query))
+    if (query === '') {
+      this.filtered = this.entries
+    } else {
+      const byId = new Map(this.entries.map(entry => [entry.id, entry]))
+      const included = new Set<string>()
+      for (const entry of this.entries) {
+        if (!`${entry.title} ${entry.id} ${entry.cwd ?? ''}`.toLowerCase().includes(query)) continue
+        let cursor: ProjectSessionLineageEntry | undefined = entry
+        while (cursor !== undefined && !included.has(cursor.id)) {
+          included.add(cursor.id)
+          cursor = cursor.parentSession === undefined ? undefined : byId.get(cursor.parentSession)
+        }
+      }
+      this.filtered = this.entries.filter(entry => included.has(entry.id))
+    }
     if (this.selectedIndex >= this.filtered.length) this.selectedIndex = Math.max(0, this.filtered.length - 1)
   }
 
@@ -122,8 +140,7 @@ class ResumePickerScreen implements Component {
       process.stderr.write(`dsh-code: failed to delete session ${entry.id}\n`)
       return
     }
-    this.entries = this.entries.filter(candidate => candidate.dir !== entry.dir)
-    this.applyFilter()
+    this.reload()
   }
 
   handleInput(data: string): void {
@@ -175,10 +192,11 @@ class ResumePickerScreen implements Component {
     return lines
   }
 
-  private itemLine(width: number, entry: ProjectSession, selected: boolean, now: number): string {
+  private itemLine(width: number, entry: ProjectSessionLineageEntry, selected: boolean, now: number): string {
     const time = entry.createdAt === undefined ? '' : relativeAge(now, entry.createdAt)
     const description = this.scope === 'all' ? this.describeAllFolder(entry, time) : time
-    const title = entry.title === '' ? '(no messages)' : entry.title
+    const lineage = entry.depth === 0 ? '' : `${'  '.repeat(entry.depth - 1)}└─ `
+    const title = lineage + (entry.title === '' ? '(no messages)' : entry.title)
     const titleMax = Math.max(1, width - 3 - visibleWidth(description))
     const truncatedTitle = truncateToWidth(title, titleMax, '')
     const padding = ' '.repeat(Math.max(0, titleMax - visibleWidth(truncatedTitle)) + 1)
@@ -190,7 +208,7 @@ class ResumePickerScreen implements Component {
   }
 
   /** Right-side description: abbreviated project path plus age (All Folder). */
-  private describeAllFolder(entry: ProjectSession, time: string): string {
+  private describeAllFolder(entry: ProjectSessionLineageEntry, time: string): string {
     const path = abbreviatePath(entry.cwd)
     if (path === '') return time
     return time === '' ? path : `${path} ${time}`

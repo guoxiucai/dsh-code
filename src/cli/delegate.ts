@@ -8,7 +8,11 @@
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import { isSessionSwitchMessage } from '../session-switch.ts'
+import {
+  isSessionDiscardMessage,
+  isSessionSwitchMessage,
+  type SessionSwitchTarget,
+} from '../session-switch.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -53,7 +57,8 @@ export function delegateDsh(dshArgs: readonly string[], env: NodeJS.ProcessEnv):
 
 export interface InteractiveDelegateResult {
   code: number
-  switchSessionId?: string
+  switchTarget?: SessionSwitchTarget
+  discardSessionId?: string
 }
 
 /**
@@ -81,7 +86,8 @@ export function delegateInteractiveProcess(
   env: NodeJS.ProcessEnv,
 ): Promise<InteractiveDelegateResult> {
   return new Promise((resolve) => {
-    let switchSessionId: string | undefined
+    let switchTarget: SessionSwitchTarget | undefined
+    let discardSessionId: string | undefined
     let settled = false
     const settle = (result: InteractiveDelegateResult): void => {
       if (settled) return
@@ -93,8 +99,11 @@ export function delegateInteractiveProcess(
       env,
     })
     child.on('message', (message) => {
-      if (switchSessionId === undefined && isSessionSwitchMessage(message)) {
-        switchSessionId = message.sessionId
+      if (switchTarget === undefined && isSessionSwitchMessage(message)) {
+        switchTarget = message.target
+      }
+      if (discardSessionId === undefined && isSessionDiscardMessage(message)) {
+        discardSessionId = message.sessionId
       }
     })
     child.on('error', (error) => {
@@ -105,7 +114,8 @@ export function delegateInteractiveProcess(
       const resultCode = signal !== null ? (signal === 'SIGINT' ? 130 : 1) : (code ?? 1)
       settle({
         code: resultCode,
-        ...(resultCode !== 0 || switchSessionId === undefined ? {} : { switchSessionId }),
+        ...(resultCode !== 0 || switchTarget === undefined ? {} : { switchTarget }),
+        ...(resultCode !== 0 || discardSessionId === undefined ? {} : { discardSessionId }),
       })
     })
   })

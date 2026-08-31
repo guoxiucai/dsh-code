@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { visibleWidth } from '@earendil-works/pi-tui'
-import { InlineTextInputComponent, ListSelectorComponent, SessionTreeSelectorComponent } from '../../src/tui/selector.ts'
-import type { SessionTreeRow } from '../../src/tui/session-tree.ts'
+import { InlineTextInputComponent, ListSelectorComponent } from '../../src/tui/selector.ts'
 
 const identity = (text: string): string => text
 
@@ -191,44 +190,5 @@ describe('ListSelectorComponent', () => {
 
     expect(selector.render(80).join('\n')).toContain('b ● connected')
     expect(onSelect).toHaveBeenCalledWith('b')
-  })
-})
-
-describe('SessionTreeSelectorComponent', () => {
-  const rows: SessionTreeRow[] = [
-    { id: 'root', parentId: undefined, title: 'Root work', createdAt: 1, depth: 0, guides: [], lastSibling: true, current: false, activePath: true, hasChildren: true, live: false, persisted: true },
-    { id: 'current', parentId: 'root', title: 'Current branch', createdAt: 2, depth: 1, guides: [false], lastSibling: false, current: true, activePath: true, hasChildren: true, live: true, persisted: true },
-    { id: 'leaf', parentId: 'current', title: 'Nested target', createdAt: 3, depth: 2, guides: [false, true], lastSibling: true, current: false, activePath: false, hasChildren: false, live: false, persisted: true },
-    { id: 'sibling', parentId: 'root', title: 'Sibling branch', createdAt: 4, depth: 1, guides: [false], lastSibling: true, current: false, activePath: false, hasChildren: false, live: false, persisted: true },
-  ]
-
-  it('starts on the current session and submits it', () => {
-    const onSelect = vi.fn()
-    const selector = new SessionTreeSelectorComponent({ rows, borderColor: identity, onSelect, onCancel: vi.fn() })
-    expect(selector.render(100).join('\n')).toContain('✓ current')
-    selector.handleInput('\r')
-    expect(onSelect).toHaveBeenCalledWith('current')
-  })
-
-  it('folds descendants and search restores matching ancestry', () => {
-    const selector = new SessionTreeSelectorComponent({ rows, borderColor: identity, onSelect: vi.fn(), onCancel: vi.fn() })
-    selector.handleInput('\x1b[D')
-    expect(selector.render(100).join('\n')).not.toContain('Nested target')
-    selector.handleInput('Nested')
-    const rendered = selector.render(100).join('\n')
-    expect(rendered).toContain('Root work')
-    expect(rendered).toContain('Current branch')
-    expect(rendered).toContain('Nested target')
-    expect(rendered).not.toContain('Sibling branch')
-  })
-
-  it('clears search on the first Esc and closes on the second', () => {
-    const onCancel = vi.fn()
-    const selector = new SessionTreeSelectorComponent({ rows, borderColor: identity, onSelect: vi.fn(), onCancel })
-    selector.handleInput('Nested')
-    selector.handleInput('\x1b')
-    expect(onCancel).not.toHaveBeenCalled()
-    selector.handleInput('\x1b')
-    expect(onCancel).toHaveBeenCalledOnce()
   })
 })

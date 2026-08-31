@@ -11,6 +11,13 @@
   permission preset projection.
 - Preserved resume compatibility for sessions that recorded the former `code`
   PTC preset id.
+- Reworked interactive session commands around DSH's linear-session primitives:
+  added `/new`, `/resume`, and `/clone`; changed `/fork` to select a historical
+  user request, copy the prefix before its turn, and switch to the child; and
+  removed the misleading `/tree` entry-tree substitute.
+- Made `/new` always enter Standard mode, discard a newly created Session when
+  it exits without any human message, and render fork/clone ancestry as nested
+  generations in the `/resume` picker.
 - Kept all downstream adaptations in dsh-code; the upstream submodule source is
   unchanged.
 

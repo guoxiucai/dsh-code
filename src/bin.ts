@@ -16,10 +16,10 @@ import { runUpdate } from './cli/update.ts'
 import { resolveDshCodeHome } from './bootstrap/home.ts'
 import { FIRST_MODEL_CONFIG_ENV, hasStoredCredential } from './bootstrap/credentials.ts'
 import { initDshCodeProfile } from './bootstrap/profile.ts'
-import { listProjectSessions } from './bootstrap/sessions.ts'
+import { deleteProjectSession, listProjectSessions } from './bootstrap/sessions.ts'
 import { appendNodeImport } from './bootstrap/node-options.ts'
 import { createEphemeralMcpPatch, migrateLegacyProjectMcpConfig } from './tui/mcp-config.ts'
-import { AGENT_MODE_ENV } from './agent-mode.ts'
+import { AGENT_MODE_ENV, DEFAULT_AGENT_MODE } from './agent-mode.ts'
 import {
   canonicalizeProjectPath,
   isProjectTrusted,
@@ -126,19 +126,43 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   } else {
     appArgs = []
   }
-  let firstLaunch = true
+  let freshAgentMode = appArgs.length === 0 ? invocation.agentMode : undefined
   while (true) {
     const result = await delegateDshInteractive(
       ['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs],
       tuiDelegatedEnv(
         home,
         !hasStoredCredential(home),
-        firstLaunch && appArgs.length === 0 ? invocation.agentMode : undefined,
+        appArgs.length === 0 ? freshAgentMode : undefined,
       ),
     )
-    if (result.switchSessionId === undefined) return result.code
-    appArgs = ['--resume', result.switchSessionId]
-    firstLaunch = false
+    if (result.discardSessionId !== undefined
+      && !deleteProjectSession(home, canonical, result.discardSessionId)) {
+      process.stderr.write(`dsh-code: failed to discard empty session ${result.discardSessionId}\n`)
+    }
+    const target = result.switchTarget
+    if (target === undefined) return result.code
+    if (target.kind === 'resume') {
+      appArgs = ['--resume', target.sessionId]
+      freshAgentMode = undefined
+      continue
+    }
+    if (target.kind === 'new') {
+      appArgs = []
+      freshAgentMode = DEFAULT_AGENT_MODE
+      continue
+    }
+
+    const { pickSession } = await import('./bootstrap/resume-picker.ts')
+    const picked = await pickSession(home, canonical)
+    if (picked.kind === 'resume') {
+      appArgs = ['--resume', picked.id]
+    } else {
+      const fallbackExists = listProjectSessions(home, canonical)
+        .some(session => session.id === target.fallbackSessionId)
+      appArgs = fallbackExists ? ['--resume', target.fallbackSessionId] : []
+    }
+    freshAgentMode = undefined
   }
 }
 

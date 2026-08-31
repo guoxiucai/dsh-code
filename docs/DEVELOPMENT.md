@@ -183,6 +183,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
     adr/0002-launcher-delegation.md    # ADR-002 启动器委托
   src/
     bin.ts                     # CLI 入口（产品动词、信任、委托、软链 entry 检测）
+    session-switch.ts          # TUI→launcher 会话转换/空会话清理 IPC 与切换门禁
     cli/
       args.ts                  # 产品参数解析（help/version/resume/-p/config/plugin/import/update）
       delegate.ts              # spawn 上游 @deepseek-ai/dsh/lib/bin.js
@@ -201,6 +202,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       view-model.ts            # ViewModel 类型（TranscriptItem / RetryStatus / ToolDiff 等）
       theme.ts                 # ANSI 调色板（userBg/toolBg/border/bashBorder/selectorBorder…）
       selector.ts              # 内联列表选择器和文本输入（向导控件）
+      session-fork.ts          # /fork 历史用户请求 → turn 前稳定 cut 的纯投影
       interaction.ts           # 一次性审批条、结构化问题与 Plan Review 面板
       config-wizard.ts         # /config 纯辅助函数（如 credential env 自动生成）
       project-config.ts        # 旧版项目 Cordis MCP row 解析/迁移辅助
@@ -222,7 +224,9 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - 解析产品动词，`--help`/`--version` 本地处理（不联网）。
 - 设 `DSH_HOME = DSH_CODE_HOME ?? ~/.dsh-code`（隔离）。
 - 项目信任前置检查（`ensureTrusted`），未信任时 TTY 询问 / 非 TTY 需 `--approve`。
-- 初始化 profile 后委托 `@deepseek-ai/dsh/lib/bin.js --profile dsh-code [--patch <项目patch>] [--resume <id>]`。
+- 初始化 profile 后委托 `@deepseek-ai/dsh/lib/bin.js --profile dsh-code [--patch <项目patch>] [--resume <id>]`；
+  `/new`、`/resume`、`/clone` 通过窄 IPC 让 launcher 在旧 TUI 完整退出后创建 Standard 空会话、打开同一全屏选择器或恢复目标会话。
+  本次由 `agents.create` 新建且始终没有 human `user/message` 的 Session 会在退出后再由 launcher 删除，避免残留 `(no messages)`。
 - 交互启动前只读检查 `$DSH_HOME/.credentials.yaml`；若没有任何非空字符串凭据，则通过
   `DSH_CODE_FIRST_MODEL_CONFIG=1` 通知 TUI 自动打开现有 `/config` 向导。普通委托会主动清除此内部标记，
   凭据解析、写入和权限控制仍完全由上游 `credentials` 服务负责。
@@ -239,7 +243,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
   上游 Registry 中可由用户调用的 Skill → 普通 `agent.followup`。命令名优先于同名 Skill。
 - 注册 slash 命令：`/model` `/mode` `/config` `/skills` `/agents` `/mcp` `/session` `/rename`
-  `/jobs` `/export` `/fork` `/tree` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
+  `/jobs` `/export` `/new` `/resume` `/fork` `/clone` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
 - `/skills` 不建立第二套 Skill Store。基础 provider 读取项目 `.dsh/.agents`、独立
   `~/.dsh-code/skills` 与 `~/.agents/skills`；Profile 中的第二个上游 filesystem provider
   只读补充项目 `.codex/.claude` 和用户 `~/.dsh/.codex/.claude`。列表不进入详情二级页：Space
@@ -457,11 +461,11 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | TUI：转写、流式、工具卡片、状态栏、编辑器 | ✅ |
 | 一次性内联审批条（沙箱升级 / Hook ask，Allow once / Reject） | ✅ |
 | 结构化 `ask_user_question` / Plan Review（单选、多选、自定义答案） | ✅ |
-| 内联选择/输入（/model、/permission、/config、/goal、/skills、/agents、/mcp、/rename、/jobs、/export、/tree） | ✅ |
+| 内联选择/输入（/model、/permission、/config、/goal、/skills、/agents、/mcp、/rename、/jobs、/export、/fork） | ✅ |
 | 无已存 Credential 时自动进入首次模型/API Token 配置 | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
-| session resume（`resume <id>`、`-c` 最近会话、`-r` 全屏选择器，删除二次确认）、fork | ✅ |
-| 命令面板（/model /mode /config /skills /agents /mcp /session /rename /jobs /export /fork /tree /quit /exit） | ✅ |
+| session new/resume（CLI 与 `/new`、分层 `/resume`）、空白新会话回收、历史请求前 fork 并切换、当前快照 clone | ✅ |
+| 命令面板（/model /mode /config /skills /agents /mcp /session /rename /jobs /export /new /resume /fork /clone /quit /exit） | ✅ |
 | Markdown 渲染、带行号及整行背景的工具 diff | ✅ |
 | 思考最新 5 行/工具结果折叠（Ctrl+O）、结果选择复制、整块背景、块间距、页脚 | ✅ |
 | loading / retry / compaction 状态指示 | ✅ |
@@ -540,8 +544,7 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 | `ctx.permissionPresets.names/current/set` | `@deepseek-ai/dsh-permission-presets` |
 | `ctx.settings.update/replace/get`、`ctx.credentials.set` | `@deepseek-ai/dsh-settings` / `-credentials` |
 | `ctx.shell.resolve/run` | `@deepseek-ai/dsh-shell` |
-| `ctx.sessions.fork/flush` | `@deepseek-ai/dsh-session` |
-| `ctx.sessionQuery.filterSessions/readSession/readTitleSnapshots` | `@deepseek-ai/dsh-session-query` |
+| `ctx.sessions.create/flush` | `@deepseek-ai/dsh-session` |
 | `ctx.llm.listProviders/listModels` | `@deepseek-ai/dsh-llm` |
 | `ctx.goals.get/create/edit/pause/resume/clear` | `@deepseek-ai/dsh-goal` |
 | `ctx.skills.list` | `@deepseek-ai/dsh-skill` |
@@ -565,9 +568,12 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
   TUI 内的 `/config` 已实现模型和凭证配置，不要混淆两者。当前 `--help` 对产品级 `config` 的描述仍是目标行为，
   不代表已经实现。`dsh-code update` 已实现 npm global 安装的 stable/next/精确版本检查与显式升级。
 - `dsh-code -p ... --verbose` 目前只完成参数解析，尚未把详细工具跟踪传递给 headless 路径。
-- `/tree` 通过 `ctx.sessionQuery` 投影同项目、非 subagent 的 Session 分支；选择后先 flush 当前 Session，
-  再通过私有 IPC 让启动器等待旧子进程完整退出后以 `--resume` 启动目标 Session。该切换只改变对话，
-  不回滚工作区文件；有运行中 turn、排队消息、subagent 或后台任务时拒绝切换。
+- 上游没有 pi 风格的 Session 内 Entry Tree，因此不提供 `/tree`。`/fork` 把历史用户请求映射到其所在
+  DSH turn 开始前的稳定 cut；同一 turn 内的多个用户消息会得到相同 cut，不能表达 turn 内分叉。
+- `/resume` 读取每个 Header 的 `parentSession`，按家族把 fork/clone 的子孙会话缩进展示；缺失父节点或环会降级为根节点，
+  不影响恢复。家族按最近一次子孙活动排序。
+- `/new`、`/resume`、`/clone` 的会话切换只改变对话，不回滚工作区文件；有运行中 turn、排队消息、
+  subagent 或后台任务时拒绝切换。`/resume` 在 picker 中取消时恢复原会话；如果原会话同时被删除则新建空会话。
 - `@` 文件联想依赖 `fd` 二进制（未安装时走内置遍历，较慢）。
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
 - npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工
