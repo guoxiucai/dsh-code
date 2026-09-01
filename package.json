@@ -34,7 +34,8 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/make-bin-executable.mjs",
+    "build": "tsc -p tsconfig.json && pnpm run build:web && node scripts/make-bin-executable.mjs",
+    "build:web": "pnpm --filter @deepseek-ai/dsh-web-frontend run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "build:lib": "pnpm run build:lib:host && pnpm run build:lib:client",

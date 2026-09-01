@@ -14,7 +14,10 @@ describe('session switch IPC', () => {
     expect(isSessionSwitchMessage({ type: 'dsh-code/session-switch', target: { kind: 'resume', sessionId: 'session-1' } })).toBe(true)
     expect(isSessionSwitchMessage({ type: 'dsh-code/session-switch', target: { kind: 'new' } })).toBe(true)
     expect(isSessionSwitchMessage({ type: 'dsh-code/session-switch', target: { kind: 'picker', fallbackSessionId: 'session-1' } })).toBe(true)
+    expect(isSessionSwitchMessage({ type: 'dsh-code/session-switch', target: { kind: 'web', fallbackSessionId: 'session-1', discardIfStillEmpty: false } })).toBe(true)
     expect(isSessionSwitchMessage({ type: 'dsh-code/session-switch', target: { kind: 'resume', sessionId: '' } })).toBe(false)
+    expect(isSessionSwitchMessage({ type: 'dsh-code/session-switch', target: { kind: 'web', fallbackSessionId: '', discardIfStillEmpty: false } })).toBe(false)
+    expect(isSessionSwitchMessage({ type: 'dsh-code/session-switch', target: { kind: 'web', fallbackSessionId: 'session-1' } })).toBe(false)
     expect(isSessionSwitchMessage({ type: 'dsh-code/session-switch', target: { kind: 'unknown' } })).toBe(false)
     expect(isSessionSwitchMessage({ type: 'other', target: { kind: 'resume', sessionId: 'session-1' } })).toBe(false)
     expect(isSessionSwitchMessage(null)).toBe(false)
@@ -34,6 +37,10 @@ describe('session switch IPC', () => {
     await expect(delegateInteractiveProcess(fixture, ['picker'], process.env)).resolves.toEqual({
       code: 0,
       switchTarget: { kind: 'picker', fallbackSessionId: 'session-current' },
+    })
+    await expect(delegateInteractiveProcess(fixture, ['web'], process.env)).resolves.toEqual({
+      code: 0,
+      switchTarget: { kind: 'web', fallbackSessionId: 'session-current', discardIfStillEmpty: false },
     })
     await expect(delegateInteractiveProcess(fixture, ['discard'], process.env)).resolves.toEqual({
       code: 0,

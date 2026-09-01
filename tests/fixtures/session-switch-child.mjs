@@ -8,6 +8,10 @@ if (mode === 'picker') process.send?.({
   type: 'dsh-code/session-switch',
   target: { kind: 'picker', fallbackSessionId: 'session-current' },
 })
+if (mode === 'web') process.send?.({
+  type: 'dsh-code/session-switch',
+  target: { kind: 'web', fallbackSessionId: 'session-current', discardIfStillEmpty: false },
+})
 if (mode === 'invalid') process.send?.({ type: 'dsh-code/session-switch', target: { kind: 'resume', sessionId: '' } })
 if (mode === 'discard' || mode === 'resume-discard') {
   process.send?.({ type: 'dsh-code/session-discard', sessionId: 'session-empty' })

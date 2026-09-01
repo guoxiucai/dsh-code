@@ -221,12 +221,18 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | `/resume` | Open the hierarchical full-screen session picker and switch to the selection |
 | `/fork` | Fork before a selected historical user request and switch to it |
 | `/clone` | Clone the current session snapshot and switch to the clone |
+| `/web` | Suspend the TUI, open dsh-code's package-local DSH Web UI, then reload the current session when Web stops |
 | `/compact` | Compact the current context through DSH |
 | `/quit`, `/exit` | Exit when the agent is idle |
 | `!<command>` | Run a shell/PowerShell command without sending it to the model |
 
 Additional commands supplied by the pinned DSH profile remain discoverable
 through `/` autocomplete.
+
+While `/web` is active, the terminal is a read-only lifecycle screen. Closing
+the browser tab does not stop the local Web process; press `Esc` in the terminal
+to stop Web safely and return to the reloaded TUI, or `Ctrl+D` to stop Web and
+exit dsh-code.
 
 ### Essential keys
 

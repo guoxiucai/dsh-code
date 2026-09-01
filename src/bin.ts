@@ -11,15 +11,22 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { HELP_TEXT, parseArgs, type PromptInvocation, type TuiInvocation } from './cli/args.ts'
 import { delegateDsh, delegateDshInteractive } from './cli/delegate.ts'
+import { runWebSurface } from './cli/web-surface.ts'
 import { unsupportedPlatformMessage } from './cli/platform.ts'
 import { runUpdate } from './cli/update.ts'
 import { resolveDshCodeHome } from './bootstrap/home.ts'
 import { FIRST_MODEL_CONFIG_ENV, hasStoredCredential } from './bootstrap/credentials.ts'
 import { initDshCodeProfile } from './bootstrap/profile.ts'
-import { deleteProjectSession, listProjectSessions } from './bootstrap/sessions.ts'
+import {
+  deleteProjectSession,
+  deleteSession,
+  listProjectSessions,
+  newlyCreatedEmptySessions,
+} from './bootstrap/sessions.ts'
 import { appendNodeImport } from './bootstrap/node-options.ts'
 import { createEphemeralMcpPatch, migrateLegacyProjectMcpConfig } from './tui/mcp-config.ts'
 import { AGENT_MODE_ENV, DEFAULT_AGENT_MODE } from './agent-mode.ts'
+import { DISCARD_EMPTY_RESUME_ENV, STARTUP_NOTICE_ENV } from './startup-notice.ts'
 import {
   canonicalizeProjectPath,
   isProjectTrusted,
@@ -52,15 +59,25 @@ function delegatedEnv(home: string, firstModelConfig = false, agentMode?: TuiInv
   // Never inherit a stale/spoofed onboarding signal from the parent shell.
   delete env[FIRST_MODEL_CONFIG_ENV]
   delete env[AGENT_MODE_ENV]
+  delete env[STARTUP_NOTICE_ENV]
+  delete env[DISCARD_EMPTY_RESUME_ENV]
   if (firstModelConfig) env[FIRST_MODEL_CONFIG_ENV] = '1'
   if (agentMode !== undefined) env[AGENT_MODE_ENV] = agentMode
   return env
 }
 
 /** Interactive child environment, including the narrowly scoped PTC warning filter. */
-function tuiDelegatedEnv(home: string, firstModelConfig: boolean, agentMode?: TuiInvocation['agentMode']): NodeJS.ProcessEnv {
+function tuiDelegatedEnv(
+  home: string,
+  firstModelConfig: boolean,
+  agentMode?: TuiInvocation['agentMode'],
+  startupNotice?: string,
+  disposableResumeId?: string,
+): NodeJS.ProcessEnv {
   const env = delegatedEnv(home, firstModelConfig, agentMode)
   env.NODE_OPTIONS = appendNodeImport(env.NODE_OPTIONS, warningFilterUrl())
+  if (startupNotice !== undefined) env[STARTUP_NOTICE_ENV] = startupNotice
+  if (disposableResumeId !== undefined) env[DISCARD_EMPTY_RESUME_ENV] = disposableResumeId
   return env
 }
 
@@ -127,13 +144,21 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
     appArgs = []
   }
   let freshAgentMode = appArgs.length === 0 ? invocation.agentMode : undefined
+  let startupNotice: string | undefined
+  let disposableResumeId: string | undefined
   while (true) {
+    const noticeForLaunch = startupNotice
+    startupNotice = undefined
+    const disposableResumeForLaunch = disposableResumeId
+    disposableResumeId = undefined
     const result = await delegateDshInteractive(
       ['--profile', 'dsh-code', ...projectPatchArgs(), ...appArgs],
       tuiDelegatedEnv(
         home,
         !hasStoredCredential(home),
         appArgs.length === 0 ? freshAgentMode : undefined,
+        noticeForLaunch,
+        disposableResumeForLaunch,
       ),
     )
     if (result.discardSessionId !== undefined
@@ -150,6 +175,46 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
     if (target.kind === 'new') {
       appArgs = []
       freshAgentMode = DEFAULT_AGENT_MODE
+      continue
+    }
+    if (target.kind === 'web') {
+      const sessionsBeforeWeb = new Set(listProjectSessions(home, canonical).map(session => session.id))
+      const web = await runWebSurface({
+        env: delegatedEnv(home),
+        patchArgs: projectPatchArgs(),
+      })
+      const diagnostic = web.diagnostics.at(-1)
+      startupNotice = web.code === 0 || web.stopRequested
+        ? 'Web 已关闭；已重新加载当前会话。'
+        : `Web 异常退出（code ${String(web.code)}）${diagnostic === undefined ? '' : `：${diagnostic}`}；已返回 TUI。`
+
+      const sessionsAfterWeb = listProjectSessions(home, canonical)
+      for (const empty of newlyCreatedEmptySessions(sessionsBeforeWeb, sessionsAfterWeb)) {
+        if (!deleteSession(empty.dir)) {
+          process.stderr.write(`dsh-code: failed to discard Web-created empty session ${empty.id}\n`)
+        }
+      }
+      const fallback = sessionsAfterWeb
+        .find(session => session.id === target.fallbackSessionId)
+      if (target.discardIfStillEmpty && fallback?.title === '') {
+        if (web.exitRequested) {
+          if (!deleteSession(fallback.dir)) {
+            process.stderr.write(`dsh-code: failed to discard empty session ${target.fallbackSessionId} after Web handoff\n`)
+          }
+          return 0
+        }
+        // Resume the same identity so Web and TUI never race over a deleted
+        // persistence directory. The one-shot marker keeps it disposable:
+        // Ctrl+D removes it unless the user adds a human message after return.
+        appArgs = ['--resume', fallback.id]
+        freshAgentMode = undefined
+        disposableResumeId = fallback.id
+        startupNotice = `${startupNotice} 原空白会话仍未产生消息，退出时不会保留。`
+        continue
+      }
+      if (web.exitRequested) return 0
+      appArgs = fallback === undefined ? [] : ['--resume', fallback.id]
+      freshAgentMode = appArgs.length === 0 ? DEFAULT_AGENT_MODE : undefined
       continue
     }
 

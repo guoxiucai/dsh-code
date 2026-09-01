@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import {
@@ -88,8 +88,18 @@ try {
     timeout: 120_000,
   })
   const productRequire = createRequire(join(productRoot, 'package.json'))
-  const dshManifest = JSON.parse(readFileSync(productRequire.resolve('@deepseek-ai/dsh/package.json'), 'utf8'))
+  const dshManifestPath = productRequire.resolve('@deepseek-ai/dsh/package.json')
+  const dshManifest = JSON.parse(readFileSync(dshManifestPath, 'utf8'))
   if (typeof dshManifest.version !== 'string') throw new Error('installed product cannot resolve its DSH runtime')
+  const dshRequire = createRequire(dshManifestPath)
+  const webAppManifest = dshRequire.resolve('@deepseek-ai/dsh-web-app/package.json')
+  const webAppRequire = createRequire(webAppManifest)
+  const webFrontendManifest = webAppRequire.resolve('@deepseek-ai/dsh-web-frontend/package.json')
+  const webIndex = join(dirname(webFrontendManifest), 'dist', 'index.html')
+  const webIndexText = readFileSync(webIndex, 'utf8')
+  if (!webIndexText.includes('<script') || !webIndexText.includes('</html>')) {
+    throw new Error('installed product Web frontend has no runnable dist/index.html')
+  }
 
   const cordisUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/cordis')).href
   const codeRuntimeUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/dsh-code-runtime-worker-thread')).href

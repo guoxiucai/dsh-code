@@ -238,6 +238,18 @@ export function listAllSessions(home: string): ProjectSession[] {
 }
 
 /**
+ * Select Sessions introduced by one external surface lease that still contain
+ * no human prompt. Existing empty Sessions are deliberately excluded: the
+ * caller does not own their lifecycle.
+ */
+export function newlyCreatedEmptySessions(
+  beforeIds: ReadonlySet<string>,
+  sessions: readonly ProjectSession[],
+): ProjectSession[] {
+  return sessions.filter(session => !beforeIds.has(session.id) && session.title === '')
+}
+
+/**
  * Order sessions as parent-first families and annotate their nesting depth.
  * Families with the newest activity appear first; missing parents and cycles
  * degrade to roots so every Session remains resumable.

@@ -18,6 +18,11 @@
 - Made `/new` always enter Standard mode, discard a newly created Session when
   it exits without any human message, and render fork/clone ancestry as nested
   generations in the `/resume` picker.
+- Added `/web`: after the current TUI flushes and exits, the launcher starts the
+  package-local upstream DSH Web profile with the same isolated home and trusted
+  project patch, parks the terminal in a read-only lifecycle screen, and resumes
+  the original Session from disk after Web stops. Blank fresh Sessions retain
+  their existing no-message cleanup semantics across the handoff.
 - Kept all downstream adaptations in dsh-code; the upstream submodule source is
   unchanged.
 

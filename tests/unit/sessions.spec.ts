@@ -8,6 +8,7 @@ import {
   deleteSession,
   listAllSessions,
   listProjectSessions,
+  newlyCreatedEmptySessions,
   projectKey,
   sessionLineage,
   type ProjectSession,
@@ -178,6 +179,27 @@ describe('deleteSession', () => {
     writeSessionLog(sessionDir, 'session-empty', 1700000000000)
     expect(deleteProjectSession(home, '/proj', 'session-empty')).toBe(true)
     expect(existsSync(sessionDir)).toBe(false)
+  })
+})
+
+describe('newlyCreatedEmptySessions', () => {
+  const session = (id: string, title: string): ProjectSession => ({
+    id,
+    title,
+    createdAt: 1,
+    dir: `/sessions/${id}`,
+    cwd: '/proj',
+  })
+
+  it('selects only empty sessions introduced during the surface lease', () => {
+    const before = new Set(['existing-empty', 'existing-message'])
+    const sessions = [
+      session('existing-empty', ''),
+      session('existing-message', 'before'),
+      session('new-empty', ''),
+      session('new-message', 'from Web'),
+    ]
+    expect(newlyCreatedEmptySessions(before, sessions).map(entry => entry.id)).toEqual(['new-empty'])
   })
 })
 

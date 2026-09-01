@@ -187,6 +187,8 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
     cli/
       args.ts                  # 产品参数解析（help/version/resume/-p/config/plugin/import/update）
       delegate.ts              # spawn 上游 @deepseek-ai/dsh/lib/bin.js
+      web-surface.ts           # /web 深模块：挂起页、Web 子进程和信号生命周期
+      web-parked-host.ts       # Web 独占期间的只读备用屏幕
     bootstrap/
       home.ts                  # DSH_CODE_HOME 解析（~/.dsh-code，隔离于 ~/.dsh）
       credentials.ts           # 首次启动凭据存在性判断 + launcher→TUI 引导标记
@@ -225,7 +227,8 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - 设 `DSH_HOME = DSH_CODE_HOME ?? ~/.dsh-code`（隔离）。
 - 项目信任前置检查（`ensureTrusted`），未信任时 TTY 询问 / 非 TTY 需 `--approve`。
 - 初始化 profile 后委托 `@deepseek-ai/dsh/lib/bin.js --profile dsh-code [--patch <项目patch>] [--resume <id>]`；
-  `/new`、`/resume`、`/clone` 通过窄 IPC 让 launcher 在旧 TUI 完整退出后创建 Standard 空会话、打开同一全屏选择器或恢复目标会话。
+  `/new`、`/resume`、`/clone`、`/web` 通过窄 IPC 让 launcher 只在旧 TUI 完整退出后创建 Standard 空会话、打开同一全屏选择器、恢复目标会话或启动包内上游 Web Profile。
+  `/web` 期间 launcher 以只读备用屏幕托管 Web 子进程；`Esc` 请求 Web 优雅退出后用原 Session id 启动新的 TUI 子进程，确保两个进程从不同时写同一 Session。
   本次由 `agents.create` 新建且始终没有 human `user/message` 的 Session 会在退出后再由 launcher 删除，避免残留 `(no messages)`。
 - 交互启动前只读检查 `$DSH_HOME/.credentials.yaml`；若没有任何非空字符串凭据，则通过
   `DSH_CODE_FIRST_MODEL_CONFIG=1` 通知 TUI 自动打开现有 `/config` 向导。普通委托会主动清除此内部标记，
@@ -243,7 +246,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
   上游 Registry 中可由用户调用的 Skill → 普通 `agent.followup`。命令名优先于同名 Skill。
 - 注册 slash 命令：`/model` `/mode` `/config` `/skills` `/agents` `/mcp` `/session` `/rename`
-  `/jobs` `/export` `/new` `/resume` `/fork` `/clone` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
+  `/jobs` `/export` `/new` `/resume` `/fork` `/clone` `/web` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
 - `/skills` 不建立第二套 Skill Store。基础 provider 读取项目 `.dsh/.agents`、独立
   `~/.dsh-code/skills` 与 `~/.agents/skills`；Profile 中的第二个上游 filesystem provider
   只读补充项目 `.codex/.claude` 和用户 `~/.dsh/.codex/.claude`。列表不进入详情二级页：Space
@@ -324,8 +327,8 @@ git submodule update --init --recursive
 pnpm install --frozen-lockfile
 pnpm run build:lib
 
-# 日常：改完 dsh-code 代码后重编（会自动 chmod +x lib/bin.js）
-pnpm run build                # = tsc -p tsconfig.json
+# 日常：重编 dsh-code 与本地 /web 前端（并自动 chmod +x lib/bin.js）
+pnpm run build                # = tsc + 上游 Web frontend Vite build
 
 # 运行（本地软链到 PATH 里即可当 dsh-code 用）
 node lib/bin.js --version
@@ -465,7 +468,7 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | 无已存 Credential 时自动进入首次模型/API Token 配置 | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
 | session new/resume（CLI 与 `/new`、分层 `/resume`）、空白新会话回收、历史请求前 fork 并切换、当前快照 clone | ✅ |
-| 命令面板（/model /mode /config /skills /agents /mcp /session /rename /jobs /export /new /resume /fork /clone /quit /exit） | ✅ |
+| 命令面板（/model /mode /config /skills /agents /mcp /session /rename /jobs /export /new /resume /fork /clone /web /quit /exit） | ✅ |
 | Markdown 渲染、带行号及整行背景的工具 diff | ✅ |
 | 思考最新 5 行/工具结果折叠（Ctrl+O）、结果选择复制、整块背景、块间距、页脚 | ✅ |
 | loading / retry / compaction 状态指示 | ✅ |
@@ -574,6 +577,10 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
   不影响恢复。家族按最近一次子孙活动排序。
 - `/new`、`/resume`、`/clone` 的会话切换只改变对话，不回滚工作区文件；有运行中 turn、排队消息、
   subagent 或后台任务时拒绝切换。`/resume` 在 picker 中取消时恢复原会话；如果原会话同时被删除则新建空会话。
+- `/web` 与 TUI 共用 `$DSH_HOME` 下的 credentials、settings 与 Session，但浏览器启动 token 每个 Web
+  进程独立生成。关闭浏览器标签不会结束 Host；必须在只读挂起页按 `Esc` 才会停止 Web 并返回 TUI。
+  返回时固定恢复进入 Web 前的 Session；Web 最后选择的会话保存在浏览器 localStorage，上游尚无 Host
+  侧选择通知，因此不会据此自动切换 TUI。
 - `@` 文件联想依赖 `fd` 二进制（未安装时走内置遍历，较慢）。
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
 - npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工

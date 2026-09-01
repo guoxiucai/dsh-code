@@ -80,6 +80,7 @@ import {
 } from './skill-preferences.ts'
 import { credentialEnvName } from './config-wizard.ts'
 import { FIRST_MODEL_CONFIG_ENV } from '../bootstrap/credentials.ts'
+import { DISCARD_EMPTY_RESUME_ENV, STARTUP_NOTICE_ENV } from '../startup-notice.ts'
 import {
   AGENT_MODE_ENV,
   AGENT_MODE_OPTIONS,
@@ -137,8 +138,9 @@ export function userInputDelivery(
 export function shouldDiscardEmptyFreshSession(
   resumeId: string | undefined,
   events: readonly SessionEvent[],
+  disposableResumeId?: string,
 ): boolean {
-  return resumeId === undefined
+  return (resumeId === undefined || resumeId === disposableResumeId)
     && !events.some(event => event.type === 'user/message' && event.data.source.kind === 'user')
 }
 
@@ -197,6 +199,7 @@ async function run(ctx: Context): Promise<void> {
   const sessions = ctx.sessions
   const innerArgs = ctx.cmdlineArgs?.get() ?? []
   const resumeId = parseResumeArg(innerArgs)
+  const disposableResumeId = process.env[DISCARD_EMPTY_RESUME_ENV]?.trim() || undefined
   const requestedMode = parseAgentMode(process.env[AGENT_MODE_ENV] ?? '') ?? DEFAULT_AGENT_MODE
   const requestedPreset = presetForAgentMode(requestedMode)
   const selection = defaultModel.currentSelection()
@@ -1691,7 +1694,10 @@ async function run(ctx: Context): Promise<void> {
     activeSubagents: activeSubagents.current.count,
   })
 
-  const handoffSession = async (target: SessionSwitchTarget): Promise<void> => {
+  const handoffSession = async (
+    target: SessionSwitchTarget,
+    preserveEmptyFreshSession = false,
+  ): Promise<void> => {
     const blocked = switchBlocker()
     if (blocked !== undefined) {
       host.showNotice(`session switch blocked: ${blocked}`)
@@ -1700,7 +1706,7 @@ async function run(ctx: Context): Promise<void> {
     try {
       await sessions.flush(agent.session)
       await sendSessionSwitch(target)
-      await shutdown(0)
+      await shutdown(0, preserveEmptyFreshSession)
     } catch (error) {
       showCommandError('session switch', error)
     }
@@ -1732,6 +1738,27 @@ async function run(ctx: Context): Promise<void> {
         void handoffSession({ kind: 'new' })
       }, 0)
       return { kind: 'success', text: 'starting a new session' }
+    },
+  })
+
+  ctx.commands.register({
+    name: 'web',
+    description: 'Switch to the dsh-code Web UI in the default browser',
+    handler: () => {
+      const blocked = switchBlocker()
+      if (blocked !== undefined) return { kind: 'error', text: `web switch blocked: ${blocked}` }
+      const target: SessionSwitchTarget = {
+        kind: 'web',
+        fallbackSessionId: String(agent.session.id),
+        discardIfStillEmpty: shouldDiscardEmptyFreshSession(resumeId, agent.session.events, disposableResumeId),
+      }
+      setTimeout(() => {
+        // The launcher must retain the Session while Web owns the surface. If
+        // it remains blank, the resumed TUI keeps it disposable so `/web`
+        // cannot reintroduce a no-message row after the user exits.
+        void handoffSession(target, true)
+      }, 0)
+      return { kind: 'success', text: 'switching to the Web UI' }
     },
   })
 
@@ -1889,10 +1916,11 @@ async function run(ctx: Context): Promise<void> {
     throw new UserQuestionError('the user cancelled ask_user_question', 'ASK_CANCELLED')
   })
 
-  const shutdown = async (code: number): Promise<void> => {
+  const shutdown = async (code: number, preserveEmptyFreshSession = false): Promise<void> => {
     if (shuttingDown) return
     shuttingDown = true
-    const discardEmptyFreshSession = shouldDiscardEmptyFreshSession(resumeId, agent.session.events)
+    const discardEmptyFreshSession = !preserveEmptyFreshSession
+      && shouldDiscardEmptyFreshSession(resumeId, agent.session.events, disposableResumeId)
     // Drop any pending render tick: it would fire after `appExit` disposes the
     // context and read `ctx.tokenMeter` from an inactive context.
     if (renderTimer !== undefined) {
@@ -1922,20 +1950,23 @@ async function run(ctx: Context): Promise<void> {
     } catch {
       // Best-effort: owned-handle disposal below still drains the agent tree.
     }
+    if (discardEmptyFreshSession) {
+      try {
+        // Send while the plugin still owns a live IPC channel. The launcher
+        // waits for child exit before deleting, so the following disposal can
+        // finish its persistence writes without racing the removal.
+        await sendSessionDiscard(String(agent.session.id))
+      } catch {
+        // Direct upstream launches have no launcher IPC; only dsh-code can
+        // perform the post-exit directory cleanup.
+      }
+    }
     try {
       // We own the handle returned by agents.create/resume. Dispose it through
       // the public upstream seam so a stale/racing activity cannot strand exit.
       await handle.dispose()
     } catch {
       // appExit still tears down the remaining composition tree.
-    }
-    if (discardEmptyFreshSession) {
-      try {
-        await sendSessionDiscard(String(agent.session.id))
-      } catch {
-        // Direct upstream launches have no launcher IPC; only dsh-code can
-        // perform the post-exit directory cleanup.
-      }
     }
     ctx.appExit?.(code)
   }
@@ -1959,6 +1990,8 @@ async function run(ctx: Context): Promise<void> {
   host.setContextTokens(ctx.tokenMeter.measure(agent.session).totalTokens)
   host.render(reducer)
   host.start()
+  const startupNotice = process.env[STARTUP_NOTICE_ENV]
+  if (startupNotice !== undefined && startupNotice !== '') host.showNotice(startupNotice)
   void mcpRuntime.start().catch(error => { showCommandError('MCP startup', error) })
   if (process.env[FIRST_MODEL_CONFIG_ENV] === '1') showProviderSelector(true)
 }

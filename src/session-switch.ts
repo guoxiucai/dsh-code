@@ -8,6 +8,7 @@ export type SessionSwitchTarget =
   | { kind: 'resume'; sessionId: string }
   | { kind: 'new' }
   | { kind: 'picker'; fallbackSessionId: string }
+  | { kind: 'web'; fallbackSessionId: string; discardIfStillEmpty: boolean }
 
 export interface SessionSwitchMessage {
   type: typeof SESSION_SWITCH_MESSAGE_TYPE
@@ -29,6 +30,11 @@ export function isSessionSwitchMessage(value: unknown): value is SessionSwitchMe
   const target = record.target as Record<string, unknown>
   if (target.kind === 'new') return true
   if (target.kind === 'resume') return typeof target.sessionId === 'string' && target.sessionId.trim() !== ''
+  if (target.kind === 'web') {
+    return typeof target.fallbackSessionId === 'string'
+      && target.fallbackSessionId.trim() !== ''
+      && typeof target.discardIfStillEmpty === 'boolean'
+  }
   return target.kind === 'picker'
     && typeof target.fallbackSessionId === 'string'
     && target.fallbackSessionId.trim() !== ''
