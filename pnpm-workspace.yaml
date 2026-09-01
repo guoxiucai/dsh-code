@@ -15,7 +15,7 @@ linkWorkspacePackages: true
 overrides:
   '@deepseek-ai/cosmokit': 'link:deepseek-harness/vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:deepseek-harness/vendor/schemastery'
-  # DSH 0.1.2-alpha.2 is compiled against this catalog contract. pi-ai 0.84.3
+  # DSH 0.1.2-alpha.3 is compiled against this catalog contract. pi-ai 0.84.3
   # adds required compatibility keys despite satisfying the upstream ^ range.
   '@earendil-works/pi-ai': '0.84.2'
 

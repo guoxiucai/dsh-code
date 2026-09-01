@@ -2,12 +2,12 @@
 
 > 状态：`0.1.1` 已发布，trusted publishing 流程已启用；`0.1.2` 仅在本地回归，未发布
 > 编写日期：2026-08-19
-> 最近审计：2026-08-31
+> 最近审计：2026-09-01
 > 首批目标平台：macOS arm64、Windows x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
 本文档是 npm 发行工作的实施基线，以当前仓库和固定的
-DeepSeek Harness `0.1.2-alpha.2` 为准。`docs/technical-implementation-plan.md`
+DeepSeek Harness `0.1.2-alpha.3` 为准。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
@@ -39,8 +39,8 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 
 ### 2.1 已验证可行的部分
 
-- Git 子模块已固定到 `dsh-v0.1.2-alpha.2`，npm registry 也已提供
-  `@deepseek-ai/dsh@0.1.2-alpha.2` 及同版本运行时闭包。2026-08-31 已本地通过 shrinkwrap、
+- Git 子模块已固定到 `dsh-v0.1.2-alpha.3`，npm registry 也已提供
+  `@deepseek-ai/dsh@0.1.2-alpha.3` 及同版本运行时闭包。2026-09-01 已本地通过 shrinkwrap、
   tarball audit、CycloneDX SBOM、macOS arm64 clean global install 及全局 `dsh` 共存 smoke。
 - 当前源码已将 dsh-code home 固定为
   `DSH_CODE_HOME ?? ~/.dsh-code`，并在委托上游前设置 `DSH_HOME`；不会读写
@@ -198,13 +198,13 @@ anything else → 友好错误 + 支持矩阵 URL + exit 1
     "npm-shrinkwrap.json"
   ],
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-base": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-agent": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-session": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-llm": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-credentials": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-settings": "0.1.2-alpha.2",
+    "@deepseek-ai/dsh": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-base": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-llm": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-credentials": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
     "@earendil-works/pi-tui": "0.84.2",
     "diff": "9.0.0",
     "js-yaml": "4.3.1"

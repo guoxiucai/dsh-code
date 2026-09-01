@@ -8,10 +8,10 @@
 repository: https://github.com/deepseek-ai/deepseek-harness
 submodule_path: deepseek-harness
 branch: master
-commit: 0a53fb55bea101816fa226bb964ae2bed71c343b
-commit_subject: "Merge pull request #3334 from deepseek-harness/release/dsh-0.1.2-alpha.2"
-adopted_at: 2026-08-31
-dsh_version: 0.1.2-alpha.2
+commit: dd6322d604e00eec1ba5e0c8541159906a21094a
+commit_subject: "Merge pull request #3387 from deepseek-harness/release/dsh-0.1.2-alpha.3"
+adopted_at: 2026-09-01
+dsh_version: 0.1.2-alpha.3
 node_engines: "^22.19.0 || >=24.0.0"
 package_manager: "pnpm@11.7.0"
 pi_tui_version: 0.84.2
