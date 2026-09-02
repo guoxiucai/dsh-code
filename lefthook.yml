@@ -1,0 +1,18 @@
+# Keep commits fast; GitHub CI remains the authoritative build, packaging, and
+# cross-platform smoke gate.
+pre-commit:
+  jobs:
+    - name: whitespace
+      run: git diff --cached --check
+
+    - name: related tests
+      glob: '*.{ts,tsx,mts,mjs}'
+      run: pnpm exec vitest related --run {staged_files}
+
+pre-push:
+  jobs:
+    - name: typecheck
+      run: pnpm run typecheck
+
+    - name: tests
+      run: pnpm test

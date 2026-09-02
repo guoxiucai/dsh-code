@@ -607,10 +607,15 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 ## 13. 提交与推送约定
 
 - **不要默认 git commit/push**，仅在用户明确要求时执行。
-- 提交前自查：`pnpm test`、`pnpm run typecheck` 与 `git diff --check` 全绿。
-- 根仓库当前没有 `lefthook.yml`，不要把本机全局 hook 输出的 `Can't find lefthook in PATH` 当成项目依赖缺失；
-  该提示目前不会阻止提交。远端 GitHub CI 才是统一门禁，会执行冻结安装、上游构建、类型检查、测试、
-  candidate 打包校验及 macOS/Windows smoke。
+- Lefthook 仅作为根项目 `devDependency`；`pnpm install` 通常会同步 hooks，hooks 失效时运行
+  `pnpm run hooks:install` 修复。根包不新增 `prepare` / `postinstall`，发布候选包也不包含 Lefthook，
+  因此用户安装 dsh-code CLI 时不会修改所在仓库的 Git Hooks。
+- `pre-commit` 对暂存内容运行 `git diff --cached --check`；暂存 `.ts` / `.tsx` / `.mts` / `.mjs`
+  文件时还会运行相关 Vitest 测试。任一检查失败都会阻止提交。
+- `pre-push` 依次运行 `pnpm run typecheck` 和完整的 `pnpm test`，失败时阻止推送；也可通过
+  `pnpm run hooks:check` 主动执行同一门禁。
+- 完整上游构建、candidate 打包校验及 macOS/Windows smoke 仍由远端 GitHub CI 负责，Git Hooks
+  不是安全边界，也不替代 CI。
 
 ---
 

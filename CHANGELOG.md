@@ -12,6 +12,9 @@
 - Adopted the `0.1.2-alpha.3` JSONL-only Session persistence closure and Web
   blank-session, connection, paging, and streaming fixes without adding a
   downstream compatibility layer.
+- Added a root Lefthook development gate: staged whitespace and related tests
+  run before commits, while type checking and the full test suite run before
+  pushes.
 - Preserved resume compatibility for sessions that recorded the former `code`
   PTC preset id.
 - Reworked interactive session commands around DSH's linear-session primitives:
