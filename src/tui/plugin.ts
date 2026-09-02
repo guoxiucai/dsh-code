@@ -27,7 +27,7 @@ import {
 // Declaration-merges the settings service and its registered namespaces.
 import type {} from '@deepseek-ai/dsh-settings'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 // Declaration-merges the `shell` service onto Context.
 import type {} from '@deepseek-ai/dsh-shell'
 // Declaration-merges the `approval/request` waterfall onto the Cordis Events.
@@ -238,7 +238,7 @@ async function run(ctx: Context): Promise<void> {
   // Rebuild the transcript from the session's full log (persisted history for a
   // resume, empty for a fresh session); the live listener continues from the
   // persisted seq boundary, with the reducer's seq dedup guarding any overlap.
-  let reducer: ReducerState = replayEvents(String(agent.session.id), agent.session.events)
+  let reducer: ReducerState = replayEvents(String(agent.session.id), agent.session.snapshotEvents())
   let shuttingDown = false
   let renderTimer: ReturnType<typeof setTimeout> | undefined
   let contextTokensDirty = false
@@ -526,7 +526,7 @@ async function run(ctx: Context): Promise<void> {
       host.showNotice(`${AGENT_MODE_OPTIONS.find(option => option.mode === mode)?.label ?? mode} mode is already active`)
       return
     }
-    if (agent.status !== 'idle' || !sessionCanSwitchMode(agent.session.events)) {
+    if (agent.status !== 'idle' || !sessionCanSwitchMode(agent.session.snapshotEvents())) {
       host.showNotice(`this session is locked to ${agentModeForPreset(activePreset)} after its first turn; start a new one with dsh-code --mode ${mode}`)
       return
     }
@@ -558,7 +558,7 @@ async function run(ctx: Context): Promise<void> {
     }
     const current = agentModeForPreset(activePreset)
     host.showSelector({
-      hint: sessionCanSwitchMode(agent.session.events)
+      hint: sessionCanSwitchMode(agent.session.snapshotEvents())
         ? 'Select the mode for this blank session. The choice locks after the first turn.'
         : 'This session mode is locked after its first turn.',
       borderColor: theme.selectorBorder,
@@ -1473,7 +1473,7 @@ async function run(ctx: Context): Promise<void> {
     name: 'session',
     description: 'Show current session info and stats',
     handler: () => {
-      const events = agent.session.events
+      const events = agent.session.snapshotEvents()
       const header = agent.session.header
       const user = events.filter(event => event.type === 'user/message' && event.data.source.kind === 'user').length
       const assistant = events.filter(event => event.type === 'assistant/message').length
@@ -1712,17 +1712,17 @@ async function run(ctx: Context): Promise<void> {
     }
   }
 
-  const createChildFromCut = (cut: number) => {
-    const events = agent.session.events
-    if (!Number.isSafeInteger(cut) || cut < 0 || cut > events.length) {
+  const createChildFromCut = (cut: SessionLogOffset) => {
+    if (cut > agent.session.seq) {
       throw new Error(`invalid session fork cut ${String(cut)}`)
     }
     return sessions.create(SessionId(`session-${randomUUID()}`), {
-      seed: events.slice(0, cut),
+      seed: agent.session.snapshotEvents(SessionLogOffset(0), cut),
+      inheritedEventCount: cut,
       meta: {
         ...(agent.session.header.cwd === undefined ? {} : { cwd: agent.session.header.cwd }),
         parentSession: agent.session.id,
-        seedLength: cut,
+        isSeeded: true,
         agentPreset: activePreset,
       },
     })
@@ -1750,7 +1750,7 @@ async function run(ctx: Context): Promise<void> {
       const target: SessionSwitchTarget = {
         kind: 'web',
         fallbackSessionId: String(agent.session.id),
-        discardIfStillEmpty: shouldDiscardEmptyFreshSession(resumeId, agent.session.events, disposableResumeId),
+        discardIfStillEmpty: shouldDiscardEmptyFreshSession(resumeId, agent.session.snapshotEvents(), disposableResumeId),
       }
       setTimeout(() => {
         // The launcher must retain the Session while Web owns the surface. If
@@ -1766,7 +1766,7 @@ async function run(ctx: Context): Promise<void> {
     name: 'fork',
     description: 'Fork before a selected historical user request and switch to it',
     handler: () => {
-      const points = sessionForkPoints(agent.session.events)
+      const points = sessionForkPoints(agent.session.snapshotEvents())
       if (points.length === 0) return { kind: 'error', text: 'no user requests to fork from' }
       host.showSelector({
         hint: 'Fork before user request · newest first · Enter create and switch · Esc close',
@@ -1817,7 +1817,7 @@ async function run(ctx: Context): Promise<void> {
     handler: ({ commandId }) => {
       const blocked = switchBlocker()
       if (blocked !== undefined) return { kind: 'error', text: `session switch blocked: ${blocked}` }
-      const events = agent.session.events
+      const events = agent.session.snapshotEvents()
       if (!events.some(event => event.type === 'user/message' && event.data.source.kind === 'user')) {
         return { kind: 'error', text: 'nothing to clone yet' }
       }
@@ -1825,7 +1825,7 @@ async function run(ctx: Context): Promise<void> {
       if (run === undefined) return { kind: 'error', text: 'clone command boundary is unavailable' }
       try {
         // The exclusive cut omits this /clone command's own audit lifecycle.
-        const child = createChildFromCut(run.seq)
+        const child = createChildFromCut(SessionLogOffset(run.seq))
         void sessions.flush(child).then(
           () => {
             // Let command/done land in the parent before teardown starts.
@@ -1920,7 +1920,7 @@ async function run(ctx: Context): Promise<void> {
     if (shuttingDown) return
     shuttingDown = true
     const discardEmptyFreshSession = !preserveEmptyFreshSession
-      && shouldDiscardEmptyFreshSession(resumeId, agent.session.events, disposableResumeId)
+      && shouldDiscardEmptyFreshSession(resumeId, agent.session.snapshotEvents(), disposableResumeId)
     // Drop any pending render tick: it would fire after `appExit` disposes the
     // context and read `ctx.tokenMeter` from an inactive context.
     if (renderTimer !== undefined) {

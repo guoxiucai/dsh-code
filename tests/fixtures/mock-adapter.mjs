@@ -34,9 +34,12 @@ class MockAdapter extends LlmAdapter {
     const toolResult = last?.content.find(block => block.type === 'tool-result')
     if (toolResult === undefined) {
       const args = JSON.stringify({ command: TOOL.command, description: 'Prove the tool round trip.' })
+      // Derive the id from the accumulated context so resumed and multi-turn
+      // sessions never reuse a tool-call identity in the same event log.
+      const callId = ToolCallId(`dsh-code-call-${options.messages.length}`)
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
-      yield { type: 'tool-call-delta', index: 0, id: ToolCallId('dsh-code-call'), name: TOOL.name, argumentsDelta: args }
-      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('dsh-code-call'), name: TOOL.name, arguments: args } }
+      yield { type: 'tool-call-delta', index: 0, id: callId, name: TOOL.name, argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: callId, name: TOOL.name, arguments: args } }
       yield { type: 'usage', usage: { inputTokens: 11, outputTokens: 3, cacheReadTokens: 2 } }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
       return

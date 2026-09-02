@@ -5,6 +5,7 @@ import { dirname, extname, resolve } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 
 export type SessionExportFormat = 'markdown' | 'jsonl'
+type ExportableSession = Pick<Session, 'header' | 'snapshotEvents'>
 
 function textBlocks(value: unknown): string {
   if (!Array.isArray(value)) return ''
@@ -60,9 +61,9 @@ function eventMarkdown(event: SessionEvent): string | undefined {
 }
 
 /** Render the human-readable subset of a Session without guessing Agent state. */
-export function renderSessionMarkdown(session: Pick<Session, 'header' | 'events'>, title?: string): string {
+export function renderSessionMarkdown(session: ExportableSession, title?: string): string {
   const header = session.header
-  const sections = session.events.map(eventMarkdown).filter((value): value is string => value !== undefined)
+  const sections = session.snapshotEvents().map(eventMarkdown).filter((value): value is string => value !== undefined)
   return [
     `# ${title?.trim() || `dsh-code session ${String(header.id)}`}`,
     '',
@@ -75,10 +76,10 @@ export function renderSessionMarkdown(session: Pick<Session, 'header' | 'events'
 }
 
 /** Render one header record followed by the exact public Session events. */
-export function renderSessionJsonl(session: Pick<Session, 'header' | 'events'>): string {
+export function renderSessionJsonl(session: ExportableSession): string {
   return [
     JSON.stringify({ type: 'session/header', data: session.header }),
-    ...session.events.map(event => JSON.stringify(event)),
+    ...session.snapshotEvents().map(event => JSON.stringify(event)),
   ].join('\n') + '\n'
 }
 
@@ -98,7 +99,7 @@ export function defaultExportFilename(sessionId: string, format: SessionExportFo
 export function writeSessionExport(
   cwd: string,
   path: string,
-  session: Pick<Session, 'header' | 'events'>,
+  session: ExportableSession,
   format: SessionExportFormat,
   title?: string,
 ): string {

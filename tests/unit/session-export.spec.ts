@@ -17,7 +17,7 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 
 function sessionFixture(): Session {
   const id = SessionId('session/export:demo')
-  const session = Session.create(id, undefined, { version: 0, id, cwd: '/workspace', createdAt: 1 })
+  const session = Session.create(id, undefined, { version: 0, id, cwd: '/workspace', createdAt: 1, isSeeded: false })
   session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Hello' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
   session.append('assistant/message', {
     turn: 1,
@@ -47,7 +47,7 @@ describe('session export', () => {
 
     const records = renderSessionJsonl(session).trim().split('\n').map(line => JSON.parse(line) as { type: string })
     expect(records[0]?.type).toBe('session/header')
-    expect(records).toHaveLength(session.events.length + 1)
+    expect(records).toHaveLength(session.snapshotEvents().length + 1)
   })
 
   it('chooses formats by extension, sanitizes defaults, and never overwrites', () => {

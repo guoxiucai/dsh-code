@@ -2,7 +2,7 @@
 
 > 本文档面向接手 `dsh-code` 继续开发的工程师。目标读者需要了解：这是什么项目、代码怎么组织的、怎么构建运行、哪些是硬性边界、哪些还没做。
 >
-> 上游基线：`deepseek-ai/deepseek-harness` @ `dd6322d604e00eec1ba5e0c8541159906a21094a`（`0.1.2-alpha.3`），以 submodule `deepseek-harness/` 形式引入。
+> 上游基线：`deepseek-ai/deepseek-harness` @ `4e84901e6471b79ec0338099867ebb4606d12bb5`（`0.1.2-alpha.4`），以 submodule `deepseek-harness/` 形式引入。
 
 ---
 
@@ -68,7 +68,7 @@ pnpm.cmd --version
 - 平台为 `win32-x64`；
 - Node 为 `v22.19.x` 或 `v24.x`；
 - pnpm 为 `11.7.0`；
-- `deepseek-harness` 位于 `dd6322d604e00eec1ba5e0c8541159906a21094a`，行首没有 `-`、`+` 或 `U`；
+- `deepseek-harness` 位于 `4e84901e6471b79ec0338099867ebb4606d12bb5`，行首没有 `-`、`+` 或 `U`；
 - 当前分支跟踪 `origin/main`，工作区干净。
 
 如果 SSH 尚未配置，可先用公开 HTTPS 地址拉取；需要推送时，再配置协作者权限和个人认证：
@@ -586,7 +586,7 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 - npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工
   bootstrap，npm trusted publisher 已绑定仓库、`release.yml` 和 `release` environment，正式版 `0.1.0` 已通过
   GitHub Actions OIDC + provenance 发布，`0.1.1`（DSH `0.1.1-rc.2`）也已正式发布。当前开发版已升级为
-  `0.1.2`（DSH `0.1.2-alpha.3`），仅执行本地回归，未发布 npm。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
+  `0.1.2`（DSH `0.1.2-alpha.4`），仅执行本地回归，未发布 npm。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
   不要直接发布当前根包；完整流程见 [`docs/NPM_RELEASE.md`](./NPM_RELEASE.md)。
 - 性能：转写是组件树重建（每次 render 清空重建），长会话未做虚拟化（见设计文档 §23 预算）。
 

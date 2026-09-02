@@ -24,17 +24,17 @@ describe('TUI render scheduling', () => {
 describe('empty fresh Session cleanup', () => {
   it('discards only a newly created Session with no human prompt', () => {
     const session = Session.create(SessionId('empty'))
-    expect(shouldDiscardEmptyFreshSession(undefined, session.events)).toBe(true)
-    expect(shouldDiscardEmptyFreshSession('empty', session.events)).toBe(false)
-    expect(shouldDiscardEmptyFreshSession('empty', session.events, 'empty')).toBe(true)
-    expect(shouldDiscardEmptyFreshSession('empty', session.events, 'another')).toBe(false)
+    expect(shouldDiscardEmptyFreshSession(undefined, session.snapshotEvents())).toBe(true)
+    expect(shouldDiscardEmptyFreshSession('empty', session.snapshotEvents())).toBe(false)
+    expect(shouldDiscardEmptyFreshSession('empty', session.snapshotEvents(), 'empty')).toBe(true)
+    expect(shouldDiscardEmptyFreshSession('empty', session.snapshotEvents(), 'another')).toBe(false)
 
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'keep me' }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    expect(shouldDiscardEmptyFreshSession(undefined, session.events)).toBe(false)
-    expect(shouldDiscardEmptyFreshSession('empty', session.events, 'empty')).toBe(false)
+    expect(shouldDiscardEmptyFreshSession(undefined, session.snapshotEvents())).toBe(false)
+    expect(shouldDiscardEmptyFreshSession('empty', session.snapshotEvents(), 'empty')).toBe(false)
   })
 })
 
