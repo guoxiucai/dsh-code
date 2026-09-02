@@ -1005,7 +1005,8 @@ class WelcomeBanner implements Component {
 
 /**
  * Owns the pi-tui surface. Terminal restoration is `stop()`'s job; the plugin
- * must guarantee `stop()` runs on every exit path (see ADR-001).
+ * must guarantee `stop()` runs on every exit path (see ADR-001). The restored
+ * main buffer must not receive pi-tui's default final-document printout.
  */
 export class TuiHost {
   readonly tui: TUI
@@ -1470,6 +1471,8 @@ export class TuiHost {
     this.adaptiveTheme?.dispose()
     this.adaptiveTheme = undefined
     this.detachInput()
-    this.tui.stop()
+    // dsh-code is a fullscreen application: restore the shell exactly as it
+    // was before entry instead of printing editor/status chrome into scrollback.
+    this.tui.stop({ preserveScreen: true })
   }
 }

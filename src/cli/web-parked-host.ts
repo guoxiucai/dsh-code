@@ -111,6 +111,8 @@ export class WebParkedHost {
     if (!this.started) return
     this.started = false
     this.detachInput()
-    this.tui.stop()
+    // This is an intermediate fullscreen surface, never a terminal document.
+    // Otherwise a later TUI exit would reveal its final frame in scrollback.
+    this.tui.stop({ preserveScreen: true })
   }
 }

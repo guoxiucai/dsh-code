@@ -1,7 +1,18 @@
-import { describe, expect, it } from 'vitest'
-import { webParkedText } from '../../src/cli/web-parked-host.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { WebParkedHost, webParkedText } from '../../src/cli/web-parked-host.ts'
 
 describe('Web parked terminal copy', () => {
+  it('restores the main buffer without printing the parked surface', () => {
+    const host = new WebParkedHost({ onReturn: () => {}, onExit: () => {} })
+    vi.spyOn(host.tui, 'start').mockImplementation(() => {})
+    const stop = vi.spyOn(host.tui, 'stop').mockImplementation(() => {})
+
+    host.start()
+    host.stop()
+
+    expect(stop).toHaveBeenCalledWith({ preserveScreen: true })
+  })
+
   it('keeps the TUI explicitly read-only and explains browser/process lifetime', () => {
     const text = webParkedText({
       phase: 'ready',

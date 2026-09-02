@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +14,7 @@ import {
   isTurnInterruptInput,
   layoutStatusLine,
   PlaceholderEditor,
+  TuiHost,
   TranscriptSurface,
   renderDiffRow,
   renderDiffRows,
@@ -32,6 +33,22 @@ import {
 } from '../../src/tui/host.ts'
 import { theme } from '../../src/tui/theme.ts'
 import { emptyViewModel } from '../../src/tui/view-model.ts'
+
+describe('terminal lifecycle', () => {
+  it('restores the main terminal buffer without printing the final TUI frame', () => {
+    const host = new TuiHost({
+      onSubmit: () => {},
+      onInterrupt: () => {},
+      onExit: () => {},
+      onRedraw: () => {},
+    })
+    const stop = vi.spyOn(host.tui, 'stop').mockImplementation(() => {})
+
+    host.stop()
+
+    expect(stop).toHaveBeenCalledWith({ preserveScreen: true })
+  })
+})
 
 describe('default prompt editor', () => {
   const editorTheme = {
