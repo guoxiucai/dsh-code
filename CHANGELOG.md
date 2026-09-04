@@ -3,7 +3,7 @@
 ## 0.1.2 — Unreleased
 
 - Updated the pinned DeepSeek Harness runtime from `0.1.1-rc.2`
-  (`b150a551b8`) to `0.1.2-alpha.4` (`4e84901e64`).
+  (`b150a551b8`) to `0.1.2-rc.1` (`a66e470204`).
 - Adapted the terminal host to the renamed `ptc` preset, session preset
   projections, event-based user-question provider, subagent model settings, and
   the upstream `ToolCallId`/Todo event type declarations.
@@ -15,6 +15,13 @@
 - Adopted the `0.1.2-alpha.4` branded Session sequence/offset API and immutable
   event snapshots, preserving fork lineage through `inheritedEventCount` and
   `isSeeded` while keeping the version-0 JSONL wire format compatible.
+- Adopted the `0.1.2-alpha.5` storage read-compatibility and per-record salvage
+  runtime. The Session projection cache can now reuse compatible older records
+  and back up malformed derived records instead of preventing startup; no
+  downstream Session, Agent, command, or Web API adaptation was required.
+- Promoted the upstream runtime to `0.1.2-rc.1`; this release only changes DSH
+  workspace package versions from `0.1.2-alpha.5` and introduces no additional
+  source or interface changes.
 - Added a root Lefthook development gate: staged whitespace and related tests
   run before commits, while type checking and the full test suite run before
   pushes.
