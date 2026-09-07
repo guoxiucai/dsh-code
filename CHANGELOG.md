@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 — Unreleased
+## 0.1.2 — 2026-09-07
 
 - Kept direct `!` shell results at their position in the transcript so later
   replies flow below them. Normal TUI exits now print the transcript to terminal
