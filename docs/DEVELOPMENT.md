@@ -230,6 +230,11 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
   `/new`、`/resume`、`/clone`、`/web` 通过窄 IPC 让 launcher 只在旧 TUI 完整退出后创建 Standard 空会话、打开同一全屏选择器、恢复目标会话或启动包内上游 Web Profile。
   `/web` 期间 launcher 以只读备用屏幕托管 Web 子进程；`Esc` 请求 Web 优雅退出后用原 Session id 启动新的 TUI 子进程，确保两个进程从不同时写同一 Session。
   本次由 `agents.create` 新建且始终没有 human `user/message` 的 Session 会在退出后再由 launcher 删除，避免残留 `(no messages)`。
+  `!` Shell 结果按完成时的历史位置插入转写，后续回复与草稿在其后显示。普通 `/quit`、`/exit`、Ctrl+D 退出时，
+  Host 恢复终端主屏后按当前宽度输出完整转写，保留 ANSI 颜色、Markdown 渲染格式和当前折叠状态，
+  每行重置颜色与链接状态；不输出编辑器、状态栏或交互面板。
+  Plugin 清理后打印 `To resume this session: dsh-code resume <当前会话 ID>`；删除的空会话不显示恢复命令。
+  `/new`、`/resume`、`/fork`、`/clone`、`/web` 交接不打印退出转写或恢复命令，避免重复输出。
 - 交互启动前只读检查 `$DSH_HOME/.credentials.yaml`；若没有任何非空字符串凭据，则通过
   `DSH_CODE_FIRST_MODEL_CONFIG=1` 通知 TUI 自动打开现有 `/config` 向导。普通委托会主动清除此内部标记，
   凭据解析、写入和权限控制仍完全由上游 `credentials` 服务负责。

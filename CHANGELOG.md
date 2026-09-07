@@ -2,6 +2,12 @@
 
 ## 0.1.2 — Unreleased
 
+- Kept direct `!` shell results at their position in the transcript so later
+  replies flow below them. Normal TUI exits now print the transcript to terminal
+  scrollback with rendered colors and formatting, without input/status controls,
+  and end with a session resume command.
+  Session handoffs stay silent, and discarded empty sessions have no resume hint.
+
 - Updated the pinned DeepSeek Harness runtime from `0.1.1-rc.2`
   (`b150a551b8`) to `0.1.2-rc.1` (`a66e470204`).
 - Adapted the terminal host to the renamed `ptc` preset, session preset

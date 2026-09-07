@@ -33,6 +33,7 @@ import {
   type SlashCommand,
   type TUI,
 } from '@earendil-works/pi-tui'
+import { normalizeTerminalOutput } from '@earendil-works/pi-tui/dist/utils.js'
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
 import { diffLines } from 'diff'
 import { bindAdaptiveTheme, theme, type AdaptiveThemeBinding } from './theme.ts'
@@ -531,7 +532,7 @@ export class TranscriptSurface implements Component {
   private version = ''
   private welcomeBlock: WidthCachedComponent | undefined
   private shellResults: readonly ShellResult[] = []
-  private shellBlocks: WidthCachedComponent[] = []
+  private shellEntries: { afterItems: number; block: WidthCachedComponent }[] = []
   private notices: readonly string[] = []
   private noticeEntries: AnchoredNotice[] = []
   private dirty = true
@@ -577,8 +578,16 @@ export class TranscriptSurface implements Component {
     }
 
     if (!sameShellResults(state.shellResults, this.shellResults)) {
+      const prefix = this.shellResults.findIndex((result, index) => !sameShellResults([result], state.shellResults.slice(index, index + 1)))
+      const reusable = prefix < 0 ? Math.min(this.shellResults.length, state.shellResults.length) : prefix
+      this.shellEntries = [
+        ...this.shellEntries.slice(0, reusable),
+        ...renderShellResultBlocks(state.shellResults.slice(reusable)).map(block => ({
+          afterItems: state.transcript.length,
+          block: new WidthCachedComponent(block),
+        })),
+      ]
       this.shellResults = [...state.shellResults]
-      this.shellBlocks = this.cache(renderShellResultBlocks(state.shellResults))
       this.markDirty()
     }
 
@@ -604,7 +613,10 @@ export class TranscriptSurface implements Component {
     this.entries = this.transcript.map(item => ({ item, blocks: this.cache(this.itemRenderer(item, this.expanded)) }))
     this.draftBlocks = this.draft === undefined ? [] : this.cache(this.draftRenderer(this.draft, this.expanded))
     this.welcomeBlock = new WidthCachedComponent(new WelcomeBanner(this.version))
-    this.shellBlocks = this.cache(renderShellResultBlocks(this.shellResults))
+    this.shellEntries = this.shellEntries.map((entry, index) => ({
+      ...entry,
+      block: new WidthCachedComponent(renderShellResultBlocks([this.shellResults[index]!])[0]!),
+    }))
     this.noticeEntries = this.noticeEntries.map(notice => ({
       ...notice,
       block: new WidthCachedComponent(new Text(`· ${notice.text}`, 1, 0)),
@@ -644,8 +656,11 @@ export class TranscriptSurface implements Component {
 
   private allBlocks(): WidthCachedComponent[] {
     const blocks: WidthCachedComponent[] = []
-    if (this.transcript.length === 0 && this.welcomeBlock !== undefined) blocks.push(this.welcomeBlock)
+    if (this.transcript.length === 0 && this.shellEntries.length === 0 && this.welcomeBlock !== undefined) blocks.push(this.welcomeBlock)
     const appendNotices = (afterItems: number): void => {
+      for (const entry of this.shellEntries) {
+        if (entry.afterItems === afterItems) blocks.push(entry.block)
+      }
       for (const notice of this.noticeEntries) {
         if (notice.afterItems === afterItems) blocks.push(notice.block)
       }
@@ -658,7 +673,10 @@ export class TranscriptSurface implements Component {
     for (const notice of this.noticeEntries) {
       if (notice.afterItems > this.entries.length) blocks.push(notice.block)
     }
-    blocks.push(...this.draftBlocks, ...this.shellBlocks)
+    for (const entry of this.shellEntries) {
+      if (entry.afterItems > this.entries.length) blocks.push(entry.block)
+    }
+    blocks.push(...this.draftBlocks)
     return blocks
   }
 
@@ -1005,8 +1023,8 @@ class WelcomeBanner implements Component {
 
 /**
  * Owns the pi-tui surface. Terminal restoration is `stop()`'s job; the plugin
- * must guarantee `stop()` runs on every exit path (see ADR-001). The restored
- * main buffer must not receive pi-tui's default final-document printout.
+ * must guarantee `stop()` runs on every exit path (see ADR-001). Normal exits
+ * print only the transcript into the restored terminal's scrollback.
  */
 export class TuiHost {
   readonly tui: TUI
@@ -1461,7 +1479,13 @@ export class TuiHost {
     })
     void this.adaptiveTheme.detect()
   }
-  stop(): void {
+  stop(options: { printTranscript?: boolean } = {}): void {
+    if (this.stopped) return
+    const width = Math.max(1, this.tui.terminal.columns)
+    const lines = options.printTranscript === true
+      && ((this.lastView?.transcript.length ?? 0) > 0 || this.shellResults.length > 0 || this.draft !== undefined)
+      ? this.transcriptSurface.render(width).flatMap(line => wrapTextWithAnsi(normalizeTerminalOutput(line), width))
+      : []
     this.stopped = true
     const queued = this.kernelInteractionQueue.splice(0)
     for (const interaction of queued) interaction.cancel()
@@ -1471,8 +1495,9 @@ export class TuiHost {
     this.adaptiveTheme?.dispose()
     this.adaptiveTheme = undefined
     this.detachInput()
-    // dsh-code is a fullscreen application: restore the shell exactly as it
-    // was before entry instead of printing editor/status chrome into scrollback.
     this.tui.stop({ preserveScreen: true })
+    // Match pi-tui's line resets: preserve rendered styles while closing SGR
+    // and OSC 8 state before the next line or the launcher's resume hint.
+    if (lines.length > 0) this.tui.terminal.write(`${lines.map(line => `${line}\x1b[0m\x1b]8;;\x07`).join('\n')}\n`)
   }
 }

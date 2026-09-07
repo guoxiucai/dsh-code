@@ -1706,7 +1706,7 @@ async function run(ctx: Context): Promise<void> {
     try {
       await sessions.flush(agent.session)
       await sendSessionSwitch(target)
-      await shutdown(0, preserveEmptyFreshSession)
+      await shutdown(0, preserveEmptyFreshSession, true)
     } catch (error) {
       showCommandError('session switch', error)
     }
@@ -1916,7 +1916,7 @@ async function run(ctx: Context): Promise<void> {
     throw new UserQuestionError('the user cancelled ask_user_question', 'ASK_CANCELLED')
   })
 
-  const shutdown = async (code: number, preserveEmptyFreshSession = false): Promise<void> => {
+  const shutdown = async (code: number, preserveEmptyFreshSession = false, handoff = false): Promise<void> => {
     if (shuttingDown) return
     shuttingDown = true
     const discardEmptyFreshSession = !preserveEmptyFreshSession
@@ -1929,7 +1929,9 @@ async function run(ctx: Context): Promise<void> {
     }
     activeSubagents.dispose()
     disposeSubagentConcurrencyPolicy()
-    host.stop()
+    syncDraft()
+    host.render(reducer)
+    host.stop({ printTranscript: !handoff })
     disposeEvents()
     disposeStatus()
     disposeSubagentStart()
@@ -1967,6 +1969,9 @@ async function run(ctx: Context): Promise<void> {
       await handle.dispose()
     } catch {
       // appExit still tears down the remaining composition tree.
+    }
+    if (!handoff && !discardEmptyFreshSession) {
+      process.stdout.write(`To resume this session: dsh-code resume ${String(agent.session.id)}\n`)
     }
     ctx.appExit?.(code)
   }

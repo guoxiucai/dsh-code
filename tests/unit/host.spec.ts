@@ -35,6 +35,48 @@ import { theme } from '../../src/tui/theme.ts'
 import { emptyViewModel } from '../../src/tui/view-model.ts'
 
 describe('terminal lifecycle', () => {
+  it('preserves rendered Markdown and colors and resets styles before the resume hint', () => {
+    const host = new TuiHost({ onSubmit: () => {}, onInterrupt: () => {}, onExit: () => {}, onRedraw: () => {} })
+    vi.spyOn(host.tui, 'requestRender').mockImplementation(() => {})
+    vi.spyOn(host.tui, 'stop').mockImplementation(() => {})
+    const write = vi.spyOn(host.tui.terminal, 'write').mockImplementation(() => {})
+    const item = { kind: 'assistant' as const, text: '**Bold reply**\n\n- list item\n\n```ts\nconst value = 1\n```' }
+    host.render({ ...emptyViewModel(), transcript: [item] })
+    host.showShellResult('printf color', '\x1b[31mred shell output\x1b[0m', '')
+    host.stop({ printTranscript: true })
+    const output = write.mock.calls[0]![0]
+    const rendered = renderTranscriptItemLines(item, Math.max(1, host.tui.terminal.columns), false)
+    for (const line of rendered) expect(output).toContain(line)
+    expect(output).toContain('\x1b[31mred shell output')
+    expect(stripTerminalSequences(output)).toContain('Bold reply')
+    expect(stripTerminalSequences(output)).not.toContain('**Bold reply**')
+    expect(output.endsWith('\x1b[0m\x1b]8;;\x07\n')).toBe(true)
+    expect(output).not.toContain(DEFAULT_PROMPT_PLACEHOLDER)
+  })
+
+  it('prints the complete transcript after restoring the terminal, without editor chrome, only once', () => {
+    const host = new TuiHost({ onSubmit: () => {}, onInterrupt: () => {}, onExit: () => {}, onRedraw: () => {} })
+    const calls: string[] = []
+    vi.spyOn(host.tui, 'requestRender').mockImplementation(() => {})
+    vi.spyOn(host.tui, 'stop').mockImplementation(() => { calls.push('restored') })
+    vi.spyOn(host.tui.terminal, 'write').mockImplementation(text => { calls.push(text) })
+    host.render({ ...emptyViewModel(), transcript: [
+      { kind: 'user', text: 'first question' },
+      { kind: 'assistant', text: Array.from({ length: 100 }, (_, i) => `answer line ${i}`).join('\n') },
+    ] })
+    host.showShellResult('printf shell', 'shell result', '')
+    host.stop({ printTranscript: true })
+    host.stop({ printTranscript: true })
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toBe('restored')
+    expect(calls[1]).toContain('first question')
+    expect(calls[1]).toContain('answer line 0')
+    expect(calls[1]).toContain('answer line 99')
+    expect(calls[1]).toContain('shell result')
+    expect(calls[1]).not.toContain(DEFAULT_PROMPT_PLACEHOLDER)
+    expect(calls[1]).not.toContain('Enter send')
+  })
+
   it('restores the main terminal buffer without printing the final TUI frame', () => {
     const host = new TuiHost({
       onSubmit: () => {},
@@ -200,6 +242,26 @@ describe('incremental transcript surface', () => {
     surface.sync({ transcript: [user, assistant], draft: undefined, expanded: false, version: '1', shellResults: [], notices: ['agent detail'] })
     const lines = surface.render(80).map(stripTerminalSequences)
     expect(lines.findIndex(line => line.includes('agent detail'))).toBeLessThan(lines.indexOf('new output'))
+  })
+
+  it('keeps shell results before later replies and drafts across theme and width changes', () => {
+    const surface = new TranscriptSurface({
+      renderItem: item => [{ render: () => [item.kind === 'assistant' ? item.text : 'question'] }],
+      renderDraft: draft => [{ render: () => [draft.text] }],
+    })
+    const user = { kind: 'user' as const, text: 'question' }
+    const assistant = { kind: 'assistant' as const, text: 'later answer' }
+    const shellResults = [{ command: 'pwd', output: 'shell one', status: '' }]
+    surface.sync({ transcript: [user], draft: undefined, expanded: false, version: '1', shellResults, notices: [] })
+    surface.sync({ transcript: [user, assistant], draft: { text: 'live answer', reasoning: '' }, expanded: false,
+      version: '1', shellResults: [...shellResults, { command: 'ls', output: 'shell two', status: '' }], notices: [] })
+    surface.rebuildDerived()
+    for (const width of [80, 35]) {
+      const output = surface.render(width).map(stripTerminalSequences).join('\n')
+      expect(output.indexOf('shell one')).toBeLessThan(output.indexOf('later answer'))
+      expect(output.indexOf('later answer')).toBeLessThan(output.indexOf('shell two'))
+      expect(output.indexOf('shell two')).toBeLessThan(output.indexOf('live answer'))
+    }
   })
 })
 
