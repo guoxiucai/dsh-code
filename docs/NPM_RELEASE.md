@@ -1,8 +1,8 @@
 # dsh-code npm 发行实施方案
 
-> 状态：`0.1.1` 已发布，trusted publishing 流程已启用；`0.1.2` 仅在本地回归，未发布
+> 状态：`0.1.2` 正式版已通过 trusted publishing 发布，npm `latest` 指向 `0.1.2`
 > 编写日期：2026-08-19
-> 最近审计：2026-09-04
+> 最近审计：2026-09-07
 > 首批目标平台：macOS arm64、Windows x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
@@ -11,6 +11,9 @@ DeepSeek Harness `0.1.2-rc.1` 为准。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
+
+2026-09-07 发布 `@tsingwill/dsh-code@0.1.2`，标签 `v0.1.2` 对应提交 `ed714f0e8929e547137f36622a59055a597a1b5b`，固定上游 DSH `0.1.2-rc.1`。
+[Release run 34081938187](https://github.com/guoxiucai/dsh-code/actions/runs/34081938187) 的候选包审计、macOS arm64 / Windows x64 的 Node 22.19 / 24 四组 smoke 和 OIDC 发布全部通过；npm 版本、`latest`、provenance 已核验。
 
 首版推荐发布一个公开产品包 `@tsingwill/dsh-code`，不发布两个平台子包，也不把
 pnpm workspace 的 `node_modules` 物理塞进 tarball。产品包以精确版本依赖已发布的

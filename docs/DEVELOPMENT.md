@@ -590,8 +590,8 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 - `/session` 已展示 input/output/total、cache read/write 命中情况和 reasoning tokens，但未展示 Cost（上游无定价表）。
 - npm staging、pack audit、macOS/Windows CI、`dsh-code update` 和一键 release 已实现；`0.1.0-rc.1` 已完成首次人工
   bootstrap，npm trusted publisher 已绑定仓库、`release.yml` 和 `release` environment，正式版 `0.1.0` 已通过
-  GitHub Actions OIDC + provenance 发布，`0.1.1`（DSH `0.1.1-rc.2`）也已正式发布。当前开发版已升级为
-  `0.1.2`（DSH `0.1.2-rc.1`），仅执行本地回归，未发布 npm。Windows CI 已通过，但 Windows 10 最低版本真机交互验收仍需完成。
+  GitHub Actions OIDC + provenance 发布。`0.1.2`（DSH `0.1.2-rc.1`）已于 2026-09-07 正式发布到 npm `latest`，
+  Release run `34081938187` 的 macOS/Windows 四组回归全部通过；Windows 10 最低版本真机交互验收仍需完成。
   不要直接发布当前根包；完整流程见 [`docs/NPM_RELEASE.md`](./NPM_RELEASE.md)。
 - 性能：转写是组件树重建（每次 render 清空重建），长会话未做虚拟化（见设计文档 §23 预算）。
 
