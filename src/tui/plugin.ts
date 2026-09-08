@@ -14,6 +14,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 // Declaration-merges the upstream Agent Preset roster onto Context.
 import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 // Empty type imports declaration-merge `agentDefaultModel`, `cmdlineArgs`, and
 // `appExit` onto Context (same contract the upstream headless runner relies on).
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -54,7 +55,7 @@ import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { TuiHost } from './host.ts'
 import type { SelectorHandle, SelectorItem } from './selector.ts'
-import { reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
+import { reduceAssistantStream, reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 import { theme } from './theme.ts'
 import { parseMcpArguments, type McpServerConfig } from './project-config.ts'
 import {
@@ -99,7 +100,7 @@ import {
   writeSessionExport,
   type SessionExportFormat,
 } from './session-export.ts'
-import { sessionForkPoints } from './session-fork.ts'
+import { persistFork, sessionForkPoints } from './session-fork.ts'
 import {
   createActiveSubagentProjection,
   type ActiveSubagentSnapshot,
@@ -116,14 +117,14 @@ import {
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionProjections', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'systemPrompt', 'tools']
+export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionPersistence', 'sessionProjections', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'systemPrompt', 'tools']
 
 /** Stream coalescing window: assistant chunks render at most about 30fps. */
 export const STREAM_RENDER_INTERVAL_MS = 33
 
-/** Draft deltas do not change TokenMeter's durable, model-visible surface. */
+/** Failed attempts do not change TokenMeter's model-visible surface. */
 export function shouldMeasureContextTokens(eventType: string): boolean {
-  return eventType !== 'assistant/chunk'
+  return eventType !== 'assistant/attempt'
 }
 
 /** Choose the public Agent inbox boundary for text entered in the TUI. */
@@ -1784,7 +1785,7 @@ async function run(ctx: Context): Promise<void> {
           }
           try {
             const child = createChildFromCut(point.cut)
-            void sessions.flush(child).then(
+            void persistFork(ctx.sessionPersistence, child).then(
               () => { void handoffSession({ kind: 'resume', sessionId: String(child.id) }) },
               error => { showCommandError('session fork', error) },
             )
@@ -1826,7 +1827,7 @@ async function run(ctx: Context): Promise<void> {
       try {
         // The exclusive cut omits this /clone command's own audit lifecycle.
         const child = createChildFromCut(SessionLogOffset(run.seq))
-        void sessions.flush(child).then(
+        void persistFork(ctx.sessionPersistence, child).then(
           () => {
             // Let command/done land in the parent before teardown starts.
             setTimeout(() => { void handoffSession({ kind: 'resume', sessionId: String(child.id) }) }, 0)
@@ -1870,10 +1871,14 @@ async function run(ctx: Context): Promise<void> {
       return
     }
     syncDraft()
-    // assistant/chunk changes only the ephemeral draft. TokenMeter's durable
-    // surface changes on committed messages/tool events, so cloning it for
-    // every streamed delta adds latency without changing the status value.
     scheduleRender(shouldMeasureContextTokens(event.type))
+  })
+
+  const disposeStream = ctx.on('agent/assistant-stream', ({ agent: source, frame }) => {
+    if (source !== agent) return
+    reducer = reduceAssistantStream(reducer, frame)
+    syncDraft()
+    scheduleRender()
   })
 
   const disposeStatus = ctx.on('agent/status', (payload: { agent: Agent; status: 'idle' | 'running' }) => {
@@ -1933,6 +1938,7 @@ async function run(ctx: Context): Promise<void> {
     host.render(reducer)
     host.stop({ printTranscript: !handoff })
     disposeEvents()
+    disposeStream()
     disposeStatus()
     disposeSubagentStart()
     disposeSubagentEnd()

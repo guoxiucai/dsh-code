@@ -1,6 +1,18 @@
-/** Pure helpers for pi-style history selection over DSH's turn-bounded log. */
+/** Pi-style history selection and durable child handoff over DSH's Session APIs. */
 
-import { SessionLogOffset, type SessionEvent, type SessionSeq } from '@deepseek-ai/dsh-session'
+import { SessionLogOffset, type Session, type SessionEvent, type SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+
+/** Persist an unattached fork and release its write ownership before process handoff. */
+export async function persistFork(persistence: SessionPersistence, child: Session): Promise<void> {
+  const handle = await persistence.create(child.header, { inheritedEventCount: child.inheritedEventCount })
+  try {
+    await handle.append(child.snapshotEvents())
+    await handle.flush()
+  } finally {
+    await handle.close()
+  }
+}
 
 /** One human prompt and the exclusive event cut immediately before its turn. */
 export interface SessionForkPoint {

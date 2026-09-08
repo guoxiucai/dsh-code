@@ -9,8 +9,8 @@ import {
 } from '../../src/tui/plugin.ts'
 
 describe('TUI render scheduling', () => {
-  it('keeps streamed draft chunks out of token-surface measurement', () => {
-    expect(shouldMeasureContextTokens('assistant/chunk')).toBe(false)
+  it('keeps non-surface attempts out of token-surface measurement', () => {
+    expect(shouldMeasureContextTokens('assistant/attempt')).toBe(false)
     expect(shouldMeasureContextTokens('assistant/message')).toBe(true)
     expect(shouldMeasureContextTokens('tool/result')).toBe(true)
   })

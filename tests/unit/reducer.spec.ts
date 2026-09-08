@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import {
   EventSequenceError,
   UnknownRequiredEventError,
   createReducerState,
   reduceSessionEvent,
+  reduceAssistantStream,
   replayEvents,
 } from '../../src/tui/reducer.ts'
 
@@ -15,19 +17,35 @@ function ev(type: string, seq: number, data: unknown, ignorable?: true): Session
   return event as unknown as SessionEvent
 }
 
-const textDelta = (text: string): unknown => ({ turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text } })
+const textDelta = (text: string): AssistantStreamFrame => ({ type: 'chunk', attemptId: 'a1', revision: 1, index: 0, time: 1000, chunk: { type: 'text-delta', index: 0, text } }) as AssistantStreamFrame
 const assistantMessage = (text: string): unknown => ({
   turn: 1, step: 1,
   message: { role: 'assistant', content: [{ type: 'text', text }], source: { kind: 'model', provider: 'p', model: 'm' } },
 })
 
 describe('session event reducer', () => {
+  it('settles failed attempts and clears abandoned drafts without fabricating history', () => {
+    let state = reduceAssistantStream(createReducerState('s1'), textDelta('failed preview'))
+    state = reduceSessionEvent(state, ev('assistant/attempt', 0, { turn: 1, step: 1, stream: [] }))
+    expect(state.draftAssistant).toBeUndefined()
+    expect(state.transcript).toEqual([])
+    state = reduceAssistantStream(state, textDelta('abandoned'))
+    state = reduceAssistantStream(state, { type: 'end', attemptId: 'a1', revision: 1, index: 1, outcome: { kind: 'abandoned' } } as AssistantStreamFrame)
+    expect(state.draftAssistant).toBeUndefined()
+    expect(state.lastSeq).toBe(0)
+    state = reduceAssistantStream(state, textDelta('old'))
+    state = reduceAssistantStream(state, { type: 'start', attemptId: 'a2', revision: 2, turn: 1, step: 1 } as AssistantStreamFrame)
+    expect(state.draftAssistant).toBeUndefined()
+  })
+
   it('EVT-001: merges assistant text deltas into one message', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
-    s = reduceSessionEvent(s, ev('assistant/chunk', 1, textDelta('Hello')))
-    s = reduceSessionEvent(s, ev('assistant/chunk', 2, textDelta(' world')))
-    s = reduceSessionEvent(s, ev('assistant/message', 3, assistantMessage('Hello world')))
+    s = reduceAssistantStream(s, textDelta('Hello'))
+    s = reduceAssistantStream(s, textDelta(' world'))
+    expect(s.lastSeq).toBe(0)
+    expect(s.draftAssistant?.text).toBe('Hello world')
+    s = reduceSessionEvent(s, ev('assistant/message', 1, assistantMessage('Hello world')))
     const assistants = s.transcript.filter(item => item.kind === 'assistant')
     expect(assistants).toHaveLength(1)
     expect(assistants[0]).toMatchObject({ kind: 'assistant', text: 'Hello world' })
@@ -45,8 +63,8 @@ describe('session event reducer', () => {
   it('EVT-002: reasoning deltas are kept separate from the answer', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
-    s = reduceSessionEvent(s, ev('assistant/chunk', 1, { turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'think' } }))
-    s = reduceSessionEvent(s, ev('assistant/message', 2, {
+    s = reduceAssistantStream(s, { ...textDelta('think'), chunk: { type: 'reasoning-delta', index: 0, text: 'think' } } as AssistantStreamFrame)
+    s = reduceSessionEvent(s, ev('assistant/message', 1, {
       turn: 1, step: 1,
       message: { role: 'assistant', content: [{ type: 'text', text: 'answer' }, { type: 'reasoning', text: 'think' }], source: { kind: 'model', provider: 'p', model: 'm' } },
     }))
@@ -116,14 +134,14 @@ describe('session event reducer', () => {
   it('EVT-006: an out-of-order seq fails fast', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
-    expect(() => reduceSessionEvent(s, ev('assistant/chunk', 5, textDelta('x')))).toThrow(EventSequenceError)
+    expect(() => reduceSessionEvent(s, ev('assistant/message', 5, assistantMessage('x')))).toThrow(EventSequenceError)
   })
 
   it('EVT-007: replaying a log matches live application', () => {
     const events = [
       ev('turn/start', 0, { turn: 1 }),
       ev('user/message', 1, { role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }),
-      ev('assistant/chunk', 2, textDelta('hey')),
+      ev('assistant/attempt', 2, { turn: 1, step: 1, stream: [] }),
       ev('assistant/message', 3, assistantMessage('hey')),
       ev('turn/end', 4, { turn: 1, reason: { kind: 'completed' } }),
     ]
@@ -162,8 +180,8 @@ describe('session event reducer', () => {
     expect(() => reduceSessionEvent(createReducerState('s1'), ev('future/required', 0, {}))).toThrow(UnknownRequiredEventError)
   })
 
-  it.each(['team/member', 'team/message/delivered', 'team/message/queued', 'team/task'])(
-    'accepts the upstream 0.1.1 audit event %s without changing the transcript',
+  it.each(['team/member', 'team/message/delivered', 'team/message/queued', 'team/task', 'feedback/message-put', 'feedback/message-delete'])(
+    'accepts the upstream audit event %s without changing the transcript',
     (type) => {
       const state = reduceSessionEvent(createReducerState('s1'), ev(type, 0, {}))
       expect(state.transcript).toEqual([])

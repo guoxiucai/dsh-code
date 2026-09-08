@@ -9,6 +9,7 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 // Declaration-merges the `approval/asked` / `approval/decided` event types into
 // the Session event union.
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -56,7 +57,9 @@ const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'agent-preset/selected', 'approval/policy',
   'command/done', 'command/run', 'compaction/prune',
   'compaction/summary', 'feedback/record', 'goal/change',
+  'feedback/message-delete', 'feedback/message-put',
   'hook/invoked', 'hook/result',
+  'subagent/model-selection-policy', 'session-log-deepseek/delivery-accepted',
   'sandbox/mode', 'schedule/change', 'session/title', 'session/title-llm-request',
   'subagent/descriptor', 'team/member', 'team/message/delivered',
   'team/message/queued', 'team/task', 'tool-workflow/agent-end', 'tool-workflow/agent-start',
@@ -175,6 +178,20 @@ function todosForNextTurn(todos: readonly TodoSummary[]): TodoSummary[] {
   return todos.length > 0 && todos.every(todo => todo.status === 'completed') ? [] : [...todos]
 }
 
+/** Apply transient frames without consuming a durable Session sequence number. */
+export function reduceAssistantStream(state: ReducerState, frame: AssistantStreamFrame): ReducerState {
+  if (frame.type === 'start' || frame.type === 'end') return { ...state, draftAssistant: undefined }
+  const draft = state.draftAssistant ?? { text: '', reasoning: '' }
+  const chunk = frame.chunk
+  if (chunk.type === 'text-delta') {
+    return { ...state, phase: 'running', draftAssistant: { ...draft, text: draft.text + chunk.text } }
+  }
+  if (chunk.type === 'reasoning-delta') {
+    return { ...state, phase: 'running', draftAssistant: { ...draft, reasoning: draft.reasoning + chunk.text } }
+  }
+  return state
+}
+
 /**
  * Apply one Session event to the reducer state. Pure except for the
  * documented throws (sequence gap, unknown required event).
@@ -245,18 +262,8 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       return base
     }
 
-    case 'assistant/chunk': {
-      const chunk = event.data.chunk
-      if (chunk.type === 'text-delta') {
-        const draft = state.draftAssistant ?? { text: '', reasoning: '' }
-        return { ...base, phase: 'running', draftAssistant: { ...draft, text: draft.text + chunk.text } }
-      }
-      if (chunk.type === 'reasoning-delta') {
-        const draft = state.draftAssistant ?? { text: '', reasoning: '' }
-        return { ...base, phase: 'running', draftAssistant: { ...draft, reasoning: draft.reasoning + chunk.text } }
-      }
-      return { ...base, phase: 'running' }
-    }
+    case 'assistant/attempt':
+      return { ...base, draftAssistant: undefined }
 
     case 'assistant/message': {
       const message = event.data.message
@@ -340,7 +347,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     case 'tool/code-dispatch': {
       const callId = String(event.data.subCallId)
       const resultText = toolResultText(textOf(event.data.content))
-      // Official 0.1.2-rc.1 dispatches do not expose presentation meta. Keep
+      // Official 0.1.3-alpha.2 dispatches do not expose presentation meta. Keep
       // replay forward-compatible when a later upstream version adds it.
       const diffs = diffsFromMeta((event.data as typeof event.data & { meta?: unknown }).meta)
       const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId

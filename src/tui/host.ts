@@ -131,7 +131,7 @@ export interface TuiHostCallbacks {
   onEditorChange?(text: string): void
 }
 
-/** In-flight assistant stream (text + reasoning merged from `assistant/chunk`). */
+/** In-flight assistant text and reasoning from process-local stream frames. */
 export interface AssistantDraft {
   text: string
   reasoning: string

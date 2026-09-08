@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { constants, zstdCompressSync } from 'node:zlib'
@@ -77,6 +77,20 @@ describe('projectKey', () => {
 })
 
 describe('listProjectSessions', () => {
+  it('selects the newest canonical generation and preserves fork metadata', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-code-home-'))
+    dirs.push(home)
+    const dir = join(home, 'sessions', projectKey('/proj'), 'child')
+    writeSessionLog(dir, 'child', 1, 'current', '/proj', undefined, 'parent')
+    writeFileSync(join(dir, 'session.v2.jsonl.zstd'), zstdCompressSync(readFileSync(join(dir, 'session.jsonl'))))
+    writeSessionLog(dir, 'child', 1, 'stale')
+    writeFileSync(join(dir, 'session.v03.jsonl'), 'ignored')
+    writeFileSync(join(dir, 'session.v3.jsonl.tmp'), 'ignored')
+    expect(listProjectSessions(home, '/proj')[0]).toMatchObject({ title: 'current', parentSession: 'parent', cwd: '/proj' })
+    writeFileSync(join(dir, 'session.v2.jsonl.zstd'), 'corrupt')
+    expect(listProjectSessions(home, '/proj')[0]?.title).not.toBe('stale')
+  })
+
   it('returns an empty list when no project directory exists', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-code-home-'))
     dirs.push(home)
@@ -198,6 +212,8 @@ describe('newlyCreatedEmptySessions', () => {
       session('existing-message', 'before'),
       session('new-empty', ''),
       session('new-message', 'from Web'),
+      { ...session('corrupt', ''), unreadable: true as const },
+      { ...session('attachment', ''), hasNonTextPrompt: true as const },
     ]
     expect(newlyCreatedEmptySessions(before, sessions).map(entry => entry.id)).toEqual(['new-empty'])
   })

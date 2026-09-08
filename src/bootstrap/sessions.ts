@@ -2,7 +2,7 @@
  * Persisted-session listing for the launcher's resume flows (`-c`/`--continue`
  * and `-r`/`--resume`). The launcher reads the upstream JSONL session layout
  * directly (it never boots the TUI to list sessions): sessions live at
- * `$DSH_CODE_HOME/sessions/<projectKey(cwd)>/<sessionId>/session.jsonl.zstd`.
+ * `$DSH_CODE_HOME/sessions/<projectKey(cwd)>/<sessionId>/session.v2.jsonl.zstd`.
  *
  * `projectKey` mirrors `@deepseek-ai/dsh-session-persistence-jsonl`'s
  * `projectKey` byte-for-byte and must stay in sync on a baseline upgrade.
@@ -116,6 +116,10 @@ export interface ProjectSession {
   parentSession?: string
   /** Durable owner marker; `subagent` sessions are hidden from launcher resume flows. */
   origin?: 'subagent'
+  /** Unreadable or unsupported artifacts must never be treated as empty for cleanup. */
+  unreadable?: true
+  /** A human message with no text (for example an attachment) still owns history. */
+  hasNonTextPrompt?: true
 }
 
 /** One resume-picker row after parent/child lineage ordering. */
@@ -136,8 +140,17 @@ function firstUserText(content: unknown): string {
 }
 
 function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSession {
-  const empty = { id: fallbackId, title: '', createdAt: undefined, dir: sessionDir, cwd: undefined }
-  for (const filename of ['session.jsonl.zstd', 'session.jsonl']) {
+  const empty = { id: fallbackId, title: '', createdAt: undefined, dir: sessionDir, cwd: undefined, unreadable: true as const }
+  // A successor is authoritative: never fall back to a stale predecessor.
+  let names: string[]
+  try { names = readdirSync(sessionDir) } catch { return empty }
+  const generations = names.flatMap(name => {
+    const match = /^session(?:\.v([1-9][0-9]*))?\.jsonl(?:\.zstd)?$/.exec(name)
+    const version = match === null ? NaN : Number(match[1] ?? 0)
+    return Number.isSafeInteger(version) ? [{ name, version }] : []
+  }).sort((a, b) => b.version - a.version || Number(b.name.endsWith('.zstd')) - Number(a.name.endsWith('.zstd')))
+  for (const { name: filename, version } of generations.slice(0, 1)) {
+    if (version > 2) return empty
     const path = join(sessionDir, filename)
     if (!existsSync(path)) continue
     let text: string
@@ -153,6 +166,7 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
     let cwd: string | undefined
     let parentSession: string | undefined
     let origin: 'subagent' | undefined
+    let unreadable = false
     try {
       const header = JSON.parse(lines[0] ?? '{}') as {
         id?: unknown
@@ -166,10 +180,13 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
       if (typeof header.cwd === 'string') cwd = header.cwd
       if (typeof header.parentSession === 'string') parentSession = header.parentSession
       if (header.origin === 'subagent') origin = header.origin
+      if (typeof header.id !== 'string' || typeof header.createdAt !== 'number') unreadable = true
     } catch {
       // Malformed header — keep the directory-name id and no timestamp.
+      unreadable = true
     }
     let title = ''
+    let hasNonTextPrompt = false
     for (let index = 1; index < lines.length; index++) {
       const line = lines[index]
       if (line === undefined || line === '') continue
@@ -177,11 +194,13 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
       try {
         event = JSON.parse(line) as typeof event
       } catch {
+        unreadable = true
         continue
       }
       if (event.type !== 'user/message') continue
       if (event.data?.source?.kind !== 'user') continue
       title = firstUserText(event.data.content)
+      hasNonTextPrompt = title === ''
       break
     }
     return {
@@ -192,6 +211,8 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
       cwd,
       ...(parentSession === undefined ? {} : { parentSession }),
       ...(origin === undefined ? {} : { origin }),
+      ...(unreadable ? { unreadable: true as const } : {}),
+      ...(hasNonTextPrompt ? { hasNonTextPrompt: true as const } : {}),
     }
   }
   return empty
@@ -246,7 +267,7 @@ export function newlyCreatedEmptySessions(
   beforeIds: ReadonlySet<string>,
   sessions: readonly ProjectSession[],
 ): ProjectSession[] {
-  return sessions.filter(session => !beforeIds.has(session.id) && session.title === '')
+  return sessions.filter(session => !beforeIds.has(session.id) && session.title === '' && !session.unreadable && !session.hasNonTextPrompt)
 }
 
 /**

@@ -7,10 +7,12 @@
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
 本文档是 npm 发行工作的实施基线，以当前仓库和固定的
-DeepSeek Harness `0.1.2-rc.1` 为准。`docs/technical-implementation-plan.md`
+DeepSeek Harness `0.1.3-alpha.2` 为准。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
+
+当前开发版本为 `0.1.3`，源码固定上游 `dsh-v0.1.3-alpha.2`。2026-09-08 已确认 npm 提供该上游版本；下述 `0.1.2` 发布记录不代表 `0.1.3` 已发布或完成跨平台安装验收。当前回归证据见 `UPSTREAM_0.1.3_REGRESSION.md`。
 
 2026-09-07 发布 `@tsingwill/dsh-code@0.1.2`，标签 `v0.1.2` 对应提交 `ed714f0e8929e547137f36622a59055a597a1b5b`，固定上游 DSH `0.1.2-rc.1`。
 [Release run 34081938187](https://github.com/guoxiucai/dsh-code/actions/runs/34081938187) 的候选包审计、macOS arm64 / Windows x64 的 Node 22.19 / 24 四组 smoke 和 OIDC 发布全部通过；npm 版本、`latest`、provenance 已核验。
@@ -42,7 +44,7 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 
 ### 2.1 已验证可行的部分
 
-- Git 子模块已固定到 `dsh-v0.1.2-rc.1`，npm registry 也已提供
+- 已发布的 `0.1.2` 基线固定到 `dsh-v0.1.2-rc.1`，npm registry 也已提供
   `@deepseek-ai/dsh@0.1.2-rc.1` 及同版本运行时闭包。2026-09-04 已本地通过 shrinkwrap、
   tarball audit、CycloneDX SBOM、macOS arm64 clean global install 及全局 `dsh` 共存 smoke。
 - 当前源码已将 dsh-code home 固定为

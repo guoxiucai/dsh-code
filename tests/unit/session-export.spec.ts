@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createMessage, createToolResultMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import {
   defaultExportFilename,
   exportFormatForPath,
@@ -17,11 +17,12 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 
 function sessionFixture(): Session {
   const id = SessionId('session/export:demo')
-  const session = Session.create(id, undefined, { version: 0, id, cwd: '/workspace', createdAt: 1, isSeeded: false })
+  const session = Session.create(id, undefined, { version: SESSION_FORMAT_VERSION, id, cwd: '/workspace', createdAt: 1, isSeeded: false, delegationDepth: 0 })
   session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Hello' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
   session.append('assistant/message', {
     turn: 1,
     step: 1,
+    stream: [],
     message: createMessage({
       role: 'assistant',
       content: [{ type: 'text', text: 'Hi there' }],

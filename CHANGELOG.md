@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.3 — Unreleased
+
+- Upgrade DeepSeek Harness to `0.1.3-alpha.2` (`82a5fd61a7`).
+- Accept upstream message-feedback audit events when replaying Web sessions.
+- Align `pi-ai` to `0.85.1` and include the new upstream benchmark workspace
+  required by the Host build.
+- Read the newest canonical Session generation in resume lists, preserving
+  fork lineage and refusing fallback to stale predecessor logs.
+- Consume process-local assistant stream frames for live TUI drafts; keep
+  durable v2 attempt settlement separate from Session event sequencing.
+- Persist fork/clone children through explicit storage handles and release
+  write ownership before switching; preserve unreadable/non-text sessions
+  during Web empty-session cleanup.
+- Enable the upstream `fs-ext` native build for cross-process Session leases.
+
 ## 0.1.2 — 2026-09-07
 
 - Kept direct `!` shell results at their position in the transcript so later
