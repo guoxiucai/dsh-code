@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5 — Unreleased
+
+- Upgrade DeepSeek Harness through `0.1.5-alpha.1` and `0.1.5-alpha.2` to
+  `0.1.5-rc.1` (`183f08e9c6`).
+- Support Session v3 listings and migrated PTC dispatch events; accept system,
+  subagent catalog, and deliverable events during transcript replay.
+- Use the explicit Agent setup parameter to restore session presets.
+- Build the upstream native system addon for local Session write locks.
+- Require `js-yaml >=4.3.2` to address GHSA-2883-xcg3-v3hh.
+
 ## 0.1.3 — Unreleased
 
 - Upgrade DeepSeek Harness to `0.1.3-alpha.2` (`82a5fd61a7`).

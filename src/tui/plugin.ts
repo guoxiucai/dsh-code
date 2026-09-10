@@ -211,10 +211,8 @@ async function run(ctx: Context): Promise<void> {
   let disabledSkillControl: SkillProviderControl | undefined
   let activePreset: SupportedAgentPreset = requestedPreset
 
-  const setup = async (agentCtx: Context): Promise<void> => {
-    const recorded = agentCtx.agent === undefined
-      ? undefined
-      : ctx.sessionProjections.stateOf(agentCtx.agent.session, 'agentPreset') ?? undefined
+  const setup = async (agentCtx: Context, setupAgent: Agent): Promise<void> => {
+    const recorded = ctx.sessionProjections.stateOf(setupAgent.session, 'agentPreset') ?? undefined
     const preset = resumeId === undefined ? requestedPreset : supportedAgentPreset(recorded ?? 'standard')
     if (preset === undefined) throw new Error(`session uses unsupported agent preset ${JSON.stringify(recorded)}`)
     activePreset = preset

@@ -58,6 +58,7 @@ const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'command/done', 'command/run', 'compaction/prune',
   'compaction/summary', 'feedback/record', 'goal/change',
   'feedback/message-delete', 'feedback/message-put',
+  'deliverables/presented', 'subagent/catalog', 'system/message',
   'hook/invoked', 'hook/result',
   'subagent/model-selection-policy', 'session-log-deepseek/delivery-accepted',
   'sandbox/mode', 'schedule/change', 'session/title', 'session/title-llm-request',
@@ -329,7 +330,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       return { ...base, phase: 'running', transcript }
     }
 
-    case 'tool/code-dispatch-start':
+    case 'tool/ptc-dispatch-start':
       return {
         ...base,
         phase: 'running',
@@ -344,10 +345,10 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
         }],
       }
 
-    case 'tool/code-dispatch': {
+    case 'tool/ptc-dispatch': {
       const callId = String(event.data.subCallId)
       const resultText = toolResultText(textOf(event.data.content))
-      // Official 0.1.3-alpha.2 dispatches do not expose presentation meta. Keep
+      // Official 0.1.5-rc.1 dispatches do not expose presentation meta. Keep
       // replay forward-compatible when a later upstream version adds it.
       const diffs = diffsFromMeta((event.data as typeof event.data & { meta?: unknown }).meta)
       const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId

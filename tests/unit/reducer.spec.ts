@@ -100,10 +100,10 @@ describe('session event reducer', () => {
     const events = [
       ev('turn/start', 0, { turn: 1 }),
       ev('tool/call', 1, { turn: 1, step: 1, callId: 'root', name: 'run_code', arguments: '{"description":"Update config","code":"..."}' }),
-      ev('tool/code-dispatch-start', 2, {
+      ev('tool/ptc-dispatch-start', 2, {
         rootCallId: 'root', parentCallId: 'root', subCallId: 'root:code:1', name: 'edit', arguments: { path: 'a.ts' },
       }),
-      ev('tool/code-dispatch', 3, {
+      ev('tool/ptc-dispatch', 3, {
         rootCallId: 'root', parentCallId: 'root', subCallId: 'root:code:1', name: 'edit', arguments: { path: 'a.ts' },
         isError: false,
         content: [{ type: 'text', text: 'updated a.ts' }],
@@ -180,7 +180,7 @@ describe('session event reducer', () => {
     expect(() => reduceSessionEvent(createReducerState('s1'), ev('future/required', 0, {}))).toThrow(UnknownRequiredEventError)
   })
 
-  it.each(['team/member', 'team/message/delivered', 'team/message/queued', 'team/task', 'feedback/message-put', 'feedback/message-delete'])(
+  it.each(['team/member', 'team/message/delivered', 'team/message/queued', 'team/task', 'feedback/message-put', 'feedback/message-delete', 'system/message', 'subagent/catalog', 'deliverables/presented'])(
     'accepts the upstream audit event %s without changing the transcript',
     (type) => {
       const state = reduceSessionEvent(createReducerState('s1'), ev(type, 0, {}))

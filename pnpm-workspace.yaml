@@ -3,8 +3,8 @@ packages:
   # dsh-code itself is the workspace root (the package.json in this directory).
   - deepseek-harness/vendor/*
   - deepseek-harness/packages/*/*
-  - deepseek-harness/native/landlock-run
-  - deepseek-harness/native/landlock-run/packages/*
+  - deepseek-harness/native/system
+  - deepseek-harness/native/system/packages/*
   - deepseek-harness/apps/*
   - deepseek-harness/benchmarks
   - deepseek-harness/website
@@ -32,10 +32,14 @@ allowBuilds:
   node-addon-require-builtin: false
   koffi: true
   '@deepseek-ai/dsh-subprocess-local@file:deepseek-harness/packages/subprocess/subprocess-local': true
-  fs-ext: true
+  electron-winstaller: false
+  msgpackr-extract: false
+  # Disable pending builds left by the previous baseline's locking dependency.
+  fs-ext: false
 
 minimumReleaseAgeExclude:
   - '@earendil-works/pi-ai@0.85.1'
+  - '@earendil-works/pi-telemetry@0.85.1'
   - node-addon-native-custom-loader@0.1.4
   - node-addon-require-builtin-darwin-arm64@0.1.4
   - node-addon-require-builtin-darwin-x64@0.1.4
@@ -45,16 +49,16 @@ minimumReleaseAgeExclude:
   - node-addon-require-builtin-win32-ia32-msvc@0.1.4
   - node-addon-require-builtin-win32-x64-msvc@0.1.4
   - node-addon-require-builtin@0.1.4
-  - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.241'
-  - '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.241'
-  - '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.241'
-  - '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.241'
-  - '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.241'
-  - '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.241'
-  - '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.241'
-  - '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.241'
-  - '@anthropic-ai/claude-agent-sdk@0.3.241'
-  - '@openai/codex@0.149.1||0.149.1-darwin-arm64||0.149.1-darwin-x64||0.149.1-linux-arm64||0.149.1-linux-x64||0.149.1-win32-arm64||0.149.1-win32-x64'
+  - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.263'
+  - '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.263'
+  - '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.263'
+  - '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.263'
+  - '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.263'
+  - '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.263'
+  - '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.263'
+  - '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.263'
+  - '@anthropic-ai/claude-agent-sdk@0.3.263'
+  - '@openai/codex@0.153.4||0.153.4-darwin-arm64||0.153.4-darwin-x64||0.153.4-linux-arm64||0.153.4-linux-x64||0.153.4-win32-arm64||0.153.4-win32-x64'
 
 patchedDependencies:
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
