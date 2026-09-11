@@ -1,4 +1,20 @@
-# dsh-code 0.1.5 / DSH 0.1.5-rc.1 升级回归
+# dsh-code 0.1.5 上游升级回归
+
+## 2026-09-11：同步 rc.2
+
+当前上游为 `dsh-v0.1.5-rc.2` / `fb2c4b9e698e30edb738bca4cf0618587db7d203`，产品版本保持 `0.1.5`。相对 rc.1 的实际代码变化集中在 Web 反馈与交付文件展示：正负评价统一打开反馈对话框，反馈分类适用于两类评价，交付文件卡片、文件图标与间距改进。Session/Agent/PTC 接口及持久化格式未改变，无新增下游运行逻辑适配。
+
+本机回归（macOS arm64 / Node 22.19.0）：
+
+- frozen-lockfile 安装、Host/Client 构建、产品 Web/TUI 构建及类型检查通过，锁文件无需变动。
+- 下游 35 文件、233 项测试通过。
+- 上游 Web 定向测试覆盖 ui-message-feedback、ui-deliverables、code-file-icon、turn-tail-spacing，15 文件、322 项通过。首次运行受本地残留的第二套 React/渲染器和 JSX 默认转换影响；将 `deepseek-harness/node_modules/@testing-library` 移至 `/tmp/dsh-code-rc2-test-deps.Zizp5q/testing-library` 备份并链接根工作区依赖，再通过临时配置继承上游 Vitest 配置、对各 test project 设置 `esbuild: { jsx: 'automatic' }` 后全部通过。未修改上游源码、断言或测试门禁。
+- 真实 PTY 恢复隔离会话，发送 `rc2 shell round trip` 完成模型→bash→答复。`/web` 启动随附 Web，Chrome 中点击点赞打开对话框，选择“任务结果”、填写测试备注并提交，页面显示“感谢你的反馈”及已选中状态；发送 `WEB_RC2_RETURN` 完成工具往返。终端 Esc 返回 TUI 后恢复输入，`/quit` 输出包含 Web 新消息、ANSI 样式和 resume 提示，返回码 0。隔离 home 为 `/tmp/dsh-code-rc2.yAAshr/home`，未触碰真实用户会话；测试标签页及服务已关闭。
+- 候选包生成、审计、macOS 隔离全局安装、PTC worker、Web 静态资源及独立 `dsh` 共存 smoke 全部通过。`dist/npm/tsingwill-dsh-code-0.1.5.tgz` 为 272936 字节，SHA-256 `94356cca3298ce1e3714094c7479b528427c663ad6ac088fd1060303f5989c02`；231 个 DSH 包固定 `0.1.5-rc.2`，SBOM 565 项，npm audit 0 个已知漏洞。
+
+本轮未执行 Windows / Node 24 发行矩阵，未提交、推送或发布。下文保留 rc.1 升级历史证据。
+
+## 2026-09-10：rc.1 历史记录
 
 日期：2026-09-10。产品版本 `0.1.5`，上游固定 `183f08e9c6dde7e36cd2318eaee70b0da08fb35e`。本轮不提交、推送或发布；上游子模块保持无本地源码修改。
 

@@ -2,7 +2,7 @@
 
 > 本文档面向接手 `dsh-code` 继续开发的工程师。目标读者需要了解：这是什么项目、代码怎么组织的、怎么构建运行、哪些是硬性边界、哪些还没做。
 >
-> 上游基线：`deepseek-ai/deepseek-harness` @ `183f08e9c6dde7e36cd2318eaee70b0da08fb35e`（`0.1.5-rc.1`），以 submodule `deepseek-harness/` 形式引入。
+> 上游基线：`deepseek-ai/deepseek-harness` @ `fb2c4b9e698e30edb738bca4cf0618587db7d203`（`0.1.5-rc.2`），以 submodule `deepseek-harness/` 形式引入。
 
 ---
 
@@ -68,7 +68,7 @@ pnpm.cmd --version
 - 平台为 `win32-x64`；
 - Node 为 `v22.19.x` 或 `v24.x`；
 - pnpm 为 `11.7.0`；
-- `deepseek-harness` 位于 `183f08e9c6dde7e36cd2318eaee70b0da08fb35e`，行首没有 `-`、`+` 或 `U`；
+- `deepseek-harness` 位于 `fb2c4b9e698e30edb738bca4cf0618587db7d203`，行首没有 `-`、`+` 或 `U`；
 - 当前分支跟踪 `origin/main`，工作区干净。
 
 如果 SSH 尚未配置，可先用公开 HTTPS 地址拉取；需要推送时，再配置协作者权限和个人认证：

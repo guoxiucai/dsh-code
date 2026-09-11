@@ -3,7 +3,8 @@
 ## 0.1.5 — Unreleased
 
 - Upgrade DeepSeek Harness through `0.1.5-alpha.1` and `0.1.5-alpha.2` to
-  `0.1.5-rc.1` (`183f08e9c6`).
+  `0.1.5-rc.2` (`fb2c4b9e69`).
+- Include upstream Web feedback-dialog and delivered-file presentation fixes.
 - Support Session v3 listings and migrated PTC dispatch events; accept system,
   subagent catalog, and deliverable events during transcript replay.
 - Use the explicit Agent setup parameter to restore session presets.
