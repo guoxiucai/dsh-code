@@ -1,5 +1,15 @@
 # dsh-code 0.1.5 上游升级回归
 
+## 2026-09-19：正式发布
+
+`@tsingwill/dsh-code@0.1.5` 已发布，npm `latest` 为 `0.1.5`。发布标签 `v0.1.5` 指向 `4ebb30948ec2b6f90ecbe5997b302736ea95bb44`，上游仍为 `dsh-v0.1.5-rc.2`。本地发布预检与 233 项测试通过；[Release run 35423846276](https://github.com/guoxiucai/dsh-code/actions/runs/35423846276) 的 Linux 候选构建/审计、macOS arm64 和 Windows x64 的 Node 22.19 / 24 四组安装 smoke 均通过，Node 22 组包含独立 dsh 共存验证。
+
+CI 发布包大小 273166 字节，SHA-256 `30d5419bc580d9e21ee87f3972247b49f37b2c57e4955feca70324e73ce9d929`，registry integrity 为 `sha512-+FgoT7duD3NGViguSvtDIFQv2qooLpgwe1dEZbkwJIl94Y/o68gC+0O5ZV5bpERqIX6pONWjubpb/ZfEJPTSjA==`，与下载的 CI candidate 一致，provenance 存在。此正式包不同于下面各次开发回归临时生成的候选包。
+
+首次 publish 已成功上传，但 npm 处理耗时超过脚本的 120 秒可见性检查窗口，任务因此失败。registry 生效后确认版本、latest 和 integrity，再仅重跑失败发布任务；脚本识别同一已发布产物并完成幂等验证，流水线最终成功。[GitHub Release](https://github.com/guoxiucai/dsh-code/releases/tag/v0.1.5) 已创建且不是预发布。
+
+下文“未发布”“未执行 Windows/Node 24”描述的是对应日期的历史状态，不适用于本次正式发布。
+
 ## 2026-09-11：同步 rc.2
 
 当前上游为 `dsh-v0.1.5-rc.2` / `fb2c4b9e698e30edb738bca4cf0618587db7d203`，产品版本保持 `0.1.5`。相对 rc.1 的实际代码变化集中在 Web 反馈与交付文件展示：正负评价统一打开反馈对话框，反馈分类适用于两类评价，交付文件卡片、文件图标与间距改进。Session/Agent/PTC 接口及持久化格式未改变，无新增下游运行逻辑适配。
