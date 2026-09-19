@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.5 — Unreleased
+## 0.1.5 — 2026-09-19
 
 - Upgrade DeepSeek Harness through `0.1.5-alpha.1` and `0.1.5-alpha.2` to
   `0.1.5-rc.2` (`fb2c4b9e69`).
@@ -11,7 +11,7 @@
 - Build the upstream native system addon for local Session write locks.
 - Require `js-yaml >=4.3.2` to address GHSA-2883-xcg3-v3hh.
 
-## 0.1.3 — Unreleased
+### Included changes from the unpublished 0.1.3 development version
 
 - Upgrade DeepSeek Harness to `0.1.3-alpha.2` (`82a5fd61a7`).
 - Accept upstream message-feedback audit events when replaying Web sessions.
