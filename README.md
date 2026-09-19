@@ -57,6 +57,10 @@ DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
 Linux, macOS Intel/Rosetta, Windows ARM, and standalone installations without
 Node.js are not supported in the first release.
 
+Version 0.1.5 still rejects Linux at the product entry point. Ubuntu CI validates
+source builds and automated tests, not Linux CLI/TUI support. See the
+[Linux validation report](docs/LINUX_VALIDATION.md) for evidence and remaining checks.
+
 ## Installation
 
 ### npm

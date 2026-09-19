@@ -54,6 +54,9 @@ DeepSeek Harness Agent Runtime + Pi 风格终端交互 + pi-tui 渲染器
 首个版本暂不支持 Linux、macOS Intel/Rosetta、Windows ARM，以及不安装 Node.js 的
 独立可执行文件分发方式。
 
+当前 0.1.5 版本仍在产品入口拒绝 Linux。Ubuntu CI 的源码构建与自动测试通过不代表
+Linux CLI/TUI 已受支持，具体证据与待验收项见 [Linux 验证记录](docs/LINUX_VALIDATION.md)。
+
 ## 安装
 
 ### npm 安装

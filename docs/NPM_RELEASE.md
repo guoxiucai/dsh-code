@@ -12,6 +12,8 @@ DeepSeek Harness `0.1.5-rc.2` 为准。`docs/technical-implementation-plan.md`
 
 ## 1. 执行结论
 
+Linux 目前仅有 Ubuntu CI 的源码构建/测试/打包证据，产品入口与安装 smoke 仍拒绝 Linux，不能视为已支持的平台。验证边界、跳过用例与后续验收清单见 [Linux 验证记录](LINUX_VALIDATION.md)。
+
 2026-09-19 已发布 `@tsingwill/dsh-code@0.1.5`，源码固定上游 `dsh-v0.1.5-rc.2`，标签 `v0.1.5` 对应提交 `4ebb30948ec2b6f90ecbe5997b302736ea95bb44`。[Release run 35423846276](https://github.com/guoxiucai/dsh-code/actions/runs/35423846276) 的候选包审计与 macOS arm64 / Windows x64、Node 22.19 / 24 四组 smoke 全部通过；npm `latest`、provenance 与发布包完整性已核验。首次发布成功后因 registry 生效超过 120 秒而校验超时，重跑失败任务复用同一候选包完成校验与 GitHub Release，未重新打包或覆盖版本。完整证据见 `UPSTREAM_0.1.5_REGRESSION.md`。
 
 2026-09-07 发布 `@tsingwill/dsh-code@0.1.2`，标签 `v0.1.2` 对应提交 `ed714f0e8929e547137f36622a59055a597a1b5b`，固定上游 DSH `0.1.2-rc.1`。

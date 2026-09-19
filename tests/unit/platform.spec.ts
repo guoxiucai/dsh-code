@@ -12,4 +12,10 @@ describe('platform support', () => {
     expect(unsupportedPlatformMessage('win32', 'arm64')).toContain('win32-arm64')
     expect(platformKey('linux', 'x64')).toBe('linux-x64')
   })
+
+  it.each(['x64', 'arm64'])('rejects Linux %s until product support is verified', (arch) => {
+    expect(unsupportedPlatformMessage('linux', arch)).toBe(
+      `unsupported platform linux-${arch}; supported platforms are macOS arm64 and Windows 10+ x64`,
+    )
+  })
 })
