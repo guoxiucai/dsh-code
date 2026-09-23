@@ -102,18 +102,30 @@ try {
   }
 
   const cordisUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/cordis')).href
-  const codeRuntimeUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/dsh-code-runtime-worker-thread')).href
+  const ptcRuntimeUrl = pathToFileURL(productRequire.resolve('@deepseek-ai/dsh-ptc-runtime-node')).href
+  const baseRequire = createRequire(productRequire.resolve('@deepseek-ai/dsh-base/package.json'))
+  const ptcServices = ['session', 'fs-local', 'subprocess-local', 'sandbox-local', 'session-projection', 'sandbox-policy']
+    .map(name => pathToFileURL(baseRequire.resolve(`@deepseek-ai/dsh-${name}`)).href)
   const warningFilter = pathToFileURL(join(productRoot, 'lib', 'bootstrap', 'node-warning-filter.js')).href
   const ptcSmoke = `
     const { Context } = await import(${JSON.stringify(cordisUrl)})
-    const { WorkerThreadCodeRuntime } = await import(${JSON.stringify(codeRuntimeUrl)})
+    const { NodePtcRuntime } = await import(${JSON.stringify(ptcRuntimeUrl)})
     const ctx = new Context()
-    await ctx.plugin(WorkerThreadCodeRuntime, {})
-    const result = await ctx.codeRuntime.run({ program: 'const value: number = 42; return value', bindings: [] })
-    console.log(JSON.stringify(result))
+    try {
+      for (const [index, url] of ${JSON.stringify(ptcServices)}.entries()) {
+        const { default: service } = await import(url)
+        // Installation smoke checks the process runtime, not OS sandbox enforcement.
+        await ctx.plugin(service, index === 5 ? { mode: 'danger-full-access', workspaceRoot: process.cwd() } : {})
+      }
+      await ctx.plugin(NodePtcRuntime, {})
+      const result = await ctx.ptcRuntime.run(ctx.ptcRuntime.resolve({ program: 'const value: number = 42; return value', bindings: [] }))
+      console.log(JSON.stringify(result))
+    } finally {
+      await ctx.fiber.dispose()
+    }
   `
   const ptcResult = run(process.execPath, ['--import', warningFilter, '--input-type=module', '-e', ptcSmoke], {
-    cwd: productRoot,
+    cwd: prefix,
     capture: true,
     timeout: 60_000,
   })

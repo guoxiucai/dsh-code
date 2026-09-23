@@ -61,7 +61,7 @@ describe('standard Agent Preset composition', () => {
     expect(report.querySessionIds).toContain('standard-preset-smoke')
   }, 60_000)
 
-  it('boots the official PTC preset with the worker runtime and code-only tool presentation', async () => {
+  it('boots the official PTC preset with the Node process runtime and code-only tool presentation', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-code-ptc-home-'))
     const project = mkdtempSync(join(tmpdir(), 'dsh-code-ptc-project-'))
     dirs.push(home, project)
@@ -77,6 +77,7 @@ describe('standard Agent Preset composition', () => {
       preset: 'ptc',
       headerPreset: 'ptc',
       runtimeLanguage: 'typescript',
+      runtimeIsolation: 'process',
       runtimeResult: { logs: [], value: 42 },
       agentTools: ['run_code'],
       hasSdk: true,

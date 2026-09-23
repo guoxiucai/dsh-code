@@ -41,7 +41,7 @@ const PRESET_OWNED_BASE_ROWS = [
   'tool-subagent-list-agents',
   'tool-subagent',
   'tool-subagent-fork',
-  'workflow-worker-thread',
+  'workflow-ptc',
   'tool-workflow',
   'tool-ralph',
   'agent-instructions',
@@ -113,12 +113,6 @@ ${PRESET_OWNED_BASE_ROWS.map(id => `- id: ${id}\n  disabled: true`).join('\n\n')
     # Host-scoped settings provider before their delegated tools are mounted.
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
-
-    # PTC executes the model-authored TypeScript program in an isolated worker.
-    # Standard does not expose run_code, but sharing the host runtime keeps a
-    # blank-session switch transactional and avoids restarting the process.
-    - id: dsh-code-code-runtime
-      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
     # Discovery only: a second upstream provider reads compatible skill roots.
     # dsh-code never installs, deletes, or copies skills from these products.

@@ -30,7 +30,9 @@ describe('dsh-code profile composition', () => {
     expect(DEFAULT_AGENT_PRESET).toBe('standard')
     expect(patch).toContain("id: agent-presets\n      name: '@deepseek-ai/dsh-agent-presets'")
     expect(patch).toContain('default: standard')
-    expect(patch).toContain("id: dsh-code-code-runtime\n      name: '@deepseek-ai/dsh-code-runtime-worker-thread'")
+    // The upstream base now owns the shared Node-process PTC runtime.
+    expect(patch).not.toContain('dsh-code-runtime-worker-thread')
+    expect(patch).toContain('id: workflow-ptc\n  disabled: true')
     for (const id of [
       'tool-bash',
       'tool-pwsh',

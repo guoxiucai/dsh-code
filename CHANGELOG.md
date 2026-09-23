@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.6 — Unreleased
+
+- Upgrade DeepSeek Harness to `0.1.6-alpha.2` (`ddefc45fbc`).
+- Use the upstream base's shared Node-process PTC runtime instead of the
+  removed worker-thread provider; update runtime smoke checks to resolve
+  execution requests before running them.
+- Record Linux validation boundaries and an Ubuntu npm-install test guide.
+
 ## 0.1.5 — 2026-09-19
 
 - Upgrade DeepSeek Harness through `0.1.5-alpha.1` and `0.1.5-alpha.2` to

@@ -61,7 +61,10 @@ describe('live dsh-code MCP runtime', () => {
       await manager.reload()
       expect(manager.snapshot()).toMatchObject([{ serverName: 'live', state: 'connected' }])
       expect(ctx.tools.schemas().map(schema => schema.name)).toContain('mcp__live__add')
-      expect(readFileSync(join(stderrLogDir, 'live.stderr.log'), 'utf8').match(/NOISY_MCP_FIXTURE_BANNER/g)).toHaveLength(2)
+      const stderrLog = readFileSync(join(stderrLogDir, 'live.stderr.log'), 'utf8')
+      // MCP SDK v2 starts a discovery child and a fresh session child for each
+      // stdio connection. Two explicit mounts therefore emit four banners.
+      expect(stderrLog.match(/NOISY_MCP_FIXTURE_BANNER/g), stderrLog).toHaveLength(4)
     } finally {
       await manager.dispose()
       await ctx.fiber.dispose()
