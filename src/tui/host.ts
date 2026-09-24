@@ -37,7 +37,7 @@ import { normalizeTerminalOutput } from '@earendil-works/pi-tui/dist/utils.js'
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
 import { diffLines } from 'diff'
 import { bindAdaptiveTheme, theme, type AdaptiveThemeBinding } from './theme.ts'
-import { clipboardInvocation, writeClipboard } from './clipboard.ts'
+import { clipboardInvocation, readClipboard, writeClipboard } from './clipboard.ts'
 import {
   InlineTextInputComponent,
   ListSelectorComponent,
@@ -1113,6 +1113,17 @@ export class TuiHost {
     }
     // While an inline selector/input is active, let it own every key.
     if (this.inlineControlActive) return undefined
+    if (matchesKey(data, Key.ctrl('v'))) {
+      if (!isKeyRelease(data) && this.activeOverlayCancel === undefined && this.activeKernelInteractionCancel === undefined) {
+        void readClipboard().then((text) => {
+          if (text !== undefined && text.length > 0) {
+            this.editor.insertTextAtCursor(text)
+            this.tui.requestRender()
+          }
+        })
+      }
+      return { consume: true }
+    }
     if (this.activeOverlayCancel !== undefined && matchesKey(data, 'escape')) {
       this.activeOverlayCancel()
       return { consume: true }

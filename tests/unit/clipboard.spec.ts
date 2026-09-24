@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clipboardInvocation, writeClipboard } from '../../src/tui/clipboard.ts'
+import { clipboardInvocation, clipboardReadInvocation, readClipboard, writeClipboard } from '../../src/tui/clipboard.ts'
 
 describe('native clipboard bridge', () => {
   it('uses pbcopy directly on macOS', () => {
@@ -21,8 +21,40 @@ describe('native clipboard bridge', () => {
     expect(invocation?.args.join(' ')).not.toContain(text)
   })
 
-  it('reports when no native bridge is available so the host can retain the OSC 52 fallback', async () => {
-    expect(clipboardInvocation('selection', 'linux')).toBeUndefined()
-    await expect(writeClipboard('selection', 'linux')).resolves.toBe(false)
+  it('prefers the first available Linux tool and passes text via stdin', () => {
+    expect(clipboardInvocation('中文\nselection', 'linux', name => name === 'xclip')).toEqual({
+      command: 'xclip',
+      args: ['-selection', 'clipboard'],
+      input: '中文\nselection',
+    })
+    expect(clipboardInvocation('selection', 'linux', name => name === 'xsel')?.command).toBe('xsel')
+    expect(clipboardInvocation('selection', 'linux', name => name === 'wl-copy')).toEqual({
+      command: 'wl-copy',
+      args: [],
+      input: 'selection',
+    })
+  })
+
+  it('falls back to OSC 52 (no bridge) when no Linux tool is installed', async () => {
+    const none = (): boolean => false
+    expect(clipboardInvocation('selection', 'linux', none)).toBeUndefined()
+    await expect(writeClipboard('selection', 'linux', none)).resolves.toBe(false)
+  })
+
+  it('prefers the first available Linux read tool', () => {
+    expect(clipboardReadInvocation('linux', name => name === 'xclip')).toEqual({
+      command: 'xclip',
+      args: ['-selection', 'clipboard', '-o'],
+    })
+    expect(clipboardReadInvocation('linux', name => name === 'xsel')?.command).toBe('xsel')
+    expect(clipboardReadInvocation('linux', name => name === 'wl-paste')).toEqual({
+      command: 'wl-paste',
+      args: [],
+    })
+    expect(clipboardReadInvocation('darwin')).toEqual({ command: 'pbpaste', args: [] })
+  })
+
+  it('resolves undefined when no Linux read tool is installed', async () => {
+    await expect(readClipboard('linux', () => false)).resolves.toBeUndefined()
   })
 })
