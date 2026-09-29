@@ -26,7 +26,9 @@ function run(home: string, cwd: string): Promise<{ stdout: string; stderr: strin
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [dshBin, '--profile', 'dsh-code'], {
       cwd,
-      env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
+      // This checks preset composition and process execution in disposable dirs,
+      // not host kernel sandbox support (which varies on hosted Linux runners).
+      env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1', DSH_PERMISSION_MODE: 'danger-full-access' },
     })
     let stdout = ''
     let stderr = ''

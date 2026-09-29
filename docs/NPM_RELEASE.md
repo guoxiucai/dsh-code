@@ -37,7 +37,7 @@ npm install -g @tsingwill/dsh-code
 ```
 
 npm 会在安装目标机上自动选择 Darwin arm64 或 Win32 x64 的原生预编译依赖。
-因此 JavaScript 产品 tarball 只构建一次，但必须在两个真实平台分别执行 clean
+因此 JavaScript 产品 tarball 只构建一次，但必须在三个真实平台分别执行 clean
 global install 和运行时验收，验收通过的同一个 tarball 才能发布。
 
 此处的“整体打包”指一次 npm 安装获得完整产品依赖闭包，不是一个可离线
@@ -249,7 +249,7 @@ anything else → 友好错误 + 支持矩阵 URL + exit 1
 ### 4.3 原生依赖
 
 当前运行闭包含 `node-pty`、`node-addon-require-builtin`、Koffi 和 pi-tui 携带的平台
-预编译产物。发布流程必须证明两个平台安装时选中正确产物，而不是在 CI
+预编译产物。发布流程必须证明三个平台安装时选中正确产物，而不是在 CI
 上悄然从源码编译成功。
 
 当前上游 `@deepseek-ai/dsh-subprocess-local` 有 postinstall，用于恢复 macOS

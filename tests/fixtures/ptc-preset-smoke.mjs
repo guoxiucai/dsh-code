@@ -16,6 +16,9 @@ export function apply(ctx) {
         program: 'const value: number = 42; return value',
         bindings: [],
       }))
+      if (runtimeResult.error !== undefined) {
+        throw new Error(`PTC execution failed: ${JSON.stringify(runtimeResult)}`)
+      }
       process.stdout.write(`${JSON.stringify({
         preset: ctx.agentPresets.composedPreset(handle.agent.ctx),
         headerPreset: handle.agent.session.header.agentPreset,

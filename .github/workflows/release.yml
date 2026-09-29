@@ -51,6 +51,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:lib
       - run: pnpm run typecheck
+      - run: pnpm exec tsc -p tsconfig.json
       - run: pnpm test
       - run: node scripts/build-release.mjs --version ${{ steps.release.outputs.version }}
       - run: node scripts/verify-tarball.mjs
