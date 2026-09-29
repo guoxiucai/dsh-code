@@ -5,7 +5,24 @@
 
 Ubuntu 实机 npm 安装与交互验收步骤见 [面向 Code Agent 的验证手册](UBUNTU_AGENT_VALIDATION_GUIDE.md)。
 
-## 结论与边界
+## 0.1.6 更新（2026-09-28）：linux-x64 已放行，Node 22 / 24 安装流程 PASS
+
+产品 0.1.6 起放行 `linux-x64`（`src/cli/platform.ts`，提交 `16cc1f2`），并新增 Linux 原生剪贴板后端（`xclip`/`xsel`/`wl-copy`）与 Ctrl+V 粘贴。Ubuntu 22.04 x64 实机源码构建安装流程验证结果：
+
+| 验证项 | Node 22.22.0 | Node 24.21.0 |
+| --- | --- | --- |
+| pnpm install（frozen-lockfile） | PASS | PASS |
+| 上游 build:lib（native host addon） | PASS | PASS（`system.node` 加载成功） |
+| 产品 build + typecheck | PASS | PASS |
+| 测试（vitest） | PASS | PASS（35 文件 / 237 用例） |
+| headless 真实模型闭环 | PASS | PASS（`-p --approve` exit=0） |
+| node-pty / PTY spawn | PASS | PASS |
+
+**结论：dsh-code 0.1.6 源码构建安装流程在 Node 22.22.0 与 Node 24.21.0 均通过。** 下方 0.1.5 的「不支持 Linux」结论已过时。交互式 TUI / 会话 / PTC / Web / 沙箱的完整验收进度见 `dev_doc/UBUNTU_VALIDATION_REPORT.md` 与 `dev_doc/UBUNTU_INTERACTIVE_CHECKLIST.md`。
+
+---
+
+## 结论与边界（0.1.5 历史记录）
 
 **当前版本不支持 Linux 产品运行。Linux 上的源码构建、自动测试成功，不等于 npm 安装后的 CLI/TUI 已通过验收。**
 
