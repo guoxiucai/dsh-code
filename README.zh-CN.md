@@ -44,18 +44,20 @@ DeepSeek Harness Agent Runtime + Pi 风格终端交互 + pi-tui 渲染器
 
 ## 环境要求
 
-| 组件 | 首个版本支持范围 |
+| 组件 | 支持范围（0.1.6 起） |
 | --- | --- |
 | macOS | macOS 14 或更高，Apple Silicon (`arm64`) |
 | Windows | Windows 10 或更高，x64 |
+| Linux | x64，Ubuntu 22.04 真机验证；Ubuntu 24.04 安装 CI |
 | Node.js | `22.19+`（不含 Node 23）或 `24+` |
 | 包管理器 | 普通安装只需要 npm |
 
-首个版本暂不支持 Linux、macOS Intel/Rosetta、Windows ARM，以及不安装 Node.js 的
-独立可执行文件分发方式。
+0.1.6 起支持 macOS、Windows、Linux 三平台，Ubuntu 真机验收记录见
+[Linux 验证记录](docs/LINUX_VALIDATION.md)。Linux 剪贴板需要安装
+`wl-copy`/`wl-paste`（Wayland）或 `xclip`/`xsel`（X11）；`/web` 自动打开需要桌面浏览器。
 
-当前 0.1.5 版本仍在产品入口拒绝 Linux。Ubuntu CI 的源码构建与自动测试通过不代表
-Linux CLI/TUI 已受支持，具体证据与待验收项见 [Linux 验证记录](docs/LINUX_VALIDATION.md)。
+暂不支持 Linux ARM64/Alpine（musl）、macOS Intel/Rosetta、Windows ARM，以及不安装
+Node.js 的独立可执行文件分发方式；其他 Linux 发行版尚未验证。
 
 ## 安装
 

@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.6 — Unreleased
+## 0.1.6 — 2026-09-29
+
+- Support Linux x64 alongside macOS arm64 and Windows x64, including Linux
+  clipboard copy/paste. Add Ubuntu Node 22/24 clean-install release checks.
+- Accept upstream image-offload events during live updates and session replay.
 
 - Save `!` shell results as durable model context and restore their terminal
   cards on resume; keep `!!` output terminal-only. Preserve shell-only sessions.

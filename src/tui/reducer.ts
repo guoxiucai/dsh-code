@@ -60,7 +60,8 @@ const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'compaction/summary', 'feedback/record', 'goal/change',
   'feedback/message-delete', 'feedback/message-put',
   'deliverables/presented', 'subagent/catalog', 'system/message',
-  'hook/invoked', 'hook/result',
+  // Image offload changes model-context projection, not the visible transcript.
+  'image/offload', 'hook/invoked', 'hook/result',
   'subagent/model-selection-policy', 'session-log-deepseek/delivery-accepted',
   'sandbox/mode', 'schedule/change', 'session/title', 'session/title-llm-request',
   'subagent/descriptor', 'team/member', 'team/message/delivered',

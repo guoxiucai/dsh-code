@@ -189,6 +189,26 @@ describe('session event reducer', () => {
     },
   )
 
+  it('keeps the transcript stable across image offload and fresh session replay', () => {
+    const events = [
+      ev('user/message', 0, { source: { kind: 'user' }, content: [
+        { type: 'text', text: 'describe the picture' },
+        { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' },
+      ] }),
+      ev('image/offload', 1, { targets: [{ seq: 0, imageIndexes: [0] }] }),
+      ev('user/message', 2, { source: { kind: 'user' }, content: [{ type: 'text', text: 'continue' }] }),
+    ]
+    const before = reduceSessionEvent(createReducerState('s1'), events[0]!)
+    const after = reduceSessionEvent(before, events[1]!)
+    expect(after.transcript).toEqual(before.transcript)
+    expect(after.lastSeq).toBe(1)
+    const live = reduceSessionEvent(after, events[2]!)
+    const restored = events.reduce(reduceSessionEvent, createReducerState('s1'))
+    expect(restored).toEqual(live)
+    expect(restored.lastSeq).toBe(2)
+    expect(restored.transcript).toHaveLength(2)
+  })
+
   it('reports a failing turn end as a notice, not a success', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))

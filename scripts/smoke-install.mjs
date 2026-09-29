@@ -26,7 +26,7 @@ const actualPlatform = `${process.platform}-${process.arch}`
 if (expectedPlatform !== undefined && expectedPlatform !== actualPlatform) {
   throw new Error(`smoke expected ${expectedPlatform}, running on ${actualPlatform}`)
 }
-if (!['darwin-arm64', 'win32-x64'].includes(actualPlatform)) {
+if (!['darwin-arm64', 'win32-x64', 'linux-x64'].includes(actualPlatform)) {
   throw new Error(`release smoke is unsupported on ${actualPlatform}`)
 }
 

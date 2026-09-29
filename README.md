@@ -47,19 +47,22 @@ DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
 
 ## Requirements
 
-| Component | Supported in the first release |
+| Component | Supported platforms (0.1.6+) |
 | --- | --- |
 | macOS | 14 or later, Apple Silicon (`arm64`) |
 | Windows | Windows 10 or later, x64 |
+| Linux | x64, validated on Ubuntu 22.04; Ubuntu 24.04 installation CI |
 | Node.js | `22.19+` (Node 23 excluded) or `24+` |
 | Package manager | npm for normal installation |
 
-Linux, macOS Intel/Rosetta, Windows ARM, and standalone installations without
-Node.js are not supported in the first release.
+Linux x64 joins macOS and Windows in 0.1.6. Physical Ubuntu validation is recorded
+in the [Linux validation report](docs/LINUX_VALIDATION.md). Linux clipboard support
+requires `wl-copy`/`wl-paste` (Wayland), or `xclip`/`xsel` (X11); `/web` needs a
+desktop browser for automatic opening.
 
-Version 0.1.5 still rejects Linux at the product entry point. Ubuntu CI validates
-source builds and automated tests, not Linux CLI/TUI support. See the
-[Linux validation report](docs/LINUX_VALIDATION.md) for evidence and remaining checks.
+Linux ARM64/Alpine (musl), macOS Intel/Rosetta, Windows ARM, and standalone
+installations without Node.js are not supported. Other Linux distributions have
+not been validated.
 
 ## Installation
 

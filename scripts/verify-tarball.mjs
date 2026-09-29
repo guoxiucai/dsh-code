@@ -35,7 +35,7 @@ for (const [name, version] of pinnedDsh) {
   if (version !== baselineVersion) throw new Error(`${name}@${version} does not match baseline ${baselineVersion}`)
 }
 if (/\b(?:workspace:|link:|file:|git\+|github:)/.test(shrinkwrap)) throw new Error('shrinkwrap contains a local or Git dependency')
-for (const marker of ['darwin-arm64', 'win32-x64']) {
+for (const marker of ['darwin-arm64', 'win32-x64', 'linux-x64']) {
   if (!shrinkwrap.includes(marker)) throw new Error(`shrinkwrap is missing ${marker} optional dependency metadata`)
 }
 const lock = JSON.parse(shrinkwrap)

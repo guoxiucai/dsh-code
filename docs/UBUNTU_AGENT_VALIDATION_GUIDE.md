@@ -1,5 +1,10 @@
 # Ubuntu 实机验证手册（交给 Code Agent）
 
+> 0.1.6 更新：Linux x64 已正式放行，用户已确认真机验证通过。复验时安装
+> `@tsingwill/dsh-code@0.1.6`，A 阶段应正常进入产品，不执行 B 阶段白名单补丁。
+> 直接在原包上执行 T01–T10，并记录真实结果；Linux 剪贴板已有后端，但需
+> `wl-copy`/`wl-paste`、`xclip` 或 `xsel`。以下 0.1.5 门禁/实验步骤仅为历史基线。
+
 基线：`@tsingwill/dsh-code@0.1.5`；编写日期：2026-09-19。
 背景和已有 CI 证据见 [Linux 验证记录](LINUX_VALIDATION.md)。
 

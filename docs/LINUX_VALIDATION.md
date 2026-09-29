@@ -1,7 +1,20 @@
 # Linux 兼容性验证
 
-验证日期：2026-09-19。产品版本：`@tsingwill/dsh-code@0.1.5`。
-上游固定为 `dsh-v0.1.5-rc.2`（`fb2c4b9e698e30edb738bca4cf0618587db7d203`）。
+最近更新：2026-09-29。当前产品版本：`@tsingwill/dsh-code@0.1.6`。
+上游固定为 `dsh-v0.1.6-alpha.2`（`ddefc45fbc7f8e46dd73185e68295696d1297887`）。
+
+## 0.1.6 正式支持结论（2026-09-29）
+
+用户已确认 Linux 真机验证通过，0.1.6 正式支持 Linux x64，与 macOS arm64、Windows x64
+并列。已落库环境为 Ubuntu 22.04 x64，Node 22.22.0 / 24.21.0；本轮另将 Ubuntu 24.04
+Node 22.19 / 24 加入同一候选 npm tarball 的 CI / Release 安装 smoke 门禁。
+真机验收结论来自用户确认，不冒充本轮 Agent 的桌面复测。此前引用的
+`dev_doc/UBUNTU_VALIDATION_REPORT.md` 和 `dev_doc/UBUNTU_INTERACTIVE_CHECKLIST.md`
+未包含在当前仓库，因此不能提供其逐项原始日志。
+
+Linux ARM64、Alpine/musl、其他发行版不在已验证范围。剪贴板依赖桌面的
+`wl-copy`/`wl-paste` 或 `xclip`/`xsel`；无桌面环境不能保证自动打开浏览器。
+下面保留 0.1.5 的历史记录，不代表 0.1.6 的当前支持策略。
 
 Ubuntu 实机 npm 安装与交互验收步骤见 [面向 Code Agent 的验证手册](UBUNTU_AGENT_VALIDATION_GUIDE.md)。
 

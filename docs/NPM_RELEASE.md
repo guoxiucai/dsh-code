@@ -1,18 +1,20 @@
 # dsh-code npm 发行实施方案
 
-> 状态：`0.1.5` 正式版已通过 trusted publishing 发布，npm `latest` 指向 `0.1.5`
+> 状态：准备发布 `0.1.6` 正式版；当前已发布稳定版为 `0.1.5`
 > 编写日期：2026-08-19
-> 最近审计：2026-09-19
-> 首批目标平台：macOS arm64、Windows x64
+> 最近审计：2026-09-29
+> 当前目标平台：macOS arm64、Windows x64、Linux x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
 本文档是 npm 发行工作的实施基线，以当前仓库和固定的
-DeepSeek Harness `0.1.5-rc.2` 为准。`docs/technical-implementation-plan.md`
+DeepSeek Harness `0.1.6-alpha.2` 为准。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
 
-Linux 目前仅有 Ubuntu CI 的源码构建/测试/打包证据，产品入口与安装 smoke 仍拒绝 Linux，不能视为已支持的平台。验证边界、跳过用例与后续验收清单见 [Linux 验证记录](LINUX_VALIDATION.md)。
+0.1.6 起支持 Linux x64，用户已确认 Ubuntu 真机验收通过。CI / Release 从同一候选包
+执行 macOS、Windows、Ubuntu 三平台的 Node 22.19 / 24 六组安装 smoke；Node 22.19
+各组额外验证独立 `dsh` 共存。验证来源与范围见 [Linux 验证记录](LINUX_VALIDATION.md)。
 
 2026-09-19 已发布 `@tsingwill/dsh-code@0.1.5`，源码固定上游 `dsh-v0.1.5-rc.2`，标签 `v0.1.5` 对应提交 `4ebb30948ec2b6f90ecbe5997b302736ea95bb44`。[Release run 35423846276](https://github.com/guoxiucai/dsh-code/actions/runs/35423846276) 的候选包审计与 macOS arm64 / Windows x64、Node 22.19 / 24 四组 smoke 全部通过；npm `latest`、provenance 与发布包完整性已核验。首次发布成功后因 registry 生效超过 120 秒而校验超时，重跑失败任务复用同一候选包完成校验与 GitHub Release，未重新打包或覆盖版本。完整证据见 `UPSTREAM_0.1.5_REGRESSION.md`。
 
@@ -137,6 +139,7 @@ Windows runner 为 Windows Server 2025，此记录不能替代上表声明的 Wi
 | --- | --- | --- | --- | --- | --- |
 | macOS | arm64 | macOS 14+ | 22.19.x、24.x | `macos-14` | Terminal.app + iTerm2 |
 | Windows | x64 | Windows 10 x64 | 22.19.x、24.x | `windows-2025` x64 | Windows Terminal + PowerShell 7 |
+| Linux | x64 | Ubuntu 22.04（其他发行版未验证） | 22.19.x、24.x | `ubuntu-24.04` | 用户确认真机通过 |
 
 最低系统是首版的保守支持声明，不代表代码必然不能运行在更早系统。如要
 扩大范围，先增加真机或可信 runner 的安装和 TTY 回归，再修改官方声明。
@@ -145,7 +148,7 @@ V1 明确不支持：
 
 - macOS x64 / Rosetta 作为正式支持环境；
 - Windows arm64 / x86；
-- Linux；
+- Linux ARM64、Alpine/musl；
 - 不安装 Node 的单一可执行文件分发；
 - 离线单 tarball 包含全部依赖。
 
@@ -158,6 +161,7 @@ V1 明确不支持：
 ```text
 darwin-arm64  → supported
 win32-x64     → supported
+linux-x64     → supported
 anything else → 友好错误 + 支持矩阵 URL + exit 1
 ```
 
