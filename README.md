@@ -228,7 +228,8 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | `/web` | Suspend the TUI, open dsh-code's package-local DSH Web UI, then reload the current session when Web stops |
 | `/compact` | Compact the current context through DSH |
 | `/quit`, `/exit` | Exit when the agent is idle |
-| `!<command>` | Run a shell/PowerShell command without sending it to the model |
+| `!<command>` | Run shell/PowerShell directly; save its result in the session and include it in subsequent model context |
+| `!!<command>` | Run shell/PowerShell for this terminal only; do not save its result or include it in model context |
 
 Additional commands supplied by the pinned DSH profile remain discoverable
 through `/` autocomplete.
@@ -243,7 +244,7 @@ exit dsh-code.
 | Key | Action |
 | --- | --- |
 | `Enter` | Send input or confirm an inline selection |
-| `Esc` | Go back/cancel an inline step; interrupt the active turn |
+| `Esc` | Go back/cancel an inline step; interrupt an active turn even before its first output, or cancel a user shell command |
 | `Ctrl+C` / `Command+C` | Copy the selected result text; never interrupts the active turn |
 | `Ctrl+O` | Expand/collapse reasoning and verbose tool bodies (5 visual lines by default); file diffs stay expanded |
 | `Ctrl+D` | Exit when idle |

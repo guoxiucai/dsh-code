@@ -10,6 +10,7 @@ export type Phase = 'idle' | 'running' | 'waiting-approval' | 'waiting-user' | '
 
 /** One rendered transcript row. */
 export type TranscriptItem =
+  | { kind: 'shell'; command: string; output: string; status: string }
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string; reasoning?: string; reasoningDurationMs?: number }
   | { kind: 'tool'; callId: string; parentCallId?: string; name: string; arguments: string; status: 'running' | 'done' | 'error'; resultText?: string; errorCode?: string; startedAt?: number; elapsedMs?: number; diffs?: ToolDiff[] }

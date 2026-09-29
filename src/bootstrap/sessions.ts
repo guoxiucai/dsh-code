@@ -12,6 +12,7 @@
 import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
+import { readShellContext } from '../tui/shell-context.ts'
 
 /** Zstandard frame magic number (bytes `28 B5 2F FD` little-endian). */
 const ZSTD_MAGIC = 0xFD2FB528
@@ -198,6 +199,11 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
         continue
       }
       if (event.type !== 'user/message') continue
+      const shell = readShellContext(event.data)
+      if (shell !== undefined) {
+        title = `!${shell.command}`.replace(/\s+/gu, ' ').trim()
+        break
+      }
       if (event.data?.source?.kind !== 'user') continue
       title = firstUserText(event.data.content)
       hasNonTextPrompt = title === ''

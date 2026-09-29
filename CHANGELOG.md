@@ -2,6 +2,11 @@
 
 ## 0.1.6 — Unreleased
 
+- Save `!` shell results as durable model context and restore their terminal
+  cards on resume; keep `!!` output terminal-only. Preserve shell-only sessions.
+- Let Esc cancel from live Agent state before the first output or render,
+  including queued work and user shell execution.
+
 - Upgrade DeepSeek Harness to `0.1.6-alpha.2` (`ddefc45fbc`).
 - Use the upstream base's shared Node-process PTC runtime instead of the
   removed worker-thread provider; update runtime smoke checks to resolve

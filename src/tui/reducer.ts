@@ -9,6 +9,7 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { readShellContext } from './shell-context.ts'
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 // Declaration-merges the `approval/asked` / `approval/decided` event types into
 // the Session event union.
@@ -247,6 +248,8 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     }
 
     case 'user/message': {
+      const shell = readShellContext(event.data)
+      if (shell !== undefined) return { ...base, transcript: [...commitDraft(state), { kind: 'shell', ...shell }] }
       const source = event.data.source
       // A human prompt is a user item; an injected notice is a notice; other
       // injected context (runtime snapshot, catalog, instructions) is not a

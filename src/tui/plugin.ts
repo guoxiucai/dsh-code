@@ -54,6 +54,7 @@ import type {} from '@deepseek-ai/dsh-session-title'
 // Declaration-merges the shared Session projection service used during setup.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { TuiHost } from './host.ts'
+import { parseShellInput, readShellContext, shellContextMessage, shellContextResult } from './shell-context.ts'
 import type { SelectorHandle, SelectorItem } from './selector.ts'
 import { reduceAssistantStream, reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 import { theme } from './theme.ts'
@@ -142,7 +143,8 @@ export function shouldDiscardEmptyFreshSession(
   disposableResumeId?: string,
 ): boolean {
   return (resumeId === undefined || resumeId === disposableResumeId)
-    && !events.some(event => event.type === 'user/message' && event.data.source.kind === 'user')
+    && !events.some(event => event.type === 'user/message'
+      && (event.data.source.kind === 'user' || readShellContext(event.data) !== undefined))
 }
 
 /** Parse a leading `--resume <id>` from the invocation's inner args. */
@@ -244,6 +246,8 @@ async function run(ctx: Context): Promise<void> {
   let openAgentsPanel: () => void = () => {}
   let modeSwitching = false
   let activeSubagentCount = 0
+  let shellAbort: AbortController | undefined
+  let shellTask: Promise<void> | undefined
 
   const submitUserText = (text: string): void => {
     if (modeSwitching) {
@@ -260,14 +264,22 @@ async function run(ctx: Context): Promise<void> {
 
   const host = new TuiHost({
     onSubmit: (text) => {
+      if (shuttingDown) return
       const trimmed = text.trim()
       if (trimmed === '') return
+      if (shellTask !== undefined && trimmed !== '/quit' && trimmed !== '/exit') {
+        host.showNotice('shell command pending; wait for completion or press Esc to cancel')
+        return
+      }
       host.addHistory(text)
       host.clearEditor()
-      // `!` prefix runs a shell command directly (never sent to the model).
-      if (trimmed.startsWith('!')) {
-        const command = trimmed.startsWith('!!') ? trimmed.slice(2).trim() : trimmed.slice(1).trim()
-        if (command !== '') void runShellCommand(command)
+      // Both forms execute locally without waking the model; only ! records
+      // the result as context for subsequent turns.
+      const shellInput = parseShellInput(trimmed)
+      if (shellInput !== undefined) {
+        if (shellInput.command !== '') {
+          shellTask = runShellCommand(shellInput.command, shellInput.includeInContext).finally(() => { shellTask = undefined })
+        }
         return
       }
       // `/permission` with no argument opens the preset selector.
@@ -292,8 +304,13 @@ async function run(ctx: Context): Promise<void> {
       host.setShellMode(text.trimStart().startsWith('!'))
     },
     onInterrupt: () => {
-      if (agent.status === 'running') agent.cancel({ kind: 'user' })
+      shellAbort?.abort()
+      // cancel also clears queued input and aborts preparation/maintenance,
+      // whose public status may still be idle. It is safe when truly idle.
+      agent.cancel({ kind: 'user' })
     },
+    isInterruptible: () => shellTask !== undefined || agent.status === 'running'
+      || reducer.phase === 'running' || reducer.compacting || reducer.queuedMessages.length > 0,
     onExit: () => {
       if (agent.status !== 'running') void shutdown(0)
     },
@@ -443,15 +460,31 @@ async function run(ctx: Context): Promise<void> {
   }
 
   // Direct shell execution (`!` prefix), bypassing the model loop.
-  const runShellCommand = async (command: string): Promise<void> => {
-    const result = await ctx.shell.run(ctx.shell.resolve({ command }))
-    const output = [result.stdout.text.trim(), result.stderr.text.trim()].filter(Boolean).join('\n')
-    const status = result.timedOut ? 'timed out'
-      : result.aborted ? 'aborted'
-        : result.signal !== null ? `killed by ${result.signal}`
-          : result.exitCode !== 0 && result.exitCode !== null ? `exit ${result.exitCode}`
-            : ''
-    host.showShellResult(command, output, status)
+  const runShellCommand = async (command: string, includeInContext: boolean): Promise<void> => {
+    const controller = new AbortController()
+    shellAbort = controller
+    try {
+      // Do not insert context between an Agent tool call and its result.
+      if (agent.status === 'running') {
+        host.showNotice('shell command queued until the current turn finishes; Esc cancels')
+        await agent.whenIdle()
+      }
+      if (controller.signal.aborted || shuttingDown) return
+      host.showNotice(`running shell${includeInContext ? ' (saved as context)' : ' (terminal only)'}; Esc cancels`)
+      await agent.runMaintenance(async (signal) => {
+        const result = await ctx.shell.run(ctx.shell.resolve({ command, signal: AbortSignal.any([signal, controller.signal]) }))
+        const record = shellContextResult(command, result)
+        if (includeInContext) {
+          agent.session.append('user/message', shellContextMessage(record), { surfaceOp: 'append' })
+          await sessions.flush(agent.session)
+        } else host.showShellResult(command, record.output, record.status)
+      })
+    } catch (error) {
+      if (controller.signal.aborted) host.showNotice('shell command cancelled')
+      else showCommandError('shell command', error)
+    } finally {
+      shellAbort = undefined
+    }
   }
 
   // Permission preset selector (`/permission` with no argument).
@@ -1687,7 +1720,7 @@ async function run(ctx: Context): Promise<void> {
   })
 
   const switchBlocker = (): string | undefined => sessionSwitchBlocker({
-    agentRunning: agent.status === 'running',
+    agentRunning: agent.status === 'running' || shellTask !== undefined,
     queuedMessages: reducer.queuedMessages.length,
     liveJobs: ctx.jobs.list(agent).filter(job => job.status === 'running' || job.status === 'stopping').length,
     activeSubagents: activeSubagents.current.count,
@@ -1817,7 +1850,8 @@ async function run(ctx: Context): Promise<void> {
       const blocked = switchBlocker()
       if (blocked !== undefined) return { kind: 'error', text: `session switch blocked: ${blocked}` }
       const events = agent.session.snapshotEvents()
-      if (!events.some(event => event.type === 'user/message' && event.data.source.kind === 'user')) {
+      if (!events.some(event => event.type === 'user/message'
+        && (event.data.source.kind === 'user' || readShellContext(event.data) !== undefined))) {
         return { kind: 'error', text: 'nothing to clone yet' }
       }
       const run = events.findLast(event => event.type === 'command/run' && event.data.commandId === commandId)
@@ -1922,6 +1956,11 @@ async function run(ctx: Context): Promise<void> {
   const shutdown = async (code: number, preserveEmptyFreshSession = false, handoff = false): Promise<void> => {
     if (shuttingDown) return
     shuttingDown = true
+    shellAbort?.abort()
+    if (shellTask !== undefined) {
+      agent.cancel({ kind: 'user' })
+      await shellTask
+    }
     const discardEmptyFreshSession = !preserveEmptyFreshSession
       && shouldDiscardEmptyFreshSession(resumeId, agent.session.snapshotEvents(), disposableResumeId)
     // Drop any pending render tick: it would fire after `appExit` disposes the

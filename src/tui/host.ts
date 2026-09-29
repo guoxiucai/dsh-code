@@ -125,6 +125,8 @@ const MARKDOWN_THEME: MarkdownTheme = {
 export interface TuiHostCallbacks {
   onSubmit(text: string): void
   onInterrupt(): void
+  /** Live execution state, independent of the last throttled render. */
+  isInterruptible?(): boolean
   onExit(): void
   onRedraw(): void
   onOpenAgents?(): void
@@ -375,6 +377,8 @@ class ReasoningBlock implements Component {
 /** Build the blocks for one transcript item (assistant splits reasoning + markdown text). */
 function renderItemBlocks(item: TranscriptItem, expanded: boolean): Component[] {
   switch (item.kind) {
+    case 'shell':
+      return [new ShellResultBlock(item.command, item.output, item.status)]
     case 'user':
       return [new Text(`${theme.accent(theme.bold('›'))} ${item.text}`, 1, 1, theme.userBg)]
     case 'assistant': {
@@ -1128,7 +1132,11 @@ export class TuiHost {
       this.activeOverlayCancel()
       return { consume: true }
     }
-    if (isTurnInterruptInput(data, this.lastView)) { this.callbacks.onInterrupt(); return { consume: true } }
+    if (!isKeyRelease(data) && matchesKey(data, 'escape')
+      && (this.callbacks.isInterruptible?.() ?? isTurnInterruptInput(data, this.lastView))) {
+      this.callbacks.onInterrupt()
+      return { consume: true }
+    }
     if (matchesKey(data, Key.ctrl('d'))) { this.callbacks.onExit(); return { consume: true } }
     if (matchesKey(data, Key.ctrl('l'))) { this.callbacks.onRedraw(); return { consume: true } }
     if (matchesKey(data, Key.ctrl('o'))) {

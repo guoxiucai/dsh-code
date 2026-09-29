@@ -3,6 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, extname, resolve } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import { readShellContext } from './shell-context.ts'
 
 export type SessionExportFormat = 'markdown' | 'jsonl'
 type ExportableSession = Pick<Session, 'header' | 'snapshotEvents'>
@@ -31,6 +32,8 @@ function eventMarkdown(event: SessionEvent): string | undefined {
     ? data.message as Record<string, unknown>
     : undefined
   if (event.type === 'user/message') {
+    const shell = readShellContext(event.data)
+    if (shell !== undefined) return `## User shell\n\n${fence(shell.command, 'sh')}\n\n${fence(shell.output)}${shell.status === '' ? '' : `\n\n${shell.status}`}`
     const text = textBlocks(data.content)
     return text === '' ? undefined : `## User\n\n${text}`
   }

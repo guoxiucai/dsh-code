@@ -35,6 +35,23 @@ import { theme } from '../../src/tui/theme.ts'
 import { emptyViewModel } from '../../src/tui/view-model.ts'
 
 describe('terminal lifecycle', () => {
+  it('interrupts from live state before the first running render, without waiting for output', () => {
+    let active = true
+    const onInterrupt = vi.fn()
+    const host = new TuiHost({ onSubmit: () => {}, onInterrupt,
+      isInterruptible: () => active, onExit: () => {}, onRedraw: () => {} })
+    vi.spyOn(host.tui, 'requestRender').mockImplementation(() => {})
+    vi.spyOn(host.tui, 'stop').mockImplementation(() => {})
+    host.render(emptyViewModel())
+    const input = (data: string) => Reflect.get(host, 'handleInput').call(host, data)
+    expect(input('\x1b')).toEqual({ consume: true })
+    expect(onInterrupt).toHaveBeenCalledTimes(1)
+    active = false
+    input('\x1b')
+    expect(onInterrupt).toHaveBeenCalledTimes(1)
+    host.stop()
+  })
+
   it('preserves rendered Markdown and colors and resets styles before the resume hint', () => {
     const host = new TuiHost({ onSubmit: () => {}, onInterrupt: () => {}, onExit: () => {}, onRedraw: () => {} })
     vi.spyOn(host.tui, 'requestRender').mockImplementation(() => {})
