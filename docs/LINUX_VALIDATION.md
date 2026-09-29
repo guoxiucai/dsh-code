@@ -16,6 +16,12 @@ Linux ARM64、Alpine/musl、其他发行版不在已验证范围。剪贴板依�
 `wl-copy`/`wl-paste` 或 `xclip`/`xsel`；无桌面环境不能保证自动打开浏览器。
 下面保留 0.1.5 的历史记录，不代表 0.1.6 的当前支持策略。
 
+0.1.6 [Release 36507626951](https://github.com/guoxiucai/dsh-code/actions/runs/36507626951)
+已通过 Ubuntu 24.04 x64、Node 22.19 / 24 两组 clean npm install、产品入口、Web 静态资源、
+PTC 返回 42 检查；Node 22.19 额外通过独立 `dsh` 共存检查。同一包的 macOS / Windows
+四组检查也均通过。Ubuntu 源码测试为 36 文件 / 244 项全部通过，无跳过。
+这补充了 npm 安装证据，不替代桌面交互或内核沙箱隔离验收。
+
 Ubuntu 实机 npm 安装与交互验收步骤见 [面向 Code Agent 的验证手册](UBUNTU_AGENT_VALIDATION_GUIDE.md)。
 
 ## 0.1.6 更新（2026-09-28）：linux-x64 已放行，Node 22 / 24 安装流程 PASS

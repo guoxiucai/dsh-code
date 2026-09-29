@@ -1,6 +1,6 @@
 # dsh-code npm 发行实施方案
 
-> 状态：准备发布 `0.1.6` 正式版；当前已发布稳定版为 `0.1.5`
+> 状态：`0.1.6` 正式版已通过 trusted publishing 发布，npm `latest` 指向 `0.1.6`
 > 编写日期：2026-08-19
 > 最近审计：2026-09-29
 > 当前目标平台：macOS arm64、Windows x64、Linux x64
@@ -11,6 +11,11 @@ DeepSeek Harness `0.1.6-alpha.2` 为准。`docs/technical-implementation-plan.md
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
+
+2026-09-29 已发布 `@tsingwill/dsh-code@0.1.6`，源码标签 `v0.1.6` 对应
+`1d2a74ad4c1fa5265392c6249bc51d5b9688847a`。三平台六组安装 smoke、244 项自动测试、
+OIDC 发布均通过；npm `latest`、provenance 和候选包完整性已核验。
+发布与审计限制见 [0.1.6 发布记录](RELEASE_0.1.6.md)。
 
 0.1.6 起支持 Linux x64，用户已确认 Ubuntu 真机验收通过。CI / Release 从同一候选包
 执行 macOS、Windows、Ubuntu 三平台的 Node 22.19 / 24 六组安装 smoke；Node 22.19
