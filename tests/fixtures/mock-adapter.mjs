@@ -31,7 +31,7 @@ class MockAdapter extends LlmAdapter {
 
   async *stream(options) {
     const last = options.messages.at(-1)
-    const toolResult = last?.content.find(block => block.type === 'tool-result')
+    const toolResult = last?.role === 'tool' ? last : undefined
     if (toolResult === undefined) {
       const args = JSON.stringify({ command: TOOL.command, description: 'Prove the tool round trip.' })
       // Derive the id from the accumulated context so resumed and multi-turn

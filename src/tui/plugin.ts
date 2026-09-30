@@ -13,7 +13,7 @@ import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 // Declaration-merges the upstream Agent Preset roster onto Context.
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 // Empty type imports declaration-merge `agentDefaultModel`, `cmdlineArgs`, and
 // `appExit` onto Context (same contract the upstream headless runner relies on).
@@ -49,12 +49,12 @@ import type {
   SubagentRunEndInfo,
   SubagentRunInfo,
 } from '@deepseek-ai/dsh-subagent'
-import type { JobId, JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type { JobId, JobView } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-session-title'
 // Declaration-merges the shared Session projection service used during setup.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { TuiHost } from './host.ts'
-import { parseShellInput, readShellContext, shellContextMessage, shellContextResult } from './shell-context.ts'
+import { assertShellContextOrder, installShellContextDelivery, parseShellInput, shellMessagesInEvent, shellContextMessage, shellContextResult } from './shell-context.ts'
 import type { SelectorHandle, SelectorItem } from './selector.ts'
 import { reduceAssistantStream, reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
 import { theme } from './theme.ts'
@@ -143,8 +143,8 @@ export function shouldDiscardEmptyFreshSession(
   disposableResumeId?: string,
 ): boolean {
   return (resumeId === undefined || resumeId === disposableResumeId)
-    && !events.some(event => event.type === 'user/message'
-      && (event.data.source.kind === 'user' || readShellContext(event.data) !== undefined))
+    && !events.some(event => shellMessagesInEvent(event).length > 0
+      || event.type === 'user/message' && event.data.source.kind === 'user')
 }
 
 /** Parse a leading `--resume <id>` from the invocation's inner args. */
@@ -214,6 +214,7 @@ async function run(ctx: Context): Promise<void> {
   let activePreset: SupportedAgentPreset = requestedPreset
 
   const setup = async (agentCtx: Context, setupAgent: Agent): Promise<void> => {
+    assertShellContextOrder(setupAgent.session)
     const recorded = ctx.sessionProjections.stateOf(setupAgent.session, 'agentPreset') ?? undefined
     const preset = resumeId === undefined ? requestedPreset : supportedAgentPreset(recorded ?? 'standard')
     if (preset === undefined) throw new Error(`session uses unsupported agent preset ${JSON.stringify(recorded)}`)
@@ -234,6 +235,7 @@ async function run(ctx: Context): Promise<void> {
       setup,
     })
   const agent = handle.agent
+  installShellContextDelivery(agent)
   const disposeSubagentConcurrencyPolicy = installConcurrentSubagentPolicy(agent.ctx)
 
   // Rebuild the transcript from the session's full log (persisted history for a
@@ -472,10 +474,11 @@ async function run(ctx: Context): Promise<void> {
       if (controller.signal.aborted || shuttingDown) return
       host.showNotice(`running shell${includeInContext ? ' (saved as context)' : ' (terminal only)'}; Esc cancels`)
       await agent.runMaintenance(async (signal) => {
-        const result = await ctx.shell.run(ctx.shell.resolve({ command, signal: AbortSignal.any([signal, controller.signal]) }))
+        const execution = await ctx.shell.execute(ctx.shell.resolve({ command, signal: AbortSignal.any([signal, controller.signal]) }))
+        const result = await execution.result()
         const record = shellContextResult(command, result)
         if (includeInContext) {
-          agent.session.append('user/message', shellContextMessage(record), { surfaceOp: 'append' })
+          agent.inject(shellContextMessage(record))
           await sessions.flush(agent.session)
         } else host.showShellResult(command, record.output, record.status)
       })
@@ -534,7 +537,7 @@ async function run(ctx: Context): Promise<void> {
         if (provider === undefined || model === undefined) return
         modelRef.current = { provider, model }
         host.setModel({ provider, model })
-        await ctx.settings.update('agent-default-model', { provider, model })
+        await defaultModel.saveSelection({ provider, model })
         host.showNotice(`switched to ${provider}/${model} (applies to new turns)`)
       },
       onCancel: () => {},
@@ -921,7 +924,7 @@ async function run(ctx: Context): Promise<void> {
     if (draft.key === undefined || draft.model === undefined) return
     if (draft.provider === 'deepseek') {
       await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), draft.key)
-      await ctx.settings.update('agent-default-model', {
+      await defaultModel.saveSelection({
         provider: 'deepseek-official',
         model: draft.model,
       })
@@ -930,17 +933,16 @@ async function run(ctx: Context): Promise<void> {
     }
     if (draft.id === undefined || draft.baseURL === undefined || draft.keyEnv === undefined) return
     await ctx.credentials.set(credentialRef(draft.keyEnv), draft.key)
-    const current = ctx.settings.get('llm-pi-ai') as { providers?: Record<string, unknown> } | undefined
-    const providers = { ...current?.providers }
-    providers[draft.id] = {
-      apiKeyEnv: draft.keyEnv,
-      baseURL: draft.baseURL,
-      api: 'openai-completions',
-      models: [{ id: draft.model }],
-    }
-    await ctx.settings.replace('llm-pi-ai', { providers })
-    await ctx.settings.update('agent-default-model', { provider: draft.id, model: draft.model })
-    host.showNotice(`configured ${draft.id}; default model ${draft.model} (restart to reload the provider catalog)`)
+    await ctx.settings.mutate('llm-pi-ai', [{
+      op: 'set', path: ['providers', draft.id], value: {
+        apiKeyEnv: draft.keyEnv,
+        baseURL: draft.baseURL,
+        api: 'openai-completions',
+        models: [{ id: draft.model }],
+      },
+    }])
+    await defaultModel.saveSelection({ provider: draft.id, model: draft.model })
+    host.showNotice(`configured ${draft.id}; default model ${draft.model}`)
   }
 
   const showProviderSelector = (firstRun = false): void => {
@@ -1582,13 +1584,13 @@ async function run(ctx: Context): Promise<void> {
     },
   })
 
-  const jobSummary = (job: JobSnapshot): string => {
+  const jobSummary = (job: JobView): string => {
     const finished = job.finishedAt ?? Date.now()
     const seconds = Math.max(0, Math.floor((finished - job.startedAt) / 1000))
     return `${job.kind} · ${job.status} · ${seconds}s${job.detail === undefined ? '' : ` · ${job.detail}`}`
   }
 
-  const confirmJobKill = (job: JobSnapshot): void => {
+  const confirmJobKill = (job: JobView): void => {
     host.showSelector({
       hint: `Stop ${job.id} · ${job.label}?`,
       borderColor: theme.selectorBorder,
@@ -1599,7 +1601,7 @@ async function run(ctx: Context): Promise<void> {
       onSelect: (choice) => {
         if (choice === 'kill') {
           try {
-            const outcome = ctx.jobs.kill(job.id, agent, 'stopped from dsh-code TUI')
+            const outcome = ctx.jobs.kill(job.id, agent.session.id, 'stopped from dsh-code TUI')
             host.showNotice(`${job.id}: ${outcome}`)
           } catch (error) {
             showCommandError('job stop', error)
@@ -1613,9 +1615,9 @@ async function run(ctx: Context): Promise<void> {
   }
 
   const showJobActions = (id: JobId): void => {
-    let job: JobSnapshot
+    let job: JobView
     try {
-      job = ctx.jobs.get(id, agent)
+      job = ctx.jobs.get(id, agent.session.id)
     } catch (error) {
       showCommandError('job lookup', error)
       return
@@ -1633,9 +1635,10 @@ async function run(ctx: Context): Promise<void> {
         if (action === 'back') { showJobsPicker(); return }
         if (action === 'kill') { confirmJobKill(job); return }
         try {
-          const read = ctx.jobs.read(job.id, agent)
-          const output = read.text.trim()
-          host.showNotice(`${job.id} · ${jobSummary(read.snapshot)}${output === '' ? ' · no new output' : `\n${output}`}`)
+          const read = ctx.jobs.readAt(job.id, 0, agent.session.id)
+          const output = read.chunks.map(chunk => `${chunk.gapBefore ? '[output gap]\n' : ''}${chunk.text}`).join('').trim()
+          const loss = read.lossy ? '\n[earlier output no longer retained]' : ''
+          host.showNotice(`${job.id} · ${jobSummary(ctx.jobs.get(job.id, agent.session.id))}${loss}${output === '' ? ' · no new output' : `\n${output}`}`)
         } catch (error) {
           showCommandError('job output', error)
         }
@@ -1645,7 +1648,7 @@ async function run(ctx: Context): Promise<void> {
   }
 
   const showJobsPicker = (): void => {
-    const jobs = ctx.jobs.list(agent)
+    const jobs = ctx.jobs.list(agent.session.id)
     if (jobs.length === 0) { host.showNotice('no background jobs for this session'); return }
     host.showSelector({
       hint: 'Background jobs · select one for output or stop actions',
@@ -1722,7 +1725,7 @@ async function run(ctx: Context): Promise<void> {
   const switchBlocker = (): string | undefined => sessionSwitchBlocker({
     agentRunning: agent.status === 'running' || shellTask !== undefined,
     queuedMessages: reducer.queuedMessages.length,
-    liveJobs: ctx.jobs.list(agent).filter(job => job.status === 'running' || job.status === 'stopping').length,
+    liveJobs: ctx.jobs.list(agent.session.id).filter(job => job.status === 'running' || job.status === 'stopping').length,
     activeSubagents: activeSubagents.current.count,
   })
 
@@ -1850,8 +1853,8 @@ async function run(ctx: Context): Promise<void> {
       const blocked = switchBlocker()
       if (blocked !== undefined) return { kind: 'error', text: `session switch blocked: ${blocked}` }
       const events = agent.session.snapshotEvents()
-      if (!events.some(event => event.type === 'user/message'
-        && (event.data.source.kind === 'user' || readShellContext(event.data) !== undefined))) {
+      if (!events.some(event => shellMessagesInEvent(event).length > 0
+        || event.type === 'user/message' && event.data.source.kind === 'user')) {
         return { kind: 'error', text: 'nothing to clone yet' }
       }
       const run = events.findLast(event => event.type === 'command/run' && event.data.commandId === commandId)
@@ -1930,10 +1933,11 @@ async function run(ctx: Context): Promise<void> {
   // calls. Never infers a durable grant; Esc/abort settles as `cancelled`.
   const disposeApproval = ctx.on('approval/request', (request, next) => {
     if (request.agent !== agent) return next()
+    const reason = request.displayReason?.en ?? request.reason
     return host.askApproval({
       toolName: request.toolName,
       ...(request.callId === undefined ? {} : { callId: String(request.callId) }),
-      ...(request.reason === undefined ? {} : { reason: request.reason }),
+      ...(reason === undefined ? {} : { reason }),
     }, request.signal).then(value => value ?? 'cancelled')
   })
 

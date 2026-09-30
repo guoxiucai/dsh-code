@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, extname, resolve } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { readShellContext } from './shell-context.ts'
+import { readShellContext, shellMessagesInEvent } from './shell-context.ts'
 
 export type SessionExportFormat = 'markdown' | 'jsonl'
 type ExportableSession = Pick<Session, 'header' | 'snapshotEvents'>
@@ -26,14 +26,22 @@ function fence(value: string, language = ''): string {
   return `${marker}${language}\n${value}\n${marker}`
 }
 
-function eventMarkdown(event: SessionEvent): string | undefined {
+function eventMarkdown(event: SessionEvent, shellIds: Set<string>): string | undefined {
+  const shells = shellMessagesInEvent(event)
+  if (shells.length > 0) {
+    const sections = shells.flatMap(message => {
+      if (shellIds.has(message.id)) return []
+      shellIds.add(message.id)
+      const shell = readShellContext(message)!
+      return [`## User shell\n\n${fence(shell.command, 'sh')}\n\n${fence(shell.output)}${shell.status === '' ? '' : `\n\n${shell.status}`}`]
+    })
+    return sections.length === 0 ? undefined : sections.join('\n\n')
+  }
   const data = event.data as unknown as Record<string, unknown>
   const message = typeof data.message === 'object' && data.message !== null
     ? data.message as Record<string, unknown>
     : undefined
   if (event.type === 'user/message') {
-    const shell = readShellContext(event.data)
-    if (shell !== undefined) return `## User shell\n\n${fence(shell.command, 'sh')}\n\n${fence(shell.output)}${shell.status === '' ? '' : `\n\n${shell.status}`}`
     const text = textBlocks(data.content)
     return text === '' ? undefined : `## User\n\n${text}`
   }
@@ -66,7 +74,8 @@ function eventMarkdown(event: SessionEvent): string | undefined {
 /** Render the human-readable subset of a Session without guessing Agent state. */
 export function renderSessionMarkdown(session: ExportableSession, title?: string): string {
   const header = session.header
-  const sections = session.snapshotEvents().map(eventMarkdown).filter((value): value is string => value !== undefined)
+  const shellIds = new Set<string>()
+  const sections = session.snapshotEvents().map(event => eventMarkdown(event, shellIds)).filter((value): value is string => value !== undefined)
   return [
     `# ${title?.trim() || `dsh-code session ${String(header.id)}`}`,
     '',

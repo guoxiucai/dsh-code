@@ -9,7 +9,7 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { readShellContext } from './shell-context.ts'
+import { readShellContext, shellMessagesInEvent } from './shell-context.ts'
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 // Declaration-merges the `approval/asked` / `approval/decided` event types into
 // the Session event union.
@@ -27,7 +27,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-tools'
 // Declaration-merges the todo/write snapshot event now owned by tool-todo.
 import type {} from '@deepseek-ai/dsh-tool-todo'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 
 /** Thrown when an event arrives with a non-contiguous seq (reorder or gap). */
@@ -59,7 +59,7 @@ const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'command/done', 'command/run', 'compaction/prune',
   'compaction/summary', 'feedback/record', 'goal/change',
   'feedback/message-delete', 'feedback/message-put',
-  'deliverables/presented', 'subagent/catalog', 'system/message',
+  'deliverables/presented', 'subagent/catalog', 'system/message', 'developer/message',
   // Image offload changes model-context projection, not the visible transcript.
   'image/offload', 'hook/invoked', 'hook/result',
   'subagent/model-selection-policy', 'session-log-deepseek/delivery-accepted',
@@ -78,6 +78,7 @@ interface DraftAssistant {
 
 /** Reducer state: the view model plus the transient streaming draft and seq cursor. */
 export interface ReducerState extends TuiViewModel {
+  shellMessageIds: ReadonlySet<string>
   lastSeq: number
   draftAssistant: DraftAssistant | undefined
   /** Wall-clock time of the current step's start (for reasoning duration). */
@@ -88,6 +89,7 @@ export interface ReducerState extends TuiViewModel {
 export function createReducerState(sessionId: string): ReducerState {
   return {
     sessionId,
+    shellMessageIds: new Set(),
     transcript: [],
     phase: 'idle',
     turnStartedAt: undefined,
@@ -152,6 +154,17 @@ function commitDraft(state: ReducerState): TranscriptItem[] {
     text: draft.text,
     ...(draft.reasoning !== '' ? { reasoning: draft.reasoning } : {}),
   }]
+}
+
+function appendShellCard(state: ReducerState, message: UserMessage): ReducerState {
+  if (state.shellMessageIds.has(message.id)) return state
+  const shell = readShellContext(message)
+  if (shell === undefined) return state
+  return {
+    ...state,
+    shellMessageIds: new Set([...state.shellMessageIds, message.id]),
+    transcript: [...commitDraft(state), { kind: 'shell', ...shell }],
+  }
 }
 
 /** Human-readable close reason for a `turn/end` notice (empty for `completed`). */
@@ -233,13 +246,15 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       return { ...base, phase: 'running' }
 
     case 'agent/inbox/spliced': {
-      if (event.data.target !== 'next-turn') return base
+      let shellState: ReducerState = base
+      for (const message of shellMessagesInEvent(event)) shellState = appendShellCard(shellState, message)
+      if (event.data.target !== 'next-turn') return shellState
       const inserted = event.data.inserted.map(message => ({
         id: String(message.id),
         text: textOf(message.content),
       }))
       return {
-        ...base,
+        ...shellState,
         queuedMessages: state.queuedMessages.toSpliced(
           event.data.start,
           event.data.removedCount ?? 0,
@@ -250,7 +265,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
 
     case 'user/message': {
       const shell = readShellContext(event.data)
-      if (shell !== undefined) return { ...base, transcript: [...commitDraft(state), { kind: 'shell', ...shell }] }
+      if (shell !== undefined) return appendShellCard(base, event.data)
       const source = event.data.source
       // A human prompt is a user item; an injected notice is a notice; other
       // injected context (runtime snapshot, catalog, instructions) is not a
@@ -258,7 +273,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       if (source.kind === 'user') {
         return { ...base, phase: 'running', transcript: [...commitDraft(state), { kind: 'user', text: textOf(event.data.content) }] }
       }
-      if (source.kind === 'plugin' && source.form === 'notice') {
+      if ('form' in source && source.form === 'notice') {
         return { ...base, transcript: [...commitDraft(state), { kind: 'notice', text: source.summary }] }
       }
       // Injected context can also be appended by standalone maintenance work
@@ -316,10 +331,10 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       }
 
     case 'tool/result': {
-      const block = event.data.message.content[0]
-      const callId = block?.toolCallId !== undefined ? String(block.toolCallId) : String(event.data.message.source.callId)
-      const resultText = toolResultText(textOf(block?.content ?? []))
-      const failed = event.data.error !== undefined || block?.isError === true
+      const message = event.data.message
+      const callId = String(message.toolCallId)
+      const resultText = toolResultText(textOf(message.content))
+      const failed = event.data.error !== undefined || message.isError === true
       const diffs = diffsFromMeta(event.data.meta)
       const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId
         ? {

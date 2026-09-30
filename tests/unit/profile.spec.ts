@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -28,7 +28,7 @@ describe('dsh-code profile composition', () => {
     const patch = readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')
 
     expect(DEFAULT_AGENT_PRESET).toBe('standard')
-    expect(patch).toContain("id: agent-presets\n      name: '@deepseek-ai/dsh-agent-presets'")
+    expect(patch).toContain("id: agent-preset-registry\n      name: '@deepseek-ai/dsh-agent-preset-registry'")
     expect(patch).toContain('default: standard')
     // The upstream base now owns the shared Node-process PTC runtime.
     expect(patch).not.toContain('dsh-code-runtime-worker-thread')
@@ -48,15 +48,17 @@ describe('dsh-code profile composition', () => {
     }
   })
 
-  it('mounts the upstream ask-user tool before the TUI answer provider', () => {
+  it('loads upstream preset declarations with scoped ask-user tools', () => {
     const home = makeHome()
     const pluginUrl = 'file:///installed/dsh-code/lib/tui/plugin.js'
     const dir = initDshCodeProfile(home, pluginUrl)
     const patch = readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')
 
-    expect(patch).toContain("id: dsh-code-tool-ask-user\n      name: '@deepseek-ai/dsh-tool-ask-user'")
+    expect(patch).toContain("name: '@deepseek-ai/dsh-tool-ask-user'")
+    expect(patch).toContain('id: preset-standard')
+    expect(patch).toContain('id: preset-ptc')
     expect(patch).toContain(`id: dsh-code-tui\n      name: ${JSON.stringify(pluginUrl)}`)
-    expect(patch.indexOf('dsh-code-tool-ask-user')).toBeLessThan(patch.indexOf('dsh-code-tui'))
+    expect(patch).not.toContain('id: dsh-code-tool-ask-user')
   })
 
   it('delegates compatible skill discovery to an isolated upstream filesystem provider', () => {
@@ -103,5 +105,34 @@ describe('dsh-code profile composition', () => {
 
     expect(readFileSync(manifestPath, 'utf8')).toContain('"marker":"keep"')
     expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toContain('file:///second/plugin.js')
+  })
+
+  it('preserves profile-backed settings and user plugins when refreshing or relocating the TUI', () => {
+    const home = makeHome()
+    const dir = initDshCodeProfile(home, 'file:///first/plugin.js')
+    const path = join(dir, 'cordis.patch.yml')
+    appendFileSync(path, `
+- id: agent-default-model
+  config: { provider: custom, model: saved-model }
+- id: llm-pi-ai
+  config:
+    providers:
+      custom: { baseURL: 'https://example.com/v1', apiKeyEnv: CUSTOM_KEY }
+- insert:
+    - id: custom-plugin
+      name: custom-plugin
+      disabled: !!js process.platform === 'win32'
+`)
+    initDshCodeProfile(home, 'file:///second/plugin.js')
+    initDshCodeProfile(home, 'file:///third/plugin.js')
+    const patch = readFileSync(path, 'utf8')
+    expect(patch).toContain('saved-model')
+    expect(patch).toContain('CUSTOM_KEY')
+    expect(patch).toContain('https://example.com/v1')
+    expect(patch).toContain("!!js process.platform === 'win32'")
+    expect(patch.match(/id: custom-plugin/g)).toHaveLength(1)
+    expect(patch.match(/id: preset-standard/g)).toHaveLength(1)
+    expect(patch).toContain('file:///third/plugin.js')
+    expect(patch).not.toContain('file:///first/plugin.js')
   })
 })

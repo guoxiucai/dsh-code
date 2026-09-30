@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { parseShellInput, readShellContext, shellContextMessage, shellContextResult } from '../../src/tui/shell-context.ts'
+import { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { assertShellContextOrder, installShellContextDelivery, parseShellInput, readShellContext, shellContextMessage, shellContextResult } from '../../src/tui/shell-context.ts'
 import { replayEvents } from '../../src/tui/reducer.ts'
 import { shouldDiscardEmptyFreshSession } from '../../src/tui/plugin.ts'
 import { renderSessionMarkdown } from '../../src/tui/session-export.ts'
@@ -43,5 +46,48 @@ describe('user shell context', () => {
       { source: { kind: 'plugin', plugin: 'dsh-code/user-shell' }, content: [{ type: 'text', text: '{broken' }] }]) {
       expect(readShellContext(value)).toBeUndefined()
     }
+  })
+
+  it('renders and exports inbox shell observations once, before or after model admission', () => {
+    const session = Session.create(SessionId('pending-shell'))
+    const message = shellContextMessage({ command: 'ls', output: 'one.ts', status: '' })
+    session.append('agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [message] })
+    expect(() => assertShellContextOrder(session)).not.toThrow()
+    expect(session.surface.nodes).toEqual([])
+    expect(shouldDiscardEmptyFreshSession(undefined, session.snapshotEvents())).toBe(false)
+    expect(replayEvents(session.id, session.snapshotEvents()).transcript).toHaveLength(1)
+    expect(renderSessionMarkdown(session)).toContain('one.ts')
+    session.append('user/message', message, { surfaceOp: 'append' })
+    expect(replayEvents(session.id, session.snapshotEvents()).transcript).toHaveLength(1)
+    expect(renderSessionMarkdown(session).match(/## User shell/g)).toHaveLength(1)
+  })
+
+  it('refuses to continue legacy shell-first surfaces without rewriting the log', () => {
+    const session = Session.create(SessionId('legacy-shell-first'))
+    session.append('user/message', shellContextMessage({ command: 'ls', output: 'saved', status: '' }), { surfaceOp: 'append' })
+    const before = session.snapshotEvents()
+    expect(() => assertShellContextOrder(session)).toThrow('original logs are preserved')
+    expect(session.snapshotEvents()).toEqual(before)
+  })
+
+  it('recovers canceled pending shell context without resending already admitted observations', async () => {
+    const ctx = new Context()
+    const session = Session.create(SessionId('canceled-shell'))
+    const shell = shellContextMessage({ command: 'ls', output: 'saved', status: '' })
+    session.append('agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [shell] })
+    session.append('agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, inserted: [], outcome: 'canceled' })
+    const agent = { ctx, session } as Agent
+    installShellContextDelivery(agent)
+    const human = createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' } })
+    const enter = (messages: typeof human[]) => ctx.waterfall('agent/pre-step', {
+      agent, messages, turn: 1, step: 1, signal: new AbortController().signal,
+    }, async () => ({ kind: 'enter' as const, messages }))
+    try {
+      expect(await enter([human])).toMatchObject({ messages: [shell, human] })
+      expect(await enter([shell, human])).toMatchObject({ messages: [shell, human] })
+      const event = session.append('user/message', shell, { surfaceOp: 'append' })
+      ctx.emit('session/event', session, event)
+      expect(await enter([human])).toMatchObject({ messages: [human] })
+    } finally { await ctx.fiber.dispose() }
   })
 })

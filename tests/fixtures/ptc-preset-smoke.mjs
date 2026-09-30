@@ -5,6 +5,7 @@ export const inject = ['agents', 'agentPresets', 'systemPrompt', 'ptcRuntime']
 
 export function apply(ctx) {
   void (async () => {
+    await ctx.loader.await()
     const handle = await ctx.agents.create({
       sessionId: SessionId('ptc-preset-smoke'),
       meta: { cwd: process.cwd(), agentPreset: 'ptc' },

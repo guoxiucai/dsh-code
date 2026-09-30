@@ -22,13 +22,13 @@ function withoutOfficialTypeStripWarning(stderr: string): string {
 
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
-function run(home: string, cwd: string): Promise<{ stdout: string; stderr: string; code: number }> {
+function run(home: string, cwd: string, saveModel = false): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [dshBin, '--profile', 'dsh-code'], {
       cwd,
       // This checks preset composition and process execution in disposable dirs,
       // not host kernel sandbox support (which varies on hosted Linux runners).
-      env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1', DSH_PERMISSION_MODE: 'danger-full-access' },
+      env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1', DSH_PERMISSION_MODE: 'danger-full-access', DSH_CODE_TEST_SAVE_MODEL: saveModel ? '1' : '0' },
     })
     let stdout = ''
     let stderr = ''
@@ -39,6 +39,22 @@ function run(home: string, cwd: string): Promise<{ stdout: string; stderr: strin
 }
 
 describe('standard Agent Preset composition', () => {
+  it('keeps model and provider settings after refreshing the profile and restarting', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-code-settings-home-'))
+    const project = mkdtempSync(join(tmpdir(), 'dsh-code-settings-project-'))
+    dirs.push(home, project)
+    for (const save of [true, false]) {
+      initDshCodeProfile(home, pathToFileURL(smokePlugin).href, project)
+      const result = await run(home, project, save)
+      expect(result.stderr).toBe('')
+      expect(result.code).toBe(0)
+      expect(JSON.parse(result.stdout.trim())).toMatchObject({
+        defaultModel: { provider: 'test-provider', model: 'test-model' },
+        providers: expect.arrayContaining(['test-provider']),
+      })
+    }
+  }, 60_000)
+
   it('boots the official standard preset and keeps its model tools out of the global layer', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-code-standard-home-'))
     const project = mkdtempSync(join(tmpdir(), 'dsh-code-standard-project-'))

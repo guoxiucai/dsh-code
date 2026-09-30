@@ -47,7 +47,7 @@ it('persists shell-only context, lists it as nonempty, and restores the shell ca
     const id = SessionId('shell-only')
     const session = Session.create(id, [], { ...Session.create(id).header, cwd: home })
     const result = { command: 'ls', output: 'one.ts\ntwo.ts\n', status: '' }
-    session.append('user/message', shellContextMessage(result), { surfaceOp: 'append' })
+    session.append('agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [shellContextMessage(result)] })
     await persistFork(ctx.sessionPersistence, session)
     expect(listProjectSessions(home, home)[0]).toMatchObject({ id: session.id, title: '!ls' })
     const handle = await ctx.sessionPersistence.open(session.id, 'read')

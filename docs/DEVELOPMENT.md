@@ -2,7 +2,8 @@
 
 > 本文档面向接手 `dsh-code` 继续开发的工程师。目标读者需要了解：这是什么项目、代码怎么组织的、怎么构建运行、哪些是硬性边界、哪些还没做。
 >
-> 上游基线：`deepseek-ai/deepseek-harness` @ `fb2c4b9e698e30edb738bca4cf0618587db7d203`（`0.1.5-rc.2`），以 submodule `deepseek-harness/` 形式引入。
+> 上游基线：`deepseek-ai/deepseek-harness` @ `477b4f420553e8a52c2fbccc464d7561b239c443`（`0.1.7-rc.2`），以 submodule `deepseek-harness/` 形式引入。
+> 阶段变化、TUI 适配及旧 shell 日志限制见 [0.1.7 同步回归报告](UPSTREAM_0.1.7_REGRESSION.md)。
 
 ---
 
@@ -68,7 +69,7 @@ pnpm.cmd --version
 - 平台为 `win32-x64`；
 - Node 为 `v22.19.x` 或 `v24.x`；
 - pnpm 为 `11.7.0`；
-- `deepseek-harness` 位于 `fb2c4b9e698e30edb738bca4cf0618587db7d203`，行首没有 `-`、`+` 或 `U`；
+- `deepseek-harness` 位于 `477b4f420553e8a52c2fbccc464d7561b239c443`，行首没有 `-`、`+` 或 `U`；
 - 当前分支跟踪 `origin/main`，工作区干净。
 
 如果 SSH 尚未配置，可先用公开 HTTPS 地址拉取；需要推送时，再配置协作者权限和个人认证：
@@ -245,7 +246,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 
 - `inject` 包含 `agents`、`agentPresets`、`agentDefaultModel`、`sessions`、`sessionProjections`、`sessionQuery`、`commands`、`llm`、`credentials`、`settings`、
   `permissionPresets`、`shell`、`tokenMeter`、`userQuestions`。
-- Profile 关闭 `dsh-base` 中改由 Preset 所有的 model-facing 全局行，并注册上游 `agent-presets` roster；上游启动器自动注入随安装包发布的 Preset 根目录。
+- Profile 关闭 `dsh-base` 中改由 Preset 所有的 model-facing 全局行，并注册上游 `agent-preset-registry`，直接加载 `dsh-web-app` 发布的 Standard/PTC YAML 声明；不会挂载 Web UI。模型设置由上游写入 profile patch，启动刷新保留这些配置覆盖。
 - 用 `agents.create` / `agents.resume` 创建/恢复 agent；setup 挂载官方 `standard`（Standard）或 `ptc`（PTC）Agent Preset，再用 `installModelSelection` 挂 `modelRef`（可变，用于 /model 切换当前模型）。新会话 Header 持久化启动 Preset；恢复时从 `sessionProjections.stateOf(session, 'agentPreset')` 读取日志投影，并把旧版持久化的 `code` id 兼容映射到 `ptc`。`/mode` 仅允许在首个 `turn/start` 前重组，避免已有工具历史与新 schema 不一致。
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
 - `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
@@ -551,7 +552,7 @@ Provider ID 自动生成并预填，用户可直接 Enter 确认或编辑后再�
 | `ctx.userQuestions.ask/registerProvider`、`AskUserQuestionAnswer` | `@deepseek-ai/dsh-user-questions` |
 | `ctx.permissionPresets.names/current/set` | `@deepseek-ai/dsh-permission-presets` |
 | `ctx.settings.update/replace/get`、`ctx.credentials.set` | `@deepseek-ai/dsh-settings` / `-credentials` |
-| `ctx.shell.resolve/run` | `@deepseek-ai/dsh-shell` |
+| `ctx.shell.resolve/execute`、`execution.result()` | `@deepseek-ai/dsh-shell` |
 | `ctx.sessions.create/flush` | `@deepseek-ai/dsh-session` |
 | `ctx.llm.listProviders/listModels` | `@deepseek-ai/dsh-llm` |
 | `ctx.goals.get/create/edit/pause/resume/clear` | `@deepseek-ai/dsh-goal` |

@@ -2,7 +2,7 @@
  * Persisted-session listing for the launcher's resume flows (`-c`/`--continue`
  * and `-r`/`--resume`). The launcher reads the upstream JSONL session layout
  * directly (it never boots the TUI to list sessions): sessions live at
- * `$DSH_CODE_HOME/sessions/<projectKey(cwd)>/<sessionId>/session.v3.jsonl.zstd`.
+ * `$DSH_CODE_HOME/sessions/<projectKey(cwd)>/<sessionId>/session.v4.jsonl.zstd`.
  *
  * `projectKey` mirrors `@deepseek-ai/dsh-session-persistence-jsonl`'s
  * `projectKey` byte-for-byte and must stay in sync on a baseline upgrade.
@@ -151,7 +151,7 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
     return Number.isSafeInteger(version) ? [{ name, version }] : []
   }).sort((a, b) => b.version - a.version || Number(b.name.endsWith('.zstd')) - Number(a.name.endsWith('.zstd')))
   for (const { name: filename, version } of generations.slice(0, 1)) {
-    if (version > 3) return empty
+    if (version > 4) return empty
     const path = join(sessionDir, filename)
     if (!existsSync(path)) continue
     let text: string
@@ -191,15 +191,17 @@ function readSessionEntry(sessionDir: string, fallbackId: string): ProjectSessio
     for (let index = 1; index < lines.length; index++) {
       const line = lines[index]
       if (line === undefined || line === '') continue
-      let event: { type?: unknown; data?: { source?: { kind?: unknown }; content?: unknown } }
+      let event: { type?: unknown; data?: { source?: { kind?: unknown }; content?: unknown; inserted?: unknown } }
       try {
         event = JSON.parse(line) as typeof event
       } catch {
         unreadable = true
         continue
       }
-      if (event.type !== 'user/message') continue
-      const shell = readShellContext(event.data)
+      const insertedShell = event.type === 'agent/inbox/spliced' && Array.isArray(event.data?.inserted)
+        ? event.data.inserted.map(readShellContext).find(value => value !== undefined) : undefined
+      if (event.type !== 'user/message' && insertedShell === undefined) continue
+      const shell = insertedShell ?? readShellContext(event.data)
       if (shell !== undefined) {
         title = `!${shell.command}`.replace(/\s+/gu, ' ').trim()
         break

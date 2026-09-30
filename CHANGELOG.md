@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.7 — Unreleased
+
+- Upgrade DeepSeek Harness from `0.1.6-alpha.2` through the 0.1.7 alpha/RC
+  stages to `0.1.7-rc.2` (`477b4f4205`).
+- Adopt the upstream declarative Standard/PTC presets and profile-backed model
+  settings; preserve saved settings and user plugins when refreshing the TUI profile.
+- Support Session v4 listings, migrated user-shell context, native tool-role
+  results, producer-owned notices, and dynamic tool-update events during replay.
+- Update background-job controls to Session IDs and inspect output without
+  consuming the model's output cursor. Use approval presentation reasons when supplied.
+- Persist shell observations in the Agent inbox before model admission, keeping
+  shell-only sessions resumable and preserving executed results across cancellation.
+  Legacy logs with shell context before the first system prompt require separate
+  migration repair; refuse continuation without rewriting their history.
+- Align workspace dependency patches with upstream, including pi-ai streaming
+  and spreadsheet previews. These pnpm patches apply to workspace builds.
+
 ## 0.1.6 — 2026-09-29
 
 - Support Linux x64 alongside macOS arm64 and Windows x64, including Linux

@@ -8,9 +8,11 @@
  * @module dsh-code/bootstrap/profile
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { DEFAULT_SCHEMA, dump, load, Type } from 'js-yaml'
 import { DEFAULT_AGENT_PRESET } from '../agent-mode.ts'
 
 /** The profile name dsh-code boots. */
@@ -33,6 +35,7 @@ const PRESET_OWNED_BASE_ROWS = [
   'skill-filesystem',
   'tool-skill',
   'tool-goal',
+  'command-goal',
   'plan-mode',
   'compaction-basic',
   'command-compact',
@@ -101,11 +104,9 @@ function profilePatch(tuiPluginUrl: string, projectRoot: string): string {
 ${PRESET_OWNED_BASE_ROWS.map(id => `- id: ${id}\n  disabled: true`).join('\n\n')}
 
 - insert:
-    # The upstream launcher supplies its shipped preset root automatically
-    # whenever this service is present. dsh-code exposes Standard and PTC,
-    # while keeping Standard as the product default.
-    - id: agent-presets
-      name: '@deepseek-ai/dsh-agent-presets'
+    # Definitions below reuse the upstream's shipped declarative presets.
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: ${DEFAULT_AGENT_PRESET}
 
@@ -123,12 +124,43 @@ ${PRESET_OWNED_BASE_ROWS.map(id => `- id: ${id}\n  disabled: true`).join('\n\n')
         includeDefaultRoots: false
         customSkillDirs: ${JSON.stringify(skillDirs)}
 
-    - id: dsh-code-tool-ask-user
-      name: '@deepseek-ai/dsh-tool-ask-user'
-
     - id: dsh-code-tui
       name: ${JSON.stringify(tuiPluginUrl)}
+
+${['standard', 'ptc'].map(id => readFileSync(createRequire(import.meta.url).resolve(`@deepseek-ai/dsh-web-app/presets/${id}.patch.yml`), 'utf8')).join('\n')}
 `
+}
+
+// Retain upstream !!js expressions while refreshing only product-owned rows.
+class ConfigExpression {
+  constructor(readonly expression: string) {}
+}
+const PATCH_SCHEMA = DEFAULT_SCHEMA.extend(new Type('tag:yaml.org,2002:js', {
+  kind: 'scalar',
+  construct: value => new ConfigExpression(String(value)),
+  instanceOf: ConfigExpression,
+  represent: value => (value as ConfigExpression).expression,
+}))
+
+function retainedProfilePatch(path: string): string {
+  if (!existsSync(path)) return ''
+  const rows: unknown = load(readFileSync(path, 'utf8'), { schema: PATCH_SCHEMA })
+  if (!Array.isArray(rows)) throw new Error(`profile patch must be a YAML sequence: ${path}`)
+  const owned = new Set([
+    'agent-presets', 'agent-preset-registry', 'subagent-model-selection-settings',
+    'dsh-code-compatible-skills', 'dsh-code-tool-ask-user', 'dsh-code-tui',
+    'preset-standard', 'preset-ptc',
+  ])
+  const retained = rows.flatMap((row: Record<string, unknown>) => {
+    if (Array.isArray(row.insert)) {
+      const insert = row.insert.filter((entry: { id?: string }) => !owned.has(entry.id ?? ''))
+      return insert.length === 0 ? [] : [{ ...row, insert }]
+    }
+    if (PRESET_OWNED_BASE_ROWS.some(id => row.id === id)
+      && row.disabled === true && Object.keys(row).length === 2) return []
+    return [row]
+  })
+  return retained.length === 0 ? '' : dump(retained, { schema: PATCH_SCHEMA, lineWidth: -1, noRefs: true })
 }
 
 /** pnpm settings for out-of-tree plugins installed into the profile directory. */
@@ -141,9 +173,8 @@ autoInstallPeers: false
 
 /**
  * Initialize (or refresh) the dsh-code profile directory. The manifest is
- * created only when absent; the patch layer is rewritten each launch so it
- * tracks the current install location, and the pnpm workspace file is written
- * only when absent.
+ * created only when absent; generated rows are refreshed while profile config
+ * overrides (including upstream settings writes) survive every launch.
  * @param home - the dsh-code home.
  * @param tuiPluginUrl - absolute `file://` module URL of the built TUI plugin.
  */
@@ -152,7 +183,9 @@ export function initDshCodeProfile(home: string, tuiPluginUrl: string, projectRo
   mkdirSync(dir, { recursive: true })
   const manifestPath = join(dir, 'package.json')
   if (!existsSync(manifestPath)) writeFileSync(manifestPath, profileManifest())
-  writeFileSync(join(dir, 'cordis.patch.yml'), profilePatch(tuiPluginUrl, projectRoot))
+  const patchPath = join(dir, 'cordis.patch.yml')
+  const overrides = retainedProfilePatch(patchPath)
+  writeFileSync(patchPath, profilePatch(tuiPluginUrl, projectRoot) + overrides, { mode: 0o600 })
   const workspacePath = join(dir, 'pnpm-workspace.yaml')
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
   return dir

@@ -79,7 +79,7 @@ describe('session event reducer', () => {
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'tool', name: 'bash', status: 'running' })
     s = reduceSessionEvent(s, ev('tool/result', 2, {
       turn: 1, step: 1,
-      message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] }], source: { kind: 'tool', callId: 'c1' } },
+      message: { role: 'tool', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }], source: { kind: 'tool', callId: 'c1' } },
     }))
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'tool', status: 'done', resultText: 'ok' })
   })
@@ -90,7 +90,7 @@ describe('session event reducer', () => {
     s = reduceSessionEvent(s, ev('tool/call', 1, { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{}' }))
     s = reduceSessionEvent(s, ev('tool/result', 2, {
       turn: 1, step: 1,
-      message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'boom' }], isError: true }], source: { kind: 'tool', callId: 'c1' } },
+      message: { role: 'tool', toolCallId: 'c1', content: [{ type: 'text', text: 'boom' }], isError: true, source: { kind: 'tool', callId: 'c1' } },
       error: { name: 'ExecError', code: 'E1' },
     }))
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'tool', status: 'error', errorCode: 'E1' })
@@ -312,18 +312,38 @@ describe('session event reducer', () => {
     expect(s.lastSeq).toBe(2)
   })
 
+  it('replays v4 tool results and dynamic tool updates in the same order as live events', () => {
+    const events = [
+      ev('turn/start', 0, { turn: 1 }),
+      ev('developer/message', 1, { turn: 1, step: 1, message: {
+        role: 'developer', source: { kind: 'tool-update' }, content: [{ type: 'tool-removal', toolName: 'old_tool' }],
+      } }),
+      ev('tool/call', 2, { turn: 1, step: 1, callId: 'v4-call', name: 'bash', arguments: '{}' }),
+      ev('tool/result', 3, { turn: 1, step: 1, message: {
+        role: 'tool', toolCallId: 'v4-call', source: { kind: 'tool', callId: 'v4-call' },
+        content: [{ type: 'text', text: 'first\n' }, { type: 'text', text: 'second' }], isError: true,
+      } }),
+      ev('turn/end', 4, { turn: 1, reason: { kind: 'completed' } }),
+    ]
+    const live = events.reduce(reduceSessionEvent, createReducerState('s1'))
+    expect(replayEvents('s1', events)).toEqual(live)
+    expect(live).toMatchObject({ lastSeq: 4, phase: 'idle', transcript: [
+      { kind: 'tool', callId: 'v4-call', status: 'error', resultText: 'first\nsecond' },
+    ] })
+  })
+
   it('collapses injected context but keeps human prompts', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
     s = reduceSessionEvent(s, ev('user/message', 1, { role: 'user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } }))
-    s = reduceSessionEvent(s, ev('user/message', 2, { role: 'user', content: [{ type: 'text', text: 'runtime snapshot' }], source: { kind: 'plugin', plugin: 'ctx', form: 'snapshot', sections: [] } }))
+    s = reduceSessionEvent(s, ev('user/message', 2, { role: 'user', content: [{ type: 'text', text: 'runtime snapshot' }], source: { kind: 'runtime-context', form: 'snapshot', sections: [] } }))
     expect(s.transcript).toEqual([{ kind: 'user', text: 'hello' }])
   })
 
   it('renders an injected notice as a notice row', () => {
     let s = createReducerState('s1')
     s = reduceSessionEvent(s, ev('turn/start', 0, { turn: 1 }))
-    s = reduceSessionEvent(s, ev('user/message', 1, { role: 'user', content: [], source: { kind: 'plugin', plugin: 'watcher', form: 'notice', summary: 'file changed' } }))
+    s = reduceSessionEvent(s, ev('user/message', 1, { role: 'user', content: [], source: { kind: 'plugin:watcher', form: 'notice', summary: 'file changed' } }))
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'notice', text: 'file changed' })
   })
 
@@ -375,7 +395,7 @@ describe('session event reducer', () => {
       ev('user/message', 6, {
         role: 'user',
         content: [{ type: 'text', text: '<compacted-summary>checkpoint</compacted-summary>' }],
-        source: { kind: 'plugin', plugin: 'compact', compactionId: 'compact-1', sourceCommandId: 'cmd-compact' },
+        source: { kind: 'compact-checkpoint', compactionId: 'compact-1', sourceCommandId: 'cmd-compact' },
       }),
       ev('compaction/end', 7, { compactionId: 'compact-1', sourceCommandId: 'cmd-compact', turn: null }),
       ev('command/done', 8, { commandId: 'cmd-compact', kind: 'success', text: 'Compacted 31 history items.' }),
@@ -392,7 +412,7 @@ describe('session event reducer', () => {
     s = reduceSessionEvent(s, ev('tool/call', 1, { turn: 1, step: 1, callId: 'c1', name: 'edit', arguments: '{}' }))
     s = reduceSessionEvent(s, ev('tool/result', 2, {
       turn: 1, step: 1,
-      message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] }], source: { kind: 'tool', callId: 'c1' } },
+      message: { role: 'tool', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }], source: { kind: 'tool', callId: 'c1' } },
       meta: { diffs: [{ path: 'a.ts', oldText: 'x', newText: 'y' }] },
     }))
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'tool', diffs: [{ path: 'a.ts', oldText: 'x', newText: 'y' }] })
