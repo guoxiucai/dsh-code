@@ -54,6 +54,7 @@ import type {} from '@deepseek-ai/dsh-session-title'
 // Declaration-merges the shared Session projection service used during setup.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { TuiHost } from './host.ts'
+import { PluginPanel } from './plugin-manager.ts'
 import { assertShellContextOrder, installShellContextDelivery, parseShellInput, shellMessagesInEvent, shellContextMessage, shellContextResult } from './shell-context.ts'
 import type { SelectorHandle, SelectorItem } from './selector.ts'
 import { reduceAssistantStream, reduceSessionEvent, replayEvents, type ReducerState } from './reducer.ts'
@@ -250,8 +251,13 @@ async function run(ctx: Context): Promise<void> {
   let activeSubagentCount = 0
   let shellAbort: AbortController | undefined
   let shellTask: Promise<void> | undefined
+  let pluginPanel: PluginPanel | undefined
 
   const submitUserText = (text: string): void => {
+    if (pluginPanel?.busy === true) {
+      host.showNotice('plugin operation pending; wait for completion before sending a message')
+      return
+    }
     if (modeSwitching) {
       host.showNotice('mode switch in progress; send the message after it completes')
       return
@@ -269,6 +275,15 @@ async function run(ctx: Context): Promise<void> {
       if (shuttingDown) return
       const trimmed = text.trim()
       if (trimmed === '') return
+      if (pluginPanel?.busy === true) {
+        if (trimmed === '/plugins') {
+          host.clearEditor()
+          void pluginPanel.show()
+          return
+        }
+        host.showNotice('plugin operation pending; wait or cancel it from /plugins')
+        return
+      }
       if (shellTask !== undefined && trimmed !== '/quit' && trimmed !== '/exit') {
         host.showNotice('shell command pending; wait for completion or press Esc to cancel')
         return
@@ -314,13 +329,20 @@ async function run(ctx: Context): Promise<void> {
     isInterruptible: () => shellTask !== undefined || agent.status === 'running'
       || reducer.phase === 'running' || reducer.compacting || reducer.queuedMessages.length > 0,
     onExit: () => {
+      if (pluginPanel?.busy === true) {
+        host.showNotice('wait for the plugin operation to finish before exiting')
+        return
+      }
       if (agent.status !== 'running') void shutdown(0)
     },
     onRedraw: () => {
       host.tui.invalidate()
       host.tui.requestRender(true)
     },
-    onOpenAgents: () => { openAgentsPanel() },
+    onOpenAgents: () => {
+      if (pluginPanel?.busy === true) { void pluginPanel.show(); return }
+      openAgentsPanel()
+    },
   })
   host.setModel({ provider: selection.provider, model: selection.model })
   host.setAgentMode(agentModeForPreset(activePreset))
@@ -896,9 +918,6 @@ async function run(ctx: Context): Promise<void> {
       // autocomplete remains usable with the synchronous registry entries.
     })
   }
-  syncCommands()
-  const disposeCommandsChange = ctx.on('commands/change', () => { syncCommands() })
-  const disposeSkillsChange = ctx.on('skills/change', () => { syncCommands() })
 
   // Model configuration wizard (DeepSeek / OpenAI / compatible). Every step is
   // mounted inline; Enter advances and Esc rebuilds the preceding step. Values
@@ -1722,12 +1741,15 @@ async function run(ctx: Context): Promise<void> {
     },
   })
 
-  const switchBlocker = (): string | undefined => sessionSwitchBlocker({
-    agentRunning: agent.status === 'running' || shellTask !== undefined,
+  const activityBlocker = (): string | undefined => sessionSwitchBlocker({
+    agentRunning: agent.status === 'running' || reducer.phase === 'running'
+      || shellTask !== undefined || reducer.compacting || modeSwitching,
     queuedMessages: reducer.queuedMessages.length,
     liveJobs: ctx.jobs.list(agent.session.id).filter(job => job.status === 'running' || job.status === 'stopping').length,
     activeSubagents: activeSubagents.current.count,
   })
+  const switchBlocker = (): string | undefined => pluginPanel?.busy === true
+    ? 'a plugin operation is running' : activityBlocker()
 
   const handoffSession = async (
     target: SessionSwitchTarget,
@@ -1746,6 +1768,27 @@ async function run(ctx: Context): Promise<void> {
       showCommandError('session switch', error)
     }
   }
+
+  pluginPanel = new PluginPanel({
+    manager: ctx.get('pluginManager'), host, blocker: activityBlocker,
+    reload: () => handoffSession({ kind: 'resume', sessionId: String(agent.session.id) }, true),
+    tools: () => ctx.tools.schemas(agent),
+    columns: () => host.tui.terminal.columns,
+    subscribe: (log, progress) => {
+      const stopLog = ctx.on('plugin-manager/install-log', log)
+      const stopProgress = ctx.on('plugin-manager/install-state', progress)
+      return () => { stopLog(); stopProgress() }
+    },
+  })
+  ctx.effect(() => () => pluginPanel?.dispose(), 'dsh-code plugin management')
+  ctx.commands.register({
+    name: 'plugins', description: 'Manage plugins in the dsh-code profile',
+    input: { hint: '[search]' },
+    handler: ({ rawInput }) => {
+      void pluginPanel?.show(rawInput.trim())
+      return { kind: 'success' }
+    },
+  })
 
   const createChildFromCut = (cut: SessionLogOffset) => {
     if (cut > agent.session.seq) {
@@ -1989,6 +2032,7 @@ async function run(ctx: Context): Promise<void> {
     disposeSkillsChange()
     disposeJobController()
     stopMcpStatus()
+    await pluginPanel?.dispose()
     try {
       await mcpRuntime.dispose()
     } catch {
@@ -2038,6 +2082,12 @@ async function run(ctx: Context): Promise<void> {
       },
     })
   }
+
+  // Take the first snapshot after all product commands (including /plugins)
+  // are registered, without relying on change events during initialization.
+  const disposeCommandsChange = ctx.on('commands/change', () => { syncCommands() })
+  const disposeSkillsChange = ctx.on('skills/change', () => { syncCommands() })
+  syncCommands()
 
   host.setContextTokens(ctx.tokenMeter.measure(agent.session).totalTokens)
   host.render(reducer)

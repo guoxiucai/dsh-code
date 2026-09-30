@@ -158,6 +158,22 @@ describe('default prompt editor', () => {
   })
 })
 
+describe('slash-command autocomplete', () => {
+  it('suggests /plugins while typing /plu and completes it with Tab', async () => {
+    const host = new TuiHost({ onSubmit: () => {}, onInterrupt: () => {}, onExit: () => {}, onRedraw: () => {} })
+    vi.spyOn(host.tui, 'requestRender').mockImplementation(() => {})
+    host.setAutocomplete([
+      { name: 'plugins', description: 'Manage plugins', argumentHint: '[search]' },
+      { name: 'model', description: 'Select model' },
+    ], process.cwd())
+    const editor = Reflect.get(host, 'editor') as PlaceholderEditor
+    for (const character of '/plu') editor.handleInput(character)
+    await vi.waitFor(() => { expect(stripTerminalSequences(editor.render(80).join('\n'))).toContain('Manage plugins') })
+    editor.handleInput('\t')
+    expect(editor.getText().trim()).toBe('/plugins')
+  })
+})
+
 describe('file reference autocomplete', () => {
   const tempDirectories: string[] = []
 

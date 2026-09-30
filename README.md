@@ -220,6 +220,7 @@ are stored owner-only in `~/.dsh-code/.credentials.yaml`.
 | `/skills [search]` | Discover skills; Space toggles dsh-code-only enablement and Enter invokes the selected skill |
 | `/agents` | Inspect active sub-agents and cancel or remove their tasks inline |
 | `/mcp` | Manage dsh-code user/project MCP servers with live status; explicitly import independent copies from DSH/Codex/Claude |
+| `/plugins [search]` | Manage profile plugins: install, enable/disable, update, uninstall, inspect components and reload the session |
 | `/rename [title]` | Rename and pin the current session title |
 | `/jobs` | Inspect output or stop background jobs owned by this session |
 | `/export [path]` | Export the current session as Markdown or JSONL |
@@ -296,6 +297,16 @@ Its enable/disable switch is a dsh-code-only overlay stored at
 `~/.dsh-code/skill-preferences.json`; it never edits the source `SKILL.md` or
 changes another product's skill state. A disabled skill is hidden from both the
 model catalog and user slash invocation in dsh-code.
+
+`/plugins` opens an inline manager for the `dsh-code` profile. Enter opens
+bundle details; Space enables or disables a bundle. Installation supports npm
+specs, absolute local directories, Git URLs and tarballs through upstream pnpm
+management. Progress, cancellation, build-script approvals, exact-version updates
+and diagnostics stay in the TUI. Changes require an idle Agent with no queued
+messages, active subagents or running jobs; reload resumes the same conversation.
+Installed/enabled state is distinct from runtime availability. Web-only UI and
+custom presets are not automatically supported. The `web` and `headless` profiles
+remain separate. See [plugin management](docs/PLUGIN_MANAGEMENT.md).
 
 dsh-code owns separate MCP configuration at `~/.dsh-code/mcp.json` (user scope)
 and `.dsh-code/mcp.json` (trusted-project scope). `/mcp` shows only those owned

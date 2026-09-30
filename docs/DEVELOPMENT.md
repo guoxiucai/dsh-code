@@ -210,6 +210,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
       config-wizard.ts         # /config 纯辅助函数（如 credential env 自动生成）
       project-config.ts        # 旧版项目 Cordis MCP row 解析/迁移辅助
       mcp-config.ts            # dsh-code 用户级/项目级 MCP JSON、覆盖与 headless 临时 patch
+      plugin-manager.ts        # /plugins 导航、异步状态、上游管理服务接入
       mcp-runtime.ts           # 基于公开 ctx.plugin + dsh-mcp-client 的当前进程热挂载
       mcp-stdio-proxy.ts       # MCP 协议透明转发；隔离 Server stderr，保护备用屏幕布局
       external-mcp.ts          # 仅在 Import 流程只读发现 DSH/Codex/Claude MCP
@@ -242,6 +243,20 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - `-p` 委托上游 `headless` profile。
 - `isEntryPoint()` 用 `realpathSync` 解析软链（否则 npm link/软链调用时 `main()` 不执行）。
 
+### 插件管理面板
+
+`/plugins [search]` 由 `src/tui/plugin-manager.ts` 的 `PluginPanel` 管理导航及操作生命周期。
+`plugin.ts` 只提供上游 `ctx.pluginManager`、当前 Agent 工具、活动拦截、安装事件订阅和
+同会话 resume 回调。包依赖、启用列表、兼容检查、文件锁、安装取消及配置重载由上游负责；
+不直接写 profile 配置，不打开 Web 页面，也不默认启用模型的 `plugin_manager` 工具。
+`selector.ts` 的可更新 summary 和无搜索操作页复用列表交互，日志不会直接输出到终端。
+`tui-bundle-policy.ts` 标识不能与 TUI 共用 Profile 的独立应用 Bundle。面板阻止启用，
+`runTui` 在选择会话前通过 `tuiProfileConflict` 检查已有配置；不修改上游参数透传行为。
+修改期间拒绝新的输入和退出；取消安装等待上游结果才解除占用。页面 revision 防止迟到的
+检查或轮询结果覆盖已经退出的页面，dispose 清理订阅、定时器并取消仍可取消的安装。
+诊断按页查看，包管理日志最多读取最后 64 KiB。完整范围及限制见
+[插件管理说明](PLUGIN_MANAGEMENT.md)。
+
 ### 5.2 `plugin.ts` — 核心接线（最重要）
 
 - `inject` 包含 `agents`、`agentPresets`、`agentDefaultModel`、`sessions`、`sessionProjections`、`sessionQuery`、`commands`、`llm`、`credentials`、`settings`、
@@ -251,7 +266,7 @@ dsh-code/                       # 仓库根 = workspace 根 + dsh-code 包
 - `session/event` → `reduceSessionEvent` → `host.render`（16ms 节流）。
 - `onSubmit` 分发：`!` shell → 裸 `/permission`/`/goal` 内联管理 → 已注册 `/` 命令 →
   上游 Registry 中可由用户调用的 Skill → 普通 `agent.followup`。命令名优先于同名 Skill。
-- 注册 slash 命令：`/model` `/mode` `/config` `/skills` `/agents` `/mcp` `/session` `/rename`
+- 注册 slash 命令：`/model` `/mode` `/config` `/skills` `/agents` `/mcp` `/plugins` `/session` `/rename`
   `/jobs` `/export` `/new` `/resume` `/fork` `/clone` `/web` `/quit` `/exit`；裸 `/goal` 增强上游同名命令，带参数形式仍由上游处理。
 - `/skills` 不建立第二套 Skill Store。基础 provider 读取项目 `.dsh/.agents`、独立
   `~/.dsh-code/skills` 与 `~/.agents/skills`；Profile 中的第二个上游 filesystem provider
@@ -470,11 +485,11 @@ $env:DSH_CODE_HOME = Join-Path $env:TEMP 'dsh-code-dev'
 | TUI：转写、流式、工具卡片、状态栏、编辑器 | ✅ |
 | 一次性内联审批条（沙箱升级 / Hook ask，Allow once / Reject） | ✅ |
 | 结构化 `ask_user_question` / Plan Review（单选、多选、自定义答案） | ✅ |
-| 内联选择/输入（/model、/permission、/config、/goal、/skills、/agents、/mcp、/rename、/jobs、/export、/fork） | ✅ |
+| 内联选择/输入（/model、/permission、/config、/goal、/skills、/agents、/mcp、/plugins、/rename、/jobs、/export、/fork） | ✅ |
 | 无已存 Credential 时自动进入首次模型/API Token 配置 | ✅ |
 | shell mode（`!` 前缀，绿色边框，直接执行） | ✅ |
 | session new/resume（CLI 与 `/new`、分层 `/resume`）、空白新会话回收、历史请求前 fork 并切换、当前快照 clone | ✅ |
-| 命令面板（/model /mode /config /skills /agents /mcp /session /rename /jobs /export /new /resume /fork /clone /web /quit /exit） | ✅ |
+| 命令面板（/model /mode /config /skills /agents /mcp /plugins /session /rename /jobs /export /new /resume /fork /clone /web /quit /exit） | ✅ |
 | Markdown 渲染、带行号及整行背景的工具 diff | ✅ |
 | 思考最新 5 行/工具结果折叠（Ctrl+O）、结果选择复制、整块背景、块间距、页脚 | ✅ |
 | loading / retry / compaction 状态指示 | ✅ |

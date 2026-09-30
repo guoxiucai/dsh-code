@@ -205,6 +205,7 @@ dsh-code
 | `/skills [搜索词]` | 发现 Skill；Space 仅对 dsh-code 启停，Enter 直接调用选中项 |
 | `/agents` | 查看当前活跃 Sub-Agent，并在内联列表中取消或移除任务 |
 | `/mcp` | 管理 dsh-code 用户级/项目级 MCP 及实时状态；按需从 DSH/Codex/Claude 导入独立副本 |
+| `/plugins [搜索词]` | 管理当前 Profile 的插件：安装、启停、更新、卸载、组件诊断及会话重载 |
 | `/rename [标题]` | 重命名并固定当前会话标题 |
 | `/jobs` | 查看输出或停止当前会话的后台任务 |
 | `/export [路径]` | 将当前会话导出为 Markdown 或 JSONL |
@@ -271,6 +272,13 @@ dsh-code 用户目录 `~/.dsh-code/skills`，以及用户目录下
 把已启用且允许用户调用的 Skill 放入输入框。启停状态是
 dsh-code 专属覆盖，保存在 `~/.dsh-code/skill-preferences.json`，不会修改来源 `SKILL.md`，
 也不会改变其他产品中的 Skill 状态；禁用后，该 Skill 在 dsh-code 的模型目录和用户斜杠调用中均不可见。
+
+`/plugins` 打开 `dsh-code` Profile 的内联插件管理面板：Enter 查看详情，Space 启停。
+支持 npm 包、绝对路径本地目录、Git URL 和 tarball 安装，显示进度、取消结果、构建脚本审批、
+精确版本更新与诊断。修改要求 Agent 空闲，且没有排队消息、活跃子代理或运行中的后台任务；
+需要重载时恢复同一会话并保留历史。已安装、配置启用和运行时可用分别显示。
+`web`、`headless` Profile 独立；Web 专属界面和自定义 preset 不会自动获得 TUI 支持。
+详见[插件管理说明](docs/PLUGIN_MANAGEMENT.md)。
 
 dsh-code 的 MCP 配置分别保存在 `~/.dsh-code/mcp.json`（用户级）和可信项目的
 `.dsh-code/mcp.json`（项目级）。`/mcp` 默认只展示这些归 dsh-code 所有的配置；只有选择

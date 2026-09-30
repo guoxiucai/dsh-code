@@ -14,6 +14,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DEFAULT_SCHEMA, dump, load, Type } from 'js-yaml'
 import { DEFAULT_AGENT_PRESET } from '../agent-mode.ts'
+import { tuiBundleRestriction } from '../tui-bundle-policy.ts'
 
 /** The profile name dsh-code boots. */
 export const DSH_CODE_PROFILE_NAME = 'dsh-code'
@@ -55,6 +56,17 @@ const PRESET_OWNED_BASE_ROWS = [
 /** Absolute profile directory under a given dsh-code home. */
 export function profileDir(home: string): string {
   return join(home, 'profiles', DSH_CODE_PROFILE_NAME)
+}
+
+/** Reject competing app entrypoints before the picker or TUI starts; leave advanced CLI management available. */
+export function tuiProfileConflict(home: string): string | undefined {
+  const path = join(profileDir(home), 'package.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8')) as { dsh?: { profile?: { bundles?: unknown } } }
+  const bundles = manifest.dsh?.profile?.bundles
+  if (!Array.isArray(bundles)) return undefined // The upstream manifest reader diagnoses malformed configuration.
+  const conflicts = bundles.filter((name): name is string => typeof name === 'string' && tuiBundleRestriction(name) !== undefined)
+  return conflicts.length === 0 ? undefined
+    : `Cannot start TUI: application bundles ${conflicts.join(', ')} conflict with the dsh-code profile. Remove them from dsh.profile.bundles in ${path}; use their separate profiles instead.`
 }
 
 /** The profile manifest body (bundles: upstream base only). */

@@ -16,7 +16,7 @@ import { unsupportedPlatformMessage } from './cli/platform.ts'
 import { runUpdate } from './cli/update.ts'
 import { resolveDshCodeHome } from './bootstrap/home.ts'
 import { FIRST_MODEL_CONFIG_ENV, hasStoredCredential } from './bootstrap/credentials.ts'
-import { initDshCodeProfile } from './bootstrap/profile.ts'
+import { initDshCodeProfile, tuiProfileConflict } from './bootstrap/profile.ts'
 import {
   deleteProjectSession,
   deleteSession,
@@ -125,6 +125,11 @@ async function runTui(invocation: TuiInvocation): Promise<number> {
   if (rejected !== undefined) return rejected
   migrateLegacyProjectMcpConfig(home, canonical)
   initDshCodeProfile(home, tuiPluginUrl(), canonical)
+  const conflict = tuiProfileConflict(home)
+  if (conflict !== undefined) {
+    process.stderr.write(`dsh-code: ${conflict}\n`)
+    return 1
+  }
   let appArgs: string[]
   if (invocation.resume !== undefined) {
     appArgs = ['--resume', invocation.resume]

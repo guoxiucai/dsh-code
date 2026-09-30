@@ -93,6 +93,39 @@ describe('InlineTextInputComponent', () => {
 })
 
 describe('ListSelectorComponent', () => {
+  it('keeps the selected action visible when the terminal height shrinks', () => {
+    let rows = 18
+    const select = vi.fn()
+    const component = new ListSelectorComponent({
+      summary: ['Plugins', 'Profile: dsh-code'], hint: 'Enter details', availableRows: () => rows,
+      items: Array.from({ length: 20 }, (_,index) => ({ value: String(index), label: `Plugin ${index}` })),
+      borderColor: identity, onSelect: select, onCancel: vi.fn(),
+    })
+    for (let i = 0; i < 12; i++) component.handleInput('\x1b[B')
+    rows = 9
+    const lines = component.render(40)
+    expect(lines.length).toBeLessThanOrEqual(rows)
+    expect(lines.join('\n')).toContain('Plugin 12')
+    component.handleInput('\r')
+    expect(select).toHaveBeenCalledWith('12')
+  })
+
+  it('keeps action-page selection when progress updates and ignores search typing', () => {
+    const onSelect = vi.fn()
+    const component = new ListSelectorComponent({
+      summary: ['Installing'], searchable: false, hint: 'Enter continue', borderColor: identity,
+      items: [{ value: 'wait', label: 'Keep waiting' }, { value: 'cancel', label: 'Cancel installation' }],
+      onSelect, onCancel: vi.fn(),
+    })
+    component.handleInput('\x1b[B')
+    component.updateSummary(['Applying configuration'])
+    component.handleInput('unrelated typing')
+    expect(component.render(40).join('\n')).toContain('Applying configuration')
+    expect(component.render(40).join('\n')).not.toContain('unrelated typing')
+    component.handleInput('\r')
+    expect(onSelect).toHaveBeenCalledWith('cancel')
+  })
+
   it('applies an initial command search and submits the visible match', () => {
     const onSelect = vi.fn()
     const selector = new ListSelectorComponent({

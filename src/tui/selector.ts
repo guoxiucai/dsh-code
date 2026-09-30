@@ -42,6 +42,12 @@ export interface SelectorItem {
 
 /** Selector construction options. */
 export interface SelectorOptions {
+  /** Persistent context above the searchable list (also used by action pages). */
+  summary?: readonly string[]
+  /** Action/progress pages do not need a search field. Defaults to true. */
+  searchable?: boolean
+  /** Host-owned height budget for keeping actions reachable in small terminals. */
+  availableRows?: () => number
   hint: string
   items: SelectorItem[]
   /** Optional initial search text, used by argument-bearing picker commands. */
@@ -56,6 +62,7 @@ export interface SelectorOptions {
 /** Live selector handle used by status-driven panels such as /mcp. */
 export interface SelectorHandle {
   updateItems(items: SelectorItem[]): void
+  updateSummary(lines: readonly string[]): void
 }
 
 /** Inline single-line input options, used by multi-step terminal wizards. */
@@ -104,6 +111,9 @@ export class InlineTextInputComponent extends Container implements Focusable {
 
 /** An inline list selector with search and keyboard navigation. */
 export class ListSelectorComponent extends Container implements Focusable {
+  private readonly summaryContainer = new Container()
+  private summaryRows = 0
+  private visibleRows = 10
   private readonly searchInput: Input
   private readonly listContainer: Container
   private items: SelectorItem[]
@@ -119,10 +129,12 @@ export class ListSelectorComponent extends Container implements Focusable {
     this.filtered = [...options.items]
     this.selectedIndex = this.firstSelectableIndex(this.filtered)
     this.addChild(new SelectorBorder(options.borderColor))
+    this.addChild(this.summaryContainer)
+    this.updateSummary(options.summary ?? [])
     if (options.hint !== '') this.addChild(new FittedText(theme.dim(options.hint)))
     this.searchInput = new Input()
     this.searchInput.onSubmit = () => { this.selectCurrent() }
-    this.addChild(this.searchInput)
+    if (options.searchable !== false) this.addChild(this.searchInput)
     this.listContainer = new Container()
     this.addChild(this.listContainer)
     this.addChild(new SelectorBorder(options.borderColor))
@@ -189,7 +201,7 @@ export class ListSelectorComponent extends Container implements Focusable {
       this.listContainer.addChild(new FittedText(theme.dim('  No matching items')))
       return
     }
-    const maxVisible = 10
+    const maxVisible = this.visibleRows
     const start = Math.max(0, Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.filtered.length - maxVisible))
     const end = Math.min(start + maxVisible, this.filtered.length)
     for (let index = start; index < end; index++) {
@@ -220,6 +232,23 @@ export class ListSelectorComponent extends Container implements Focusable {
     this.updateList()
   }
 
+  /** Refresh progress/context without moving focus or changing selection. */
+  updateSummary(lines: readonly string[]): void {
+    this.summaryRows = lines.length
+    this.summaryContainer.clear()
+    for (const line of lines) this.summaryContainer.addChild(new FittedText(line))
+  }
+
+  override render(width: number): string[] {
+    const available = this.options.availableRows?.() ?? Number.POSITIVE_INFINITY
+    const visible = Math.max(1, Math.min(10, available - this.summaryRows - 5))
+    if (visible !== this.visibleRows) {
+      this.visibleRows = visible
+      this.updateList()
+    }
+    return super.render(width)
+  }
+
   handleInput(data: string): void {
     if (matchesKey(data, 'up')) { this.move(-1); return }
     if (matchesKey(data, 'down')) { this.move(1); return }
@@ -231,6 +260,10 @@ export class ListSelectorComponent extends Container implements Focusable {
       return
     }
     if (matchesKey(data, 'ctrl+c')) return
+    if (this.options.searchable === false) {
+      if (matchesKey(data, 'enter')) this.selectCurrent()
+      return
+    }
     this.searchInput.handleInput(data)
     this.filter(this.searchInput.getValue())
   }

@@ -2,6 +2,20 @@
 
 ## 0.2.0 — Unreleased
 
+- Initialize slash-command completion after all TUI commands are registered.
+  Return from the built-in plugins page to installed plugins on Esc, including
+  while the built-in list is loading.
+
+- Prevent standalone ACP/Web/headless/SDK application bundles from being enabled
+  in the TUI profile. Diagnose conflicting selections before opening the session
+  picker; ACP's separate argv parser otherwise rejects TUI `--resume` arguments.
+
+- Add `/plugins [search]` with installed/built-in bundle lists, component details,
+  install progress and cancellation, explicit build-script approval, exact-version
+  updates, enable/disable, uninstall diagnostics, and same-session reload.
+  Reuse upstream profile management and keep mutations idle-only; protect TUI
+  components and distinguish saved state from runtime application.
+
 - Upgrade DeepSeek Harness from `0.1.7-rc.2` through `0.2.0-rc.1` to
   `0.2.0-rc.2` (`639ed01539`), with pi-ai `0.87.1` and its upstream workspace patch.
 - Display recovery failures for assistant tool requests that never reached a

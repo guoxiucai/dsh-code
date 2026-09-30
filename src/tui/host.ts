@@ -1302,6 +1302,7 @@ export class TuiHost {
   showSelector(options: SelectorOptions): SelectorHandle {
     const selector = new ListSelectorComponent({
       ...options,
+      availableRows: options.availableRows ?? (() => Math.max(6, this.tui.terminal.rows - 6)),
       onSelect: (value) => { this.clearInlineControl(); options.onSelect(value) },
       ...(options.onToggle === undefined ? {} : { onToggle: options.onToggle }),
       onCancel: () => { this.clearInlineControl(); options.onCancel() },
@@ -1310,6 +1311,10 @@ export class TuiHost {
     return {
       updateItems: (items) => {
         selector.updateItems(items)
+        this.tui.requestRender()
+      },
+      updateSummary: (lines) => {
+        selector.updateSummary(lines)
         this.tui.requestRender()
       },
     }
