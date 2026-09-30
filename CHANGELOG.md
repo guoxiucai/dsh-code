@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.7 — Unreleased
+## 0.1.7 — 2026-09-30
 
 - Upgrade DeepSeek Harness from `0.1.6-alpha.2` through the 0.1.7 alpha/RC
   stages to `0.1.7-rc.2` (`477b4f4205`).
