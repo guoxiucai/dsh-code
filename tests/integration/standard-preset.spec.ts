@@ -71,12 +71,14 @@ describe('standard Agent Preset composition', () => {
       agentTools: string[]
       globalTools: string[]
       querySessionIds: string[]
+      timedQuestions: boolean
     }
     expect(report.preset).toBe('standard')
     expect(report.headerPreset).toBe('standard')
     expect(report.agentTools).toEqual(expect.arrayContaining(['bash', 'read', 'write', 'edit', 'todo_write']))
     expect(report.globalTools).not.toEqual(expect.arrayContaining(['bash', 'read', 'write', 'edit', 'todo_write']))
     expect(report.querySessionIds).toContain('standard-preset-smoke')
+    expect(report.timedQuestions).toBe(false)
   }, 60_000)
 
   it('boots the official PTC preset with the Node process runtime and code-only tool presentation', async () => {
@@ -98,6 +100,7 @@ describe('standard Agent Preset composition', () => {
       runtimeIsolation: 'process',
       runtimeResult: { logs: [], value: 42 },
       agentTools: ['run_code'],
+      timedQuestions: false,
       hasSdk: true,
     })
   }, 60_000)

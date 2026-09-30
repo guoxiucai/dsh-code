@@ -6,8 +6,8 @@
 > 当前目标平台：macOS arm64、Windows x64、Linux x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
-本文档是 npm 发行工作的实施基线，以当前仓库和固定的
-DeepSeek Harness `0.1.7-rc.2` 为准。`docs/technical-implementation-plan.md`
+本文档是 npm 发行工作的实施基线，已发布 `0.1.7` 固定到
+DeepSeek Harness `0.1.7-rc.2`；当前开发基线见 [UPSTREAM_BASELINE.md](../UPSTREAM_BASELINE.md)。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论

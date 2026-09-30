@@ -27,7 +27,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-tools'
 // Declaration-merges the todo/write snapshot event now owned by tool-todo.
 import type {} from '@deepseek-ai/dsh-tool-todo'
-import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolCallBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { TodoSummary, ToolDiff, TranscriptItem, TuiViewModel } from './view-model.ts'
 
 /** Thrown when an event arrives with a non-contiguous seq (reorder or gap). */
@@ -79,6 +79,8 @@ interface DraftAssistant {
 /** Reducer state: the view model plus the transient streaming draft and seq cursor. */
 export interface ReducerState extends TuiViewModel {
   shellMessageIds: ReadonlySet<string>
+  /** Requests without a settled result, including calls the scheduler never started. */
+  pendingToolRequests: ReadonlyMap<string, ToolCallBlock>
   lastSeq: number
   draftAssistant: DraftAssistant | undefined
   /** Wall-clock time of the current step's start (for reasoning duration). */
@@ -90,6 +92,7 @@ export function createReducerState(sessionId: string): ReducerState {
   return {
     sessionId,
     shellMessageIds: new Set(),
+    pendingToolRequests: new Map(),
     transcript: [],
     phase: 'idle',
     turnStartedAt: undefined,
@@ -224,6 +227,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     case 'turn/start':
       return {
         ...base,
+        pendingToolRequests: new Map(),
         phase: 'running',
         turnStartedAt: event.time,
         todos: todosForNextTurn(state.todos),
@@ -235,6 +239,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       return {
         ...base,
         phase: 'idle',
+        pendingToolRequests: new Map(),
         turnStartedAt: undefined,
         todos: settleTodosAtTurnEnd(state.todos, event.data.reason),
         transcript: notice === undefined ? transcript : [...transcript, { kind: 'notice', text: notice }],
@@ -243,7 +248,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     case 'step/start':
       return { ...base, phase: 'running', stepStartTime: event.time }
     case 'step/end':
-      return { ...base, phase: 'running' }
+      return { ...base, phase: 'running', pendingToolRequests: new Map() }
 
     case 'agent/inbox/spliced': {
       let shellState: ReducerState = base
@@ -287,6 +292,10 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
 
     case 'assistant/message': {
       const message = event.data.message
+      const pendingToolRequests = new Map(state.pendingToolRequests)
+      for (const block of message.content) {
+        if (block.type === 'tool-call') pendingToolRequests.set(String(block.id), block)
+      }
       const draft = state.draftAssistant
       // The assembled message is authoritative; the streamed draft was only a
       // live preview and must not be committed separately.
@@ -313,7 +322,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
         cacheWriteTokens: (state.tokenUsage?.cacheWriteTokens ?? 0) + (usage.cacheWriteTokens ?? 0),
         reasoningTokens: (state.tokenUsage?.reasoningTokens ?? 0) + (usage.reasoningTokens ?? 0),
       }
-      return { ...base, phase: 'running', transcript: next, draftAssistant: undefined, tokenUsage }
+      return { ...base, phase: 'running', transcript: next, draftAssistant: undefined, tokenUsage, pendingToolRequests }
     }
 
     case 'tool/call':
@@ -336,7 +345,16 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
       const resultText = toolResultText(textOf(message.content))
       const failed = event.data.error !== undefined || message.isError === true
       const diffs = diffsFromMeta(event.data.meta)
-      const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId
+      const request = state.pendingToolRequests.get(callId)
+      const pendingToolRequests = new Map(state.pendingToolRequests)
+      pendingToolRequests.delete(callId)
+      // Recovery can settle an assistant request before any tool/call exists.
+      // Show its recorded outcome without implying that the tool started.
+      const items: readonly TranscriptItem[] = request !== undefined
+        && !state.transcript.some(item => item.kind === 'tool' && item.callId === callId)
+        ? [...state.transcript, { kind: 'tool', callId, name: request.name, arguments: request.arguments, status: failed ? 'error' : 'done' }]
+        : state.transcript
+      const transcript = items.map(item => item.kind === 'tool' && item.callId === callId
         ? {
           ...item,
           status: failed ? 'error' : 'done',
@@ -346,7 +364,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
           ...(diffs !== undefined ? { diffs } : {}),
         } as const
         : item)
-      return { ...base, phase: 'running', transcript }
+      return { ...base, phase: 'running', transcript, pendingToolRequests }
     }
 
     case 'tool/ptc-dispatch-start':

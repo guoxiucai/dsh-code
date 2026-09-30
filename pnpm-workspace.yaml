@@ -18,7 +18,7 @@ overrides:
   '@deepseek-ai/cosmokit': 'link:deepseek-harness/vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:deepseek-harness/vendor/schemastery'
   # Match the model catalog API used by the pinned DSH build.
-  '@earendil-works/pi-ai': '0.85.1'
+  '@earendil-works/pi-ai': '0.87.1'
 
 peerDependencyRules:
   allowedVersions:
@@ -45,8 +45,8 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/libreoffice-kit-win32-arm64@0.1.1'
   - '@deepseek-ai/libreoffice-kit-win32-x64@0.1.1'
   - '@deepseek-ai/libreoffice-kit-wasm@0.1.1'
-  - '@earendil-works/pi-ai@0.85.1'
-  - '@earendil-works/pi-telemetry@0.85.1'
+  - '@earendil-works/pi-ai@0.87.1'
+  - '@earendil-works/pi-telemetry@0.87.1'
   - node-addon-native-custom-loader@0.1.6
   - node-addon-require-builtin-darwin-arm64@0.1.6
   - node-addon-require-builtin-darwin-x64@0.1.6
@@ -68,7 +68,7 @@ minimumReleaseAgeExclude:
   - '@openai/codex@0.153.4||0.153.4-darwin-arm64||0.153.4-darwin-x64||0.153.4-linux-arm64||0.153.4-linux-x64||0.153.4-win32-arm64||0.153.4-win32-x64'
 
 patchedDependencies:
-  '@earendil-works/pi-ai@0.85.1': deepseek-harness/patches/@earendil-works__pi-ai@0.85.1.patch
+  '@earendil-works/pi-ai@0.87.1': deepseek-harness/patches/@earendil-works__pi-ai@0.87.1.patch
   '@fortune-sheet/core@1.0.4': deepseek-harness/patches/@fortune-sheet__core@1.0.4.patch
   '@fortune-sheet/react@1.0.4': deepseek-harness/patches/@fortune-sheet__react@1.0.4.patch
   'exceljs@4.4.0': deepseek-harness/patches/exceljs@4.4.0.patch

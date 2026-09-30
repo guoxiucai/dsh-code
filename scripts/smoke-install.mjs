@@ -83,6 +83,13 @@ try {
   if (process.platform !== 'win32' && (statSync(bin).mode & 0o111) === 0) throw new Error('dsh-code bin is not executable')
   const productManifest = JSON.parse(readFileSync(join(productRoot, 'package.json'), 'utf8'))
   if (productManifest.name !== '@tsingwill/dsh-code') throw new Error('installed product manifest has the wrong name')
+  // Exercise exported preset YAML resolution from the installed product tree.
+  const { initDshCodeProfile } = await import(pathToFileURL(join(productRoot, 'lib', 'bootstrap', 'profile.js')).href)
+  const profile = initDshCodeProfile(join(prefix, 'profile-home'), pathToFileURL(join(productRoot, 'lib', 'tui', 'plugin.js')).href, prefix)
+  const profilePatch = readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')
+  if (!profilePatch.includes('id: preset-standard') || !profilePatch.includes('id: preset-ptc')) {
+    throw new Error('installed product cannot compose its Standard/PTC presets')
+  }
   run('npm', ['list', '--global', '--prefix', prefix, '@tsingwill/dsh-code', '--all', '--json'], {
     capture: true,
     timeout: 120_000,

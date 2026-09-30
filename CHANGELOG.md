@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 — Unreleased
+
+- Upgrade DeepSeek Harness from `0.1.7-rc.2` through `0.2.0-rc.1` to
+  `0.2.0-rc.2` (`639ed01539`), with pi-ai `0.87.1` and its upstream workspace patch.
+- Display recovery failures for assistant tool requests that never reached a
+  recorded call start; keep unknown outcomes distinct from successful execution.
+  Live rendering and replay use the same recorded results without invented timing.
+- Keep Standard/PTC's default blocking questions; upstream timed questions remain
+  opt-in. Session storage stays at v4 and the legacy shell-first limitation remains.
+- Include upstream failed-step recovery, Windows permission diagnosis, shell
+  completion, and Web improvements. Schedule now belongs to an optional bundle;
+  existing Web users who enabled its former rows must enable that bundle.
+
 ## 0.1.7 — 2026-09-30
 
 - Upgrade DeepSeek Harness from `0.1.6-alpha.2` through the 0.1.7 alpha/RC

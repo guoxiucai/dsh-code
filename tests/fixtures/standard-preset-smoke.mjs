@@ -1,4 +1,5 @@
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { isTimedAskUserQuestionSchema } from '@deepseek-ai/dsh-user-questions'
 
 export const name = 'dsh-code-standard-preset-smoke'
 export const inject = ['agents', 'agentPresets', 'sessionQuery', 'tools', 'agentDefaultModel', 'settings', 'llm']
@@ -20,10 +21,13 @@ export function apply(ctx) {
     })
     try {
       const projectSessions = await ctx.sessionQuery.filterSessions([{ kind: 'cwd', values: [process.cwd()] }])
+      const questionTool = ctx.tools.schemas(handle.agent).find(tool => tool.name === 'ask_user_question')
+      if (questionTool === undefined) throw new Error('Standard preset has no ask_user_question tool')
       process.stdout.write(`${JSON.stringify({
         preset: ctx.agentPresets.composedPreset(handle.agent.ctx),
         headerPreset: handle.agent.session.header.agentPreset,
         agentTools: ctx.tools.schemas(handle.agent).map(tool => tool.name),
+        timedQuestions: isTimedAskUserQuestionSchema(questionTool),
         globalTools: ctx.tools.schemas().map(tool => tool.name),
         defaultModel: ctx.agentDefaultModel.currentSelection(),
         providers: ctx.llm.listProviders().map(provider => provider.id),

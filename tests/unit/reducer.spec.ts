@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { ToolCallRecovery, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import {
   EventSequenceError,
@@ -94,6 +94,41 @@ describe('session event reducer', () => {
       error: { name: 'ExecError', code: 'E1' },
     }))
     expect(s.transcript.at(-1)).toMatchObject({ kind: 'tool', status: 'error', errorCode: 'E1' })
+  })
+
+  it('shows upstream recovery results for both started and never-started requests', () => {
+    const events = [
+      ev('turn/start', 0, { turn: 1 }),
+      ev('step/start', 1, { turn: 1, step: 1 }),
+      ev('assistant/message', 2, { turn: 1, step: 1, message: {
+        role: 'assistant', source: { kind: 'model', provider: 'p', model: 'm' },
+        content: [
+          { type: 'tool-call', id: 'started', name: 'bash', arguments: '{"command":"ls"}' },
+          { type: 'tool-call', id: 'not-started', name: 'read', arguments: '{"path":"a.ts"}' },
+        ],
+      } }),
+      ev('tool/call', 3, { turn: 1, step: 1, callId: 'started', name: 'bash', arguments: '{"command":"ls"}' }),
+    ]
+    const recovery = new ToolCallRecovery()
+    for (const event of events) recovery.observe(event)
+    expect(replayEvents('s1', events).transcript).toHaveLength(1)
+    events.push(...recovery.results(),
+      ev('step/end', 6, { turn: 1, step: 1 }),
+      ev('turn/end', 7, { turn: 1, reason: { kind: 'interrupted' } }))
+    const replayed = replayEvents('s1', events)
+    let live = createReducerState('s1')
+    for (const event of events) live = reduceSessionEvent(live, event)
+    expect(live).toEqual(replayed)
+    const tools = replayed.transcript.filter(item => item.kind === 'tool')
+    expect(tools).toHaveLength(2)
+    expect(tools[0]).toMatchObject({ name: 'bash', status: 'error', errorCode: 'TOOL_OUTCOME_UNKNOWN',
+      resultText: expect.stringContaining('outcome is unknown'), startedAt: 1003 })
+    expect(tools[1]).toMatchObject({ name: 'read', arguments: '{"path":"a.ts"}', status: 'error',
+      errorCode: 'TOOL_NOT_STARTED', resultText: expect.stringContaining('before the Harness recorded it as started') })
+    expect(tools[1]).not.toHaveProperty('startedAt')
+    expect(tools[1]).not.toHaveProperty('elapsedMs')
+    expect(replayed.pendingToolRequests.size).toBe(0)
+    expect(replayed.phase).toBe('idle')
   })
 
   it('renders durable PTC child calls and preserves their file diffs on replay', () => {
