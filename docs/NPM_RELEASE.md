@@ -1,16 +1,36 @@
 # dsh-code npm 发行实施方案
 
-> 状态：`0.1.6` 正式版已通过 trusted publishing 发布，npm `latest` 指向 `0.1.6`
+> 状态：`0.1.7` 正式版已通过 trusted publishing 发布，npm `latest` 指向 `0.1.7`
 > 编写日期：2026-08-19
-> 最近审计：2026-09-29
+> 最近审计：2026-09-30
 > 当前目标平台：macOS arm64、Windows x64、Linux x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
 本文档是 npm 发行工作的实施基线，以当前仓库和固定的
-DeepSeek Harness `0.1.6-alpha.2` 为准。`docs/technical-implementation-plan.md`
+DeepSeek Harness `0.1.7-rc.2` 为准。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
+
+2026-09-30 已发布 `@tsingwill/dsh-code@0.1.7`，源码标签 `v0.1.7` 对应
+`f5c3234b91bd7183721132511b54a00afc08b7b6`，上游固定
+`477b4f420553e8a52c2fbccc464d7561b239c443`（`0.1.7-rc.2`）。
+[Release 36666457276](https://github.com/guoxiucai/dsh-code/actions/runs/36666457276)
+的 251 项测试、包审计、macOS/Windows/Linux × Node 22.19/24 六组安装 smoke、
+OIDC 发布全部通过。npm `latest=0.1.7`，provenance 为 SLSA v1；
+[GitHub Release](https://github.com/guoxiucai/dsh-code/releases/tag/v0.1.7) 为正式版。
+
+正式 tarball 为 283676 bytes，SHA-256：
+`47c472bbc8ad1b1f0dd5dee4692cc56711df20b1b520c84ef72cc8b02e7cecac`；
+本地与远端候选字节一致。Registry SHA-512 integrity 与候选一致：
+`sha512-59jpDC6P9H52EF7CXVDsS5es4AOc1JuWjCgz9GYQemQyCnB39A3/5FHSoW6XTKmrXN0YdnAQyn42W+8yqKiEvg==`。
+273 个 DSH 包固定到 `0.1.7-rc.2`，SBOM 591 components；审计 8 moderate、
+0 high、0 critical，均关联 Office/LibreOffice 依赖链的 fflate ZIP64 问题。
+旧 shell-first 日志仍需单独迁移修复，具体边界见
+[0.1.7 升级回归报告](UPSTREAM_0.1.7_REGRESSION.md)。
+发布后在 macOS arm64 隔离 prefix 从 registry 安装 `@tsingwill/dsh-code@0.1.7`，
+版本、帮助和发布包内 Standard/PTC profile 初始化通过；从 registry 下载的 tarball
+SHA-256 与正式候选一致。临时 prefix 已清理，未替换本机原有全局安装。
 
 2026-09-29 已发布 `@tsingwill/dsh-code@0.1.6`，源码标签 `v0.1.6` 对应
 `1d2a74ad4c1fa5265392c6249bc51d5b9688847a`。三平台六组安装 smoke、244 项自动测试、
