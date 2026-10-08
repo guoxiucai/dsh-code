@@ -1,16 +1,22 @@
 # dsh-code npm 发行实施方案
 
-> 状态：`0.1.7` 正式版已通过 trusted publishing 发布，npm `latest` 指向 `0.1.7`
+> 状态：`0.2.0` 正式版已通过 trusted publishing 发布，npm `latest` 指向 `0.2.0`
 > 编写日期：2026-08-19
-> 最近审计：2026-09-30
+> 最近审计：2026-10-08
 > 当前目标平台：macOS arm64、Windows x64、Linux x64
 > 用户入口：`npm install -g @tsingwill/dsh-code` → `dsh-code`
 
-本文档是 npm 发行工作的实施基线，已发布 `0.1.7` 固定到
-DeepSeek Harness `0.1.7-rc.2`；当前开发基线见 [UPSTREAM_BASELINE.md](../UPSTREAM_BASELINE.md)。`docs/technical-implementation-plan.md`
+本文档是 npm 发行工作的实施基线，已发布 `0.2.0` 固定到
+DeepSeek Harness `0.2.0-rc.2`；当前开发基线见 [UPSTREAM_BASELINE.md](../UPSTREAM_BASELINE.md)。`docs/technical-implementation-plan.md`
 中的 npm 章节仅保留为早期目标；两者冲突时以本文档为准。
 
 ## 1. 执行结论
+
+2026-10-08 已发布 `@tsingwill/dsh-code@0.2.0`，源码标签 `v0.2.0` 对应
+`a478678fd2f93dfc3bd53584eb8e7860117b8d21`。275 项测试、包审计、三平台六组安装
+smoke 与 OIDC 发布通过，npm `latest=0.2.0`。MCP client/core 覆盖为官方安全修复版
+2.2.0；发布审计 9 moderate、0 high、0 critical。包校验值、兼容边界及完整证据见
+[0.2.0 发布记录](RELEASE_0.2.0.md)。
 
 2026-09-30 已发布 `@tsingwill/dsh-code@0.1.7`，源码标签 `v0.1.7` 对应
 `f5c3234b91bd7183721132511b54a00afc08b7b6`，上游固定
