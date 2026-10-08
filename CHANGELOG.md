@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — Unreleased
+## 0.2.0 — 2026-10-08
 
 - Initialize slash-command completion after all TUI commands are registered.
   Return from the built-in plugins page to installed plugins on Esc, including
