@@ -2,6 +2,9 @@
 
 ## 0.2.0 — 2026-10-08
 
+- Pin MCP client/core to 2.2.0 in both workspace and npm release dependencies
+  for GHSA-6qxp-vccf-f47h; verify the override in the published dependency lock.
+
 - Initialize slash-command completion after all TUI commands are registered.
   Return from the built-in plugins page to installed plugins on Esc, including
   while the built-in list is loading.

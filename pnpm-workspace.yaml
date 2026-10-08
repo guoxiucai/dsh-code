@@ -14,6 +14,10 @@ packages:
 linkWorkspacePackages: true
 
 overrides:
+  # Keep aligned with package.json overrides, also carried into npm shrinkwrap.
+  # GHSA-6qxp-vccf-f47h: bind MCP OAuth credentials to the issuing server.
+  '@modelcontextprotocol/client': '2.2.0'
+  '@modelcontextprotocol/core': '2.2.0'
   'extract-zip>yauzl': '3.4.0'
   '@deepseek-ai/cosmokit': 'link:deepseek-harness/vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:deepseek-harness/vendor/schemastery'

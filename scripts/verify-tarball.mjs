@@ -44,6 +44,10 @@ for (const [path, value] of Object.entries(lock.packages ?? {})) {
   if (name?.startsWith('@deepseek-ai/dsh') && value.version !== baselineVersion) {
     throw new Error(`shrinkwrap mixed DSH baseline: ${name}@${value.version}`)
   }
+  const override = manifest.overrides?.[name]
+  if (typeof override === 'string' && value.version !== override) {
+    throw new Error(`shrinkwrap missed product override: ${name}@${value.version}, expected ${override}`)
+  }
 }
 
 const dryRun = run('npm', ['pack', '--dry-run', '--json'], { cwd: STAGE, capture: true, timeout: 120_000 })

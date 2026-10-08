@@ -70,6 +70,10 @@
     "js-yaml": "^4.3.2",
     "smol-toml": "^1.8.0"
   },
+  "overrides": {
+    "@modelcontextprotocol/client": "2.2.0",
+    "@modelcontextprotocol/core": "2.2.0"
+  },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.25.1",
     "@deepseek-ai/cordis": "workspace:^",

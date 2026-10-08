@@ -97,6 +97,11 @@ global install 和运行时验收，验收通过的同一个 tarball 才能发�
 
 - 根 package 保持 `private: true`，发布脚本在 `dist/npm/package` 生成非 private staging manifest；
 - staging 将 workspace 依赖转换为精确版本，并生成可发布的 `npm-shrinkwrap.json`；
+- 产品级安全覆盖写在根 `package.json.overrides`，并同步到 `pnpm-workspace.yaml`。
+  staging manifest 携带这些覆盖，`verify-tarball.mjs` 检查 shrinkwrap 中的实际版本。
+  0.2.0 将 MCP client/core 固定到 2.2.0，修复
+  [GHSA-6qxp-vccf-f47h](https://github.com/advisories/GHSA-6qxp-vccf-f47h)，
+  DSH 本身仍固定在 `0.2.0-rc.2`，不通过放宽审计门禁发布。
 - staging 将全部可达 `@deepseek-ai/dsh*` 运行包提升为精确 direct dependencies，防止 npm peer 自动安装混入其他 RC；
 - tarball 文件 allowlist、secret/local dependency、体积、SHA-256 和跨平台 optional metadata 门禁；
 - POSIX `chmod` 已换成跨平台 Node 脚本，shell 指示文案按 PowerShell/Shell 区分；

@@ -120,6 +120,8 @@ const manifest = {
     'npm-shrinkwrap.json',
   ],
   dependencies,
+  // Product security fixes must reach the npm lock as well as the workspace.
+  overrides: rootManifest.overrides,
 }
 writeFileSync(join(STAGE, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 
