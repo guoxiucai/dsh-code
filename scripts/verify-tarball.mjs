@@ -25,11 +25,12 @@ if (sbom.bomFormat !== 'CycloneDX' || !Array.isArray(sbom.components) || sbom.co
   throw new Error('candidate CycloneDX SBOM is missing or invalid')
 }
 
-for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
+const allDependencies = { ...manifest.dependencies, ...manifest.optionalDependencies }
+for (const [name, version] of Object.entries(allDependencies)) {
   if (typeof version !== 'string' || !SEMVER.test(version)) throw new Error(`dependency ${name} is not exactly pinned: ${version}`)
 }
 const baselineVersion = manifest.dependencies?.['@deepseek-ai/dsh']
-const pinnedDsh = Object.entries(manifest.dependencies ?? {}).filter(([name]) => name.startsWith('@deepseek-ai/dsh'))
+const pinnedDsh = Object.entries(allDependencies).filter(([name]) => name.startsWith('@deepseek-ai/dsh'))
 if (pinnedDsh.length < 100) throw new Error(`release manifest pins only ${pinnedDsh.length} DSH packages; expected the reachable runtime closure`)
 for (const [name, version] of pinnedDsh) {
   if (version !== baselineVersion) throw new Error(`${name}@${version} does not match baseline ${baselineVersion}`)

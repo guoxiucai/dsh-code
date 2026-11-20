@@ -93,6 +93,15 @@ for (let index = 0; index < pendingDsh.length; index += 1) {
   }
 }
 
+// Keep platform-specific packages pinned without requiring them on every OS.
+const optionalDependencies = {}
+for (const name of pendingDsh) {
+  const { os, cpu, libc } = dshWorkspace.get(name)
+  if (![os, cpu, libc].some(platforms => Array.isArray(platforms) && platforms.length > 0)) continue
+  optionalDependencies[name] = dependencies[name]
+  delete dependencies[name]
+}
+
 const manifest = {
   name: PACKAGE_NAME,
   version,
@@ -120,6 +129,7 @@ const manifest = {
     'npm-shrinkwrap.json',
   ],
   dependencies,
+  optionalDependencies,
   // Product security fixes must reach the npm lock as well as the workspace.
   overrides: rootManifest.overrides,
 }
