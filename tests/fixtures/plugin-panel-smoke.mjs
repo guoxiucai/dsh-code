@@ -60,8 +60,12 @@ export function apply(ctx) {
         await wait(() => !panel.busy)
         assert.equal(stripVTControlCharacters(selector.summary[0]), '✓ Change applied', JSON.stringify(selector.summary))
         assert(hasTool(), 'Installed tool is not visible to the current Standard Agent')
-        const execution = await ctx.tools.execute({ name: 'plugin_panel_ping', arguments: {},
-          signal: new AbortController().signal, callId: 'plugin-panel-ping-smoke', agent: handle.agent })
+        const { results } = await ctx.tools.execute({
+          calls: [{ type: 'tool-call', name: 'plugin_panel_ping', arguments: '{}', id: 'plugin-panel-ping-smoke' }],
+          signal: new AbortController().signal, agent: handle.agent,
+        })
+        const execution = results[0]?.result
+        assert(execution, 'Missing plugin tool result')
         assert(!execution.isError, JSON.stringify(execution))
         assert(execution.content.some(block => block.type === 'text' && block.text === 'pong'))
         // Disable and re-enable through the public panel controls before restart.

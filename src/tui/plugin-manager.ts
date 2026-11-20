@@ -13,7 +13,7 @@ import type { SelectorHandle, SelectorItem, SelectorOptions } from './selector.t
 import { theme } from './theme.ts'
 import { tuiBundleRestriction } from '../tui-bundle-policy.ts'
 
-type Manager = Pick<PluginManager, 'listBundles' | 'listPlugins' | 'inspect' | 'installBundle'
+type Manager = Pick<PluginManager, 'listBundles' | 'listPlugins' | 'inspect' | 'installBundle' | 'updateBundle'
   | 'setBundleEnabled' | 'setPluginEnabled' | 'removeBundle' | 'cancelInstall'>
 type Host = Pick<TuiHost, 'showSelector' | 'showInlineInput' | 'showNotice'>
 
@@ -233,7 +233,7 @@ export class PluginPanel {
         action('components', 'View components…'), action('tools', 'View current Agent tools…'),
         ...(!bundle.readOnlyReason && (restriction === undefined || bundle.enabled)
           ? [action('toggle', bundle.enabled ? 'Disable plugin' : 'Enable plugin')] : []),
-        ...(bundle.removable && restriction === undefined ? [action('update', 'Update version…')] : []),
+        ...(bundle.update === 'registry' && restriction === undefined ? [action('update', 'Update version…')] : []),
         ...(bundle.removable ? [action('remove', 'Uninstall…')] : []),
         ...(this.outcomes.has(name) || bundle.error !== undefined ? [action('diagnostics', 'View diagnostics…')] : []),
         ...(this.restarts.has(name) ? [action('reload', '↻ Reload session…')] : []),
@@ -351,9 +351,20 @@ export class PluginPanel {
         }
         const spec = `${bundle.name}@${version}`
         this.page(['Update plugin?', spec, `Keep enabled: ${bundle.enabled ? 'On' : 'Off'}`,
-          'Compatibility is checked during installation. Reload is required after updating.'],
+          'The plugin manager checks compatibility and reports whether a reload is needed.'],
         [action('back', 'Cancel'), action('update', 'Update')], value => {
-          if (value === 'update') void this.install(spec, { enabled: bundle.enabled })
+          if (value === 'update') {
+            const requestId = randomUUID() as PluginInstallRequestId
+            void this.mutate(`Update ${bundle.name}`, async () => {
+              const { result, restore } = await this.options.manager!.updateBundle(bundle.name, version, { requestId })
+              if (restore?.application === 'failed') {
+                const diagnostic = [result.error?.diagnostic, `Restoring the previous version failed: ${restore.error?.diagnostic ?? restore.error?.code ?? 'unknown error'}`]
+                  .filter(Boolean).join('\n')
+                return { ...result, target: bundle.name, application: 'failed', error: { code: 'operation-error', diagnostic } }
+              }
+              return { ...result, target: bundle.name }
+            }, requestId)
+          }
           else back()
         }, back)
       },

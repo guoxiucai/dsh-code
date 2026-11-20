@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/guoxiucai/dsh-code/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/guoxiucai/dsh-code/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4D6BFE.svg"></a>
-  <img alt="Node.js 22.19 or 24" src="https://img.shields.io/badge/Node.js-22.19%2B%20%7C%2024%2B-43853D.svg">
+  <img alt="Node.js 24.9+" src="https://img.shields.io/badge/Node.js-24.9%2B-43853D.svg">
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img alt="Powered by dsh" src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white"></a>
 </p>
 
@@ -52,7 +52,7 @@ DeepSeek Harness agent runtime + Pi-inspired terminal UX + pi-tui renderer
 | macOS | 14 or later, Apple Silicon (`arm64`) |
 | Windows | Windows 10 or later, x64 |
 | Linux | x64, validated on Ubuntu 22.04; Ubuntu 24.04 installation CI |
-| Node.js | `22.19+` (Node 23 excluded) or `24+` |
+| Node.js | `24.9+` |
 | Package manager | npm for normal installation |
 
 Linux x64 joins macOS and Windows in 0.1.6. Physical Ubuntu validation is recorded
@@ -94,7 +94,7 @@ the shorter `dsh-code`.
 git clone --recurse-submodules https://github.com/guoxiucai/dsh-code.git
 cd dsh-code
 corepack enable
-corepack prepare pnpm@11.7.0 --activate
+npm install --global pnpm@11.28.5
 pnpm install --frozen-lockfile
 pnpm run build:lib
 pnpm run build

@@ -11,7 +11,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import { installModelSelection, type Agent } from '@deepseek-ai/dsh-agent'
 // Declaration-merges the upstream Agent Preset roster onto Context.
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -119,7 +119,7 @@ import {
 export const name = 'dsh-code-tui'
 
 /** Core services required before a turn can be driven. */
-export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionPersistence', 'sessionProjections', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'systemPrompt', 'tools']
+export const inject = ['agents', 'agentPresets', 'agentDefaultModel', 'sessions', 'sessionPersistence', 'sessionQuery', 'commands', 'llm', 'credentials', 'settings', 'permissionPresets', 'shell', 'tokenMeter', 'userQuestions', 'goals', 'skills', 'subagents', 'jobs', 'sessionTitle', 'systemPrompt', 'tools']
 
 /** Stream coalescing window: assistant chunks render at most about 30fps. */
 export const STREAM_RENDER_INTERVAL_MS = 33
@@ -208,7 +208,6 @@ async function run(ctx: Context): Promise<void> {
   const requestedPreset = presetForAgentMode(requestedMode)
   const selection = defaultModel.currentSelection()
   const modelOptions = { provider: selection.provider, model: selection.model }
-  const modelRef: ModelSelectionRef = { current: { provider: selection.provider, model: selection.model }, assembled: undefined }
   const dshCodeHome = process.env.DSH_HOME ?? join(homedir(), '.dsh-code')
   const disabledSkills = readDisabledSkills(dshCodeHome)
   let disabledSkillControl: SkillProviderControl | undefined
@@ -216,12 +215,12 @@ async function run(ctx: Context): Promise<void> {
 
   const setup = async (agentCtx: Context, setupAgent: Agent): Promise<void> => {
     assertShellContextOrder(setupAgent.session)
-    const recorded = ctx.sessionProjections.stateOf(setupAgent.session, 'agentPreset') ?? undefined
+    const recorded = ctx.agentPresets.presetForSession(setupAgent.session)
     const preset = resumeId === undefined ? requestedPreset : supportedAgentPreset(recorded ?? 'standard')
     if (preset === undefined) throw new Error(`session uses unsupported agent preset ${JSON.stringify(recorded)}`)
     activePreset = preset
     await ctx.agentPresets.mount(agentCtx, preset)
-    installModelSelection(agentCtx, modelRef)
+    installModelSelection(agentCtx)
     await installDisabledSkillProvider(agentCtx, disabledSkills, (control) => { disabledSkillControl = control })
   }
 
@@ -344,7 +343,7 @@ async function run(ctx: Context): Promise<void> {
       openAgentsPanel()
     },
   })
-  host.setModel({ provider: selection.provider, model: selection.model })
+  host.setModel(agent.model.current() ?? selection)
   host.setAgentMode(agentModeForPreset(activePreset))
   host.setProject(basename(process.cwd()), detectGitBranch(process.cwd()))
   host.setVersion(readVersion())
@@ -537,7 +536,7 @@ async function run(ctx: Context): Promise<void> {
         models.push({ provider: provider.id, model: model.id })
       }
     }
-    const current = defaultModel.currentSelection()
+    const current = agent.model.current() ?? defaultModel.currentSelection()
     const isCurrent = (entry: { provider: string; model: string }): boolean =>
       entry.provider === current.provider && entry.model === current.model
     const sorted = [...models].sort((a, b) => {
@@ -557,7 +556,7 @@ async function run(ctx: Context): Promise<void> {
       onSelect: async (value) => {
         const [provider, model] = value.split('\u0000')
         if (provider === undefined || model === undefined) return
-        modelRef.current = { provider, model }
+        agent.model.select({ provider, model })
         host.setModel({ provider, model })
         await defaultModel.saveSelection({ provider, model })
         host.showNotice(`switched to ${provider}/${model} (applies to new turns)`)
@@ -1533,7 +1532,7 @@ async function run(ctx: Context): Promise<void> {
       const toolCalls = events.filter(event => event.type === 'tool/call').length
       const toolResults = events.filter(event => event.type === 'tool/result').length
       const sessionTitle = ctx.sessionTitle.get(agent.session)?.title
-      const activeModel = modelRef.current ?? selection
+      const activeModel = agent.model.current() ?? selection
       const usage = reducer.tokenUsage
       const input = usage?.inputTokens ?? 0
       const cacheRead = usage?.cacheReadTokens ?? 0

@@ -2,6 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { describe, expect, it } from 'vitest'
 import {
   concurrentSubagentDenial,
@@ -15,6 +16,7 @@ describe('subagent concurrency policy', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NativeExecutor)
     let bodyCalls = 0
     ctx.tools.register(defineTool({
       name: 'subagent',
@@ -43,12 +45,12 @@ describe('subagent concurrency policy', () => {
       }),
     ]))
 
-    const result = await ctx.tools.execute({
+    const { results } = await ctx.tools.execute({
       signal,
-      callId: ToolCallId('foreground-child'),
-      name: 'subagent',
-      arguments: { run_in_background: false },
+      calls: [{ type: 'tool-call', id: ToolCallId('foreground-child'), name: 'subagent',
+        arguments: '{"run_in_background":false}' }],
     })
+    const result = results[0]!.result
 
     expect(result.isError).toBe(true)
     expect(result.content).toEqual(expect.arrayContaining([

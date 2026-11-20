@@ -1,7 +1,7 @@
 {
   "name": "dsh-code",
   "description": "Terminal coding agent powered by DeepSeek Harness — a thin TUI host over @deepseek-ai/dsh-base",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "type": "module",
   "license": "MIT",
   "private": true,
@@ -22,9 +22,9 @@
   "bin": {
     "dsh-code": "lib/bin.js"
   },
-  "packageManager": "pnpm@11.7.0",
+  "packageManager": "pnpm@11.28.5",
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=24.9.0"
   },
   "files": [
     "lib",
@@ -41,8 +41,8 @@
     "hooks:install": "lefthook install --force",
     "hooks:check": "lefthook run pre-push --force",
     "build:lib": "pnpm run build:lib:host && pnpm run build:lib:client",
-    "build:lib:host": "tsx deepseek-harness/native/system/scripts/build.ts --host-addon-only && cd deepseek-harness && tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host",
-    "build:lib:client": "node scripts/ensure-dsh-type-roots.mjs && cd deepseek-harness && tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client",
+    "build:lib:host": "node scripts/ensure-dsh-type-roots.mjs && tsx deepseek-harness/native/system/scripts/build.ts --host-addon-only && cd deepseek-harness && tsx scripts/compile-referenced-projects.ts host-libraries",
+    "build:lib:client": "node scripts/ensure-dsh-type-roots.mjs && cd deepseek-harness && tsx scripts/compile-referenced-projects.ts client && tsdown --config-loader native --env.DSH_BUILD_FACE client",
     "release:pack": "node scripts/build-release.mjs",
     "release:verify": "node scripts/verify-tarball.mjs",
     "release:smoke": "node scripts/smoke-install.mjs",
@@ -68,11 +68,13 @@
     "cross-spawn": "^7.0.6",
     "diff": "^9.0.0",
     "js-yaml": "^4.3.2",
-    "smol-toml": "^1.8.0"
+    "smol-toml": "^1.8.0",
+    "zod": "4.6.6"
   },
   "overrides": {
     "@modelcontextprotocol/client": "2.2.0",
-    "@modelcontextprotocol/core": "2.2.0"
+    "@modelcontextprotocol/core": "2.2.0",
+    "undici@>=8.0.0 <8.12.2": "8.12.3"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.25.1",
@@ -99,6 +101,8 @@
     "@deepseek-ai/dsh-tool-session-query": "workspace:^",
     "@deepseek-ai/dsh-tool-todo": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
+    "@deepseek-ai/dsh-tool-executor-native": "workspace:^",
+    "@deepseek-ai/dsh-tool-executor-ptc": "workspace:^",
     "@deepseek-ai/dsh-user-approval": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
     "@stylistic/eslint-plugin": "^5.10.0",
@@ -107,7 +111,9 @@
     "@types/js-yaml": "^4.0.9",
     "@types/jsdom": "^28.0.3",
     "@types/mdast": "^4.0.4",
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.20.1",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
     "@types/spdx-expression-parse": "^4.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@yarnpkg/cli-dist": "4.17.1",
@@ -134,6 +140,7 @@
     "tsdown": "^0.22.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
+    "vite": "8.2.2",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.8"
   }

@@ -31,6 +31,7 @@ function harness() {
     listPlugins: vi.fn<Manager['listPlugins']>(async (): Promise<PluginInfo[]> => []),
     inspect: vi.fn<Manager['inspect']>(async (): Promise<PluginSpecInspection> => ({ status: 'accepted', kind: 'registry', name: '@example/new', version: '1.0.0', bundle: true, registry: null })),
     installBundle: vi.fn<Manager['installBundle']>(async (): Promise<ChangeResult> => applied()),
+    updateBundle: vi.fn<Manager['updateBundle']>(async () => ({ from: '1.0.0', to: '1.2.3', step: 'install', result: applied() })),
     setBundleEnabled: vi.fn<Manager['setBundleEnabled']>(async (): Promise<ChangeResult> => applied()),
     setPluginEnabled: vi.fn<Manager['setPluginEnabled']>(async (): Promise<ChangeResult> => applied()),
     removeBundle: vi.fn<Manager['removeBundle']>(async (): Promise<ChangeResult> => applied()),
@@ -214,10 +215,11 @@ describe('TUI plugin management', () => {
     expect(h.unsubscribe).toHaveBeenCalledOnce()
   })
 
-  it('preserves a disabled bundle on update and offers history-preserving reload', async () => {
+  it('delegates a registry update and offers history-preserving reload', async () => {
     const h = harness()
-    h.manager.listBundles.mockResolvedValue([bundle({ enabled: false })])
-    h.manager.installBundle.mockResolvedValue({ ...applied(), application: 'restart-required' })
+    h.manager.listBundles.mockResolvedValue([bundle({ enabled: false, update: 'registry' })])
+    h.manager.updateBundle.mockResolvedValue({ from: '1.0.0', to: '1.2.3', step: 'install',
+      result: { ...applied(), application: 'restart-required' } })
     await h.panel.show()
     h.select('@example/repo')
     await vi.waitFor(() => { expect(h.render().join('\n')).toContain('Update version') })
@@ -225,7 +227,8 @@ describe('TUI plugin management', () => {
     h.input('1.2.3')
     h.select('update')
     await vi.waitFor(() => { expect(h.render().join('\n')).toContain('Saved; reload required') })
-    expect(h.manager.installBundle).toHaveBeenCalledWith('@example/repo@1.2.3', expect.objectContaining({ enabled: false }))
+    expect(h.manager.updateBundle).toHaveBeenCalledWith('@example/repo', '1.2.3', expect.objectContaining({ requestId: expect.any(String) }))
+    expect(h.manager.installBundle).not.toHaveBeenCalled()
     expect(h.manager.inspect).not.toHaveBeenCalled()
     h.select('reload')
     h.select('reload')

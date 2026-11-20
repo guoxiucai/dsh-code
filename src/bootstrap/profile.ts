@@ -42,16 +42,16 @@ const PRESET_OWNED_BASE_ROWS = [
   'command-compact',
   'tool-result-pruner',
   'tool-subagent-control',
-  'tool-subagent-list-agents',
   'tool-subagent',
   'tool-subagent-fork',
   'workflow-ptc',
   'tool-workflow',
-  'tool-ralph',
   'agent-instructions',
   'tool-todo',
   'tool-web',
 ] as const
+
+const RETIRED_PRESET_OWNED_BASE_ROWS = ['tool-subagent-list-agents', 'tool-ralph'] as const
 
 /** Absolute profile directory under a given dsh-code home. */
 export function profileDir(home: string): string {
@@ -139,7 +139,7 @@ ${PRESET_OWNED_BASE_ROWS.map(id => `- id: ${id}\n  disabled: true`).join('\n\n')
     - id: dsh-code-tui
       name: ${JSON.stringify(tuiPluginUrl)}
 
-${['standard', 'ptc'].map(id => readFileSync(createRequire(import.meta.url).resolve(`@deepseek-ai/dsh-web-app/presets/${id}.patch.yml`), 'utf8')).join('\n')}
+${['standard', 'ptc'].map(tuiPresetPatch).join('\n')}
 `
 }
 
@@ -153,6 +153,19 @@ const PATCH_SCHEMA = DEFAULT_SCHEMA.extend(new Type('tag:yaml.org,2002:js', {
   instanceOf: ConfigExpression,
   represent: value => (value as ConfigExpression).expression,
 }))
+
+function tuiPresetPatch(id: string): string {
+  const path = createRequire(import.meta.url).resolve(`@deepseek-ai/dsh-web-app/presets/${id}.patch.yml`)
+  const patch = load(readFileSync(path, 'utf8'), { schema: PATCH_SCHEMA }) as {
+    insert?: { config: { plugins: { id: string; disabled?: unknown }[] } }[]
+  }[]
+  for (const row of patch.flatMap(entry => entry.insert ?? [])) {
+    // TUI users manage installations explicitly through /plugins.
+    const manager = row.config.plugins.find(plugin => plugin.id === 'tool-plugin-manager')
+    if (manager !== undefined) manager.disabled = true
+  }
+  return dump(patch, { schema: PATCH_SCHEMA, lineWidth: -1, noRefs: true })
+}
 
 function retainedProfilePatch(path: string): string {
   if (!existsSync(path)) return ''
@@ -168,7 +181,7 @@ function retainedProfilePatch(path: string): string {
       const insert = row.insert.filter((entry: { id?: string }) => !owned.has(entry.id ?? ''))
       return insert.length === 0 ? [] : [{ ...row, insert }]
     }
-    if (PRESET_OWNED_BASE_ROWS.some(id => row.id === id)
+    if ([...PRESET_OWNED_BASE_ROWS, ...RETIRED_PRESET_OWNED_BASE_ROWS].some(id => row.id === id)
       && row.disabled === true && Object.keys(row).length === 2) return []
     return [row]
   })

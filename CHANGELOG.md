@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.2 — 2026-11-20
+
+- Sync DeepSeek Harness to `0.2.2-rc.5` (`9c2670d3bc`) and align the
+  workspace with pi-ai 1.3.0.
+- Require Node.js 24.9 or newer and use pnpm 11.28.5 for workspace builds.
+- Read the saved preset and model through their upstream owners on resume,
+  and persist live model changes in the session.
+- Use the upstream update operation for installed registry plugins and display
+  rollback failures. Keep plugin management available through the TUI panel.
+- Preserve PTC child tool cards with the new executor event declarations and
+  apply the upstream MCP client defaults when mounting connections.
+- Supply Zod for the upstream web schema contributor and pin affected Undici 8
+  dependencies to the patched 8.12.3 in local and npm builds.
+
 ## 0.2.0 — 2026-10-08
 
 - Pin MCP client/core to 2.2.0 in both workspace and npm release dependencies

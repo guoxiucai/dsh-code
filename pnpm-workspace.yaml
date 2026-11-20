@@ -8,7 +8,6 @@ packages:
   - deepseek-harness/apps/*
   - deepseek-harness/benchmarks
   - deepseek-harness/website
-  - deepseek-harness/examples
   - deepseek-harness/python/sdk-runtime
 
 linkWorkspacePackages: true
@@ -18,11 +17,12 @@ overrides:
   # GHSA-6qxp-vccf-f47h: bind MCP OAuth credentials to the issuing server.
   '@modelcontextprotocol/client': '2.2.0'
   '@modelcontextprotocol/core': '2.2.0'
+  'undici@>=8.0.0 <8.12.2': '8.12.3'
   'extract-zip>yauzl': '3.4.0'
   '@deepseek-ai/cosmokit': 'link:deepseek-harness/vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:deepseek-harness/vendor/schemastery'
   # Match the model catalog API used by the pinned DSH build.
-  '@earendil-works/pi-ai': '0.87.1'
+  '@earendil-works/pi-ai': '1.3.0'
 
 peerDependencyRules:
   allowedVersions:
@@ -43,23 +43,33 @@ allowBuilds:
   fs-ext: false
 
 minimumReleaseAgeExclude:
-  - '@deepseek-ai/libreoffice-kit@0.1.1'
-  - '@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.1'
-  - '@deepseek-ai/libreoffice-kit-darwin-x64@0.1.1'
-  - '@deepseek-ai/libreoffice-kit-win32-arm64@0.1.1'
-  - '@deepseek-ai/libreoffice-kit-win32-x64@0.1.1'
-  - '@deepseek-ai/libreoffice-kit-wasm@0.1.1'
-  - '@earendil-works/pi-ai@0.87.1'
-  - '@earendil-works/pi-telemetry@0.87.1'
-  - node-addon-native-custom-loader@0.1.6
-  - node-addon-require-builtin-darwin-arm64@0.1.6
-  - node-addon-require-builtin-darwin-x64@0.1.6
-  - node-addon-require-builtin-linux-arm64-gnu@0.1.6
-  - node-addon-require-builtin-linux-x64-gnu@0.1.6
-  - node-addon-require-builtin-win32-arm64-msvc@0.1.6
-  - node-addon-require-builtin-win32-ia32-msvc@0.1.6
-  - node-addon-require-builtin-win32-x64-msvc@0.1.6
-  - node-addon-require-builtin@0.1.6
+  # Native Codex and Claude tests qualify this exact release with its local patches.
+  - '@botiverse/oar@0.67.0'
+  # Office engines and their API are qualified and released together by the kit repository.
+  - '@deepseek-ai/libreoffice-kit@0.2.3'
+  - '@deepseek-ai/libreoffice-kit-darwin-arm64@0.2.3'
+  - '@deepseek-ai/libreoffice-kit-darwin-x64@0.2.3'
+  - '@deepseek-ai/libreoffice-kit-win32-arm64@0.2.3'
+  - '@deepseek-ai/libreoffice-kit-win32-x64@0.2.3'
+  - '@deepseek-ai/libreoffice-kit-wasm@0.2.3'
+  # Fresh pi-ai releases carry the model catalog updates that are the whole
+  # point of bumping it; waiting out the release age would defeat that.
+  - '@earendil-works/pi-ai@1.3.0'
+  - '@earendil-works/pi-telemetry@1.3.0'
+  # This addon release recognizes the Electron 44.7.0 Node/V8 fingerprint used by Desktop.
+  - node-addon-native-custom-loader@0.1.9
+  - node-addon-require-builtin-darwin-arm64@0.1.9
+  - node-addon-require-builtin-darwin-x64@0.1.9
+  - node-addon-require-builtin-linux-arm64-gnu@0.1.9
+  - node-addon-require-builtin-linux-x64-gnu@0.1.9
+  - node-addon-require-builtin-linux-arm64-musl@0.1.9
+  - node-addon-require-builtin-linux-x64-musl@0.1.9
+  - node-addon-require-builtin-win32-arm64-msvc@0.1.9
+  - node-addon-require-builtin-win32-ia32-msvc@0.1.9
+  - node-addon-require-builtin-win32-x64-msvc@0.1.9
+  - node-addon-require-builtin@0.1.9
+  # The active pnpm supply-chain policy blocks this reviewed runtime closure
+  # until its release-age window expires unless every exact package is exempt.
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.263'
   - '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.263'
   - '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.263'
@@ -69,11 +79,33 @@ minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.263'
   - '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.263'
   - '@anthropic-ai/claude-agent-sdk@0.3.263'
+  # All platform aliases resolve to the @openai/codex package name, so their
+  # reviewed exact versions must share one version-union policy entry.
   - '@openai/codex@0.153.4||0.153.4-darwin-arm64||0.153.4-darwin-x64||0.153.4-linux-arm64||0.153.4-linux-x64||0.153.4-win32-arm64||0.153.4-win32-x64'
-
+  # The native computer-use provider pins this reviewed upstream runtime closure.
+  - '@trycua/cua-driver-darwin-arm64@0.28.0'
+  - '@trycua/cua-driver-darwin-x64@0.28.0'
+  - '@trycua/cua-driver-linux-arm64-gnu@0.28.0'
+  - '@trycua/cua-driver-linux-x64-gnu@0.28.0'
+  - '@trycua/cua-driver-win32-arm64-msvc@0.28.0'
+  - '@trycua/cua-driver-win32-x64-msvc@0.28.0'
+  - '@trycua/cua-driver@0.28.0'
+  # The package manager is a workspace devDependency, so its own exact pin
+  # must be exempt from the release-age window that guards other packages.
+  - pnpm@11.28.5
+  # Desktop packaging requires this Electron fingerprint with node-addon-require-builtin 0.1.9.
+  - electron@44.7.0
+  # Stagehand 4.4.0 carries the reviewed zod 4.6.6 pin; install it without the release-age wait.
+  - '@browserbasehq/stagehand@4.4.0'
 patchedDependencies:
-  '@earendil-works/pi-ai@0.87.1': deepseek-harness/patches/@earendil-works__pi-ai@0.87.1.patch
+  '@botiverse/oar@0.67.0': deepseek-harness/patches/@botiverse__oar@0.67.0.patch
+  '@earendil-works/pi-ai@1.3.0': deepseek-harness/patches/@earendil-works__pi-ai@1.3.0.patch
+  '@electron/osx-sign@1.3.3': deepseek-harness/patches/@electron__osx-sign@1.3.3.patch
   '@fortune-sheet/core@1.0.4': deepseek-harness/patches/@fortune-sheet__core@1.0.4.patch
   '@fortune-sheet/react@1.0.4': deepseek-harness/patches/@fortune-sheet__react@1.0.4.patch
-  'exceljs@4.4.0': deepseek-harness/patches/exceljs@4.4.0.patch
+  app-builder-lib@26.17.0: deepseek-harness/patches/app-builder-lib@26.17.0.patch
+  exceljs@4.4.0: deepseek-harness/patches/exceljs@4.4.0.patch
+  lexical@0.49.0: deepseek-harness/patches/lexical@0.49.0.patch
+  mdast-util-gfm-autolink-literal@2.0.1: deepseek-harness/patches/mdast-util-gfm-autolink-literal@2.0.1.patch
+  micromark-extension-gfm-autolink-literal@2.1.0: deepseek-harness/patches/micromark-extension-gfm-autolink-literal@2.1.0.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

@@ -52,7 +52,7 @@ function stdioProxyPath(): string {
 
 function runtimeConfig(server: StoredMcpServer, stderrLogDir?: string): DshMcpClient.Config {
   if (server.transport === 'stdio') {
-    return {
+    return DshMcpClient.Config({
       transport: 'stdio',
       serverName: server.serverName,
       command: process.execPath,
@@ -64,16 +64,16 @@ function runtimeConfig(server: StoredMcpServer, stderrLogDir?: string): DshMcpCl
       cwd: server.cwd ?? '',
       toolCallTimeoutMs: 60_000,
       failOnStartupError: false,
-    }
+    })
   }
-  return {
+  return DshMcpClient.Config({
     transport: 'streamable-http',
     serverName: server.serverName,
     url: server.url ?? '',
     headers: server.headers ?? {},
     toolCallTimeoutMs: 60_000,
     failOnStartupError: false,
-  }
+  })
 }
 
 /** Mount through the public Cordis plugin contract exposed by the upstream MCP package. */

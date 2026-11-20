@@ -173,9 +173,9 @@ Windows runner 为 Windows Server 2025，此记录不能替代上表声明的 Wi
 
 | 平台 | 架构 | 最低系统声明 | Node | CI | 手工验收 |
 | --- | --- | --- | --- | --- | --- |
-| macOS | arm64 | macOS 14+ | 22.19.x、24.x | `macos-14` | Terminal.app + iTerm2 |
-| Windows | x64 | Windows 10 x64 | 22.19.x、24.x | `windows-2025` x64 | Windows Terminal + PowerShell 7 |
-| Linux | x64 | Ubuntu 22.04（其他发行版未验证） | 22.19.x、24.x | `ubuntu-24.04` | 用户确认真机通过 |
+| macOS | arm64 | macOS 14+ | 24.9.0、最新 24.x | `macos-14` | Terminal.app + iTerm2 |
+| Windows | x64 | Windows 10 x64 | 24.9.0、最新 24.x | `windows-2025` x64 | Windows Terminal + PowerShell 7 |
+| Linux | x64 | Ubuntu 22.04（其他发行版未验证） | 24.9.0、最新 24.x | `ubuntu-24.04` | 用户确认真机通过 |
 
 最低系统是首版的保守支持声明，不代表代码必然不能运行在更早系统。如要
 扩大范围，先增加真机或可信 runner 的安装和 TTY 回归，再修改官方声明。
@@ -222,7 +222,7 @@ anything else → 友好错误 + 支持矩阵 URL + exit 1
   "type": "module",
   "license": "MIT",
   "bin": { "dsh-code": "lib/bin.js" },
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "engines": { "node": ">=24.9.0" },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/guoxiucai/dsh-code.git"
@@ -359,7 +359,7 @@ approval，但不应移除矩阵、包审计和 registry 版本检查。
 ### 5.3 GitHub Actions 发布拓扑
 
 ```text
-prepare (ubuntu, Node 22.19)
+prepare (ubuntu, Node 24.9)
   checkout --recurse-submodules
   → pnpm install --frozen-lockfile
   → build upstream host/client
@@ -367,10 +367,10 @@ prepare (ubuntu, Node 22.19)
   → build staging + npm-shrinkwrap + tarball audit
   → upload candidate.tgz + sha256
           │
-          ├─ smoke-macos-arm64 (macos-14, Node 22.19 + 24)
+          ├─ smoke-macos-arm64 (macos-14, Node 24.9 + 最新 24.x)
           │    clean global prefix + TTY/manual-capable smoke
           │
-          └─ smoke-windows-x64 (windows-2025, Node 22.19 + 24)
+          └─ smoke-windows-x64 (windows-2025, Node 24.9 + 最新 24.x)
                clean global prefix + PowerShell smoke
                     │
 publish (ubuntu, GitHub-hosted, protected environment)
@@ -390,7 +390,7 @@ permissions:
 ```
 
 npm 使用 GitHub Actions trusted publishing (OIDC)，不配置长期 `NPM_TOKEN`。发布 runner
-使用 Node 22.19 且显式安装 npm ≥ 11.15.0。trusted publishing 自动生成 provenance，
+使用 Node 24.9 且显式安装 npm ≥ 11.15.0。trusted publishing 自动生成 provenance，
 前提是公开 GitHub 仓库、公开 npm 包、GitHub-hosted runner 和精确匹配的 repository。
 
 所有 Actions 应锁定到已评审的完整 commit SHA，不只使用浮动 major tag。
@@ -431,7 +431,7 @@ trusted publisher；npm package 同一时刻只保留一个 trusted publisher。
 
 - Apple Silicon，macOS 14 或更高；
 - Git；
-- Node 22.19.x 或 24.x；
+- Node 24.9 或更高版本；
 - pnpm 11.7.0；
 - 正常的 npm registry 网络。
 
@@ -484,7 +484,7 @@ smoke 脚本必须使用 `mktemp -d` 生成独立 npm prefix，至少验证：
 
 - Windows 10 x64 或更高（CI 使用 GitHub `windows-2025` x64，并补充 Windows 10 真机验收）；
 - Git for Windows，启用 long paths；
-- Node 22.19.x 或 24.x x64；
+- Node 24.9 或更高版本 x64；
 - pnpm 11.7.0；
 - Windows Terminal + PowerShell 7 作为主验收终端。
 

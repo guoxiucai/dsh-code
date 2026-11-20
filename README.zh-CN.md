@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/guoxiucai/dsh-code/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/guoxiucai/dsh-code/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4D6BFE.svg"></a>
-  <img alt="Node.js 22.19 or 24" src="https://img.shields.io/badge/Node.js-22.19%2B%20%7C%2024%2B-43853D.svg">
+  <img alt="Node.js 24.9+" src="https://img.shields.io/badge/Node.js-24.9%2B-43853D.svg">
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img alt="Powered by dsh" src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white"></a>
 </p>
 
@@ -49,7 +49,7 @@ DeepSeek Harness Agent Runtime + Pi 风格终端交互 + pi-tui 渲染器
 | macOS | macOS 14 或更高，Apple Silicon (`arm64`) |
 | Windows | Windows 10 或更高，x64 |
 | Linux | x64，Ubuntu 22.04 真机验证；Ubuntu 24.04 安装 CI |
-| Node.js | `22.19+`（不含 Node 23）或 `24+` |
+| Node.js | `24.9+` |
 | 包管理器 | 普通安装只需要 npm |
 
 0.1.6 起支持 macOS、Windows、Linux 三平台，Ubuntu 真机验收记录见
@@ -88,7 +88,7 @@ npm 包名是 `@tsingwill/dsh-code`，安装后的终端命令仍是简短的 `d
 git clone --recurse-submodules https://github.com/guoxiucai/dsh-code.git
 cd dsh-code
 corepack enable
-corepack prepare pnpm@11.7.0 --activate
+npm install --global pnpm@11.28.5
 pnpm install --frozen-lockfile
 pnpm run build:lib
 pnpm run build

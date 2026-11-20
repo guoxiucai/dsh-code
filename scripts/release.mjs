@@ -21,11 +21,12 @@ if ((npmVersion[0] ?? 0) < 11 || ((npmVersion[0] ?? 0) === 11 && (npmVersion[1] 
   throw new Error('npm >= 11.15.0 is required')
 }
 const nodeVersion = process.versions.node
-if (!/^22\.(?:19|[2-9]\d)\.|^(?:2[4-9]|[3-9]\d)\./.test(nodeVersion)) {
-  throw new Error(`Node 22.19+ (excluding 23) or Node 24+ is required; found ${nodeVersion}`)
+const [nodeMajor, nodeMinor] = nodeVersion.split('.').map(Number)
+if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 9)) {
+  throw new Error(`Node 24.9+ is required; found ${nodeVersion}`)
 }
 const pnpmVersion = run('pnpm', ['--version'], { capture: true }).stdout.trim()
-if (pnpmVersion !== '11.7.0') throw new Error(`pnpm 11.7.0 is required; found ${pnpmVersion}`)
+if (pnpmVersion !== '11.28.5') throw new Error(`pnpm 11.28.5 is required; found ${pnpmVersion}`)
 
 if (!hasFlag(args, '--allow-dirty')) {
   const status = run('git', ['status', '--porcelain'], { capture: true }).stdout.trim()

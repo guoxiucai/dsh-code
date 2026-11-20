@@ -24,7 +24,7 @@ import type {} from '@deepseek-ai/dsh-llm-retry'
 import type {} from '@deepseek-ai/dsh-compaction'
 import type {} from '@deepseek-ai/dsh-agent'
 // Declaration-merges the nested PTC dispatch lifecycle into SessionEvent.
-import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-tool-executor-ptc/types'
 // Declaration-merges the todo/write snapshot event now owned by tool-todo.
 import type {} from '@deepseek-ai/dsh-tool-todo'
 import type { ContentBlock, ToolCallBlock, UserMessage } from '@deepseek-ai/dsh-llm'
@@ -67,7 +67,8 @@ const KNOWN_UNRENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'subagent/descriptor', 'team/member', 'team/message/delivered',
   'team/message/queued', 'team/task', 'tool-workflow/agent-end', 'tool-workflow/agent-start',
   'tool-workflow/run-end', 'tool-workflow/run-start',
-  'web/deepseek-search-llm-request',
+  'web/deepseek-search-llm-request', 'job/registered', 'job/settled',
+  'model/selection', 'team/mode', 'working-directory/change', 'workspace/changes',
 ])
 
 /** In-flight assistant stream (not yet committed to the transcript). */
@@ -385,9 +386,7 @@ export function reduceSessionEvent(state: ReducerState, event: SessionEvent): Re
     case 'tool/ptc-dispatch': {
       const callId = String(event.data.subCallId)
       const resultText = toolResultText(textOf(event.data.content))
-      // Official 0.1.5-rc.2 dispatches do not expose presentation meta. Keep
-      // replay forward-compatible when a later upstream version adds it.
-      const diffs = diffsFromMeta((event.data as typeof event.data & { meta?: unknown }).meta)
+      const diffs = diffsFromMeta(event.data.meta)
       const transcript = state.transcript.map(item => item.kind === 'tool' && item.callId === callId
         ? {
           ...item,

@@ -46,8 +46,8 @@ dsh-code
 - Windows 10 x64，建议开启系统长路径支持，并把仓库放在较短路径（如 `C:\src\dsh-code`）；
 - Git for Windows，执行 `git config --global core.longpaths true`；
 - Windows Terminal 与 PowerShell 7；
-- Node.js 22.19.x x64 或 24.x x64；
-- pnpm **11.7.0**，可执行 `npm install --global pnpm@11.7.0` 安装；
+- Node.js 24.9 或更高版本（x64）；
+- pnpm **11.28.5**，可执行 `npm install --global pnpm@11.28.5` 安装；
 - GitHub 仓库写权限和本人自己的 SSH key 或 GitHub CLI 登录。不要共享 npm、GitHub 或模型凭证。
 
 首次拉取使用递归 submodule clone：
@@ -67,8 +67,8 @@ pnpm.cmd --version
 预期结果：
 
 - 平台为 `win32-x64`；
-- Node 为 `v22.19.x` 或 `v24.x`；
-- pnpm 为 `11.7.0`；
+- Node 为 `v24.9.0` 或更高版本；
+- pnpm 为 `11.28.5`；
 - `deepseek-harness` 位于 `639ed015397290b3745d163aafe02ffee4aa3f84`，行首没有 `-`、`+` 或 `U`；
 - 当前分支跟踪 `origin/main`，工作区干净。
 
@@ -385,14 +385,16 @@ node deepseek-harness/apps/cli/lib/bin.js --profile headless \
 入口会继续使用最新产物。这种方式绕过正式 npm tarball，只用于开发；发布前仍需执行
 candidate verify 和 smoke。
 
-#### 当前 macOS 开发机参考（2026-08-20）
+#### macOS 开发机历史参考（2026-08-20）
+
+0.2.2 起，请在 Node.js 24.9 或更新版本的环境下运行构建和命令入口。
 
 | 项目 | 当前值 |
 | --- | --- |
 | 平台 | `darwin-arm64` |
 | 仓库 | `/Users/qingwei/dev/AILearn/dsh-code` |
-| Node | `v22.19.0`，位于 `/Users/qingwei/dev/Nodes/node-v22.19.0/bin/node` |
-| pnpm | 项目内执行 `pnpm --version` 为 `11.7.0` |
+| Node | `v22.19.0`（0.2.0 的历史环境） |
+| pnpm | `11.7.0`（0.2.0 的历史环境） |
 | npm | `11.15.0` |
 | npm global prefix | `/Users/qingwei/dev/Nodes/node-v22.19.0` |
 | 命令入口 | `/Users/qingwei/dev/Nodes/node-v22.19.0/bin/dsh-code` |
