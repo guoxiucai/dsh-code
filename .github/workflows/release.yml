@@ -79,11 +79,11 @@ jobs:
             platform: linux-x64
             node: 24.x
             coexist: ''
-          - runner: macos-14
+          - runner: macos-15
             platform: darwin-arm64
             node: 24.9.0
             coexist: --coexist
-          - runner: macos-14
+          - runner: macos-15
             platform: darwin-arm64
             node: 24.x
             coexist: ''
